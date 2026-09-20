@@ -759,10 +759,6 @@ export function App() {
       }
       const workspaceRoot = await chooseDirectory(settings.workspace_root);
       if (!workspaceRoot || projectPathKey(workspaceRoot) === projectPathKey(settings.workspace_root)) return;
-      if (Object.keys(runningSessionIdsRef.current).length) {
-        setError("当前任务结束后即可切换项目。");
-        return;
-      }
       setStatus("Opening project");
       await api.updateSettings({ workspaceRoot, agent: "" });
       if (newTask === true) {
