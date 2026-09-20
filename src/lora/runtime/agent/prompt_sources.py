@@ -68,15 +68,15 @@ def _render_system_path_policy_prompt(ctx: PromptRenderContext) -> str:
     user_lora_root = _ctx_user_lora_root(ctx)
     return "\n".join(
         [
-            "# Lora Paths",
+            "# Lora Path Layout",
             "",
             f"- Workspace root: {ctx.workspace_root}",
-            f"- Project Lora root: {project_lora_root}",
-            f"- User Lora root: {user_lora_root}",
+            f"- Per-project Lora state: {project_lora_root}",
+            f"- Lora home: {user_lora_root}",
             "- File tools resolve relative paths from the workspace root. Bash defaults to the workspace root; working_directory is resolved from that root, and paths inside the command resolve from the selected working directory.",
             "- Keep host-side file-tool writes, shell redirects, scratch files, and deliverables inside the authorized workspace unless the user explicitly supplies another authorized path.",
             "- Commands running inside an explicitly scoped container or remote sandbox may use paths owned by that environment, including its temporary directory; never use those paths to escape the authorized environment.",
-            "- Project Lora resources belong to this workspace. User Lora resources are reusable across projects.",
+            "- Per-project Lora state resources belong to this workspace. Lora home resources are reusable across projects.",
             "- When the same resource exists at both levels, the project-level resource is selected and the user-level resource is shadowed.",
         ]
     )
