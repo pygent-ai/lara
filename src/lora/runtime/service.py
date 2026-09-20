@@ -109,6 +109,17 @@ PROJECTION_READY_INPUT_ID_METADATA_KEY = "projection_replacement_ready_input_id"
 MAX_IDENTICAL_MEMORY_TOOL_REJECTIONS = 8
 
 
+def _config_fingerprint(config: RunConfig) -> str:
+    payload = config.to_dict()
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 class _MemoryFeedbackState:
     def __init__(self) -> None:
         self.signature: tuple[tuple[str, str], ...] | None = None
@@ -256,7 +267,9 @@ class LoraRuntimeService:
         )
         history_path = Path(config.runtime_durability.history_path)
         self.history_path = history_path
-        model_path = history_path.with_name("model-deployments-v2.sqlite3")
+        model_path = history_path.with_name(
+            f"model-deployments-v2-{_config_fingerprint(config)[:16]}.sqlite3"
+        )
         self.model_path = model_path
         self.history = SQLiteHistoryStore(history_path)
         self.model_store = SQLiteModelDeploymentStore(model_path)
