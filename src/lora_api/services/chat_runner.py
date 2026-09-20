@@ -193,6 +193,7 @@ class AttachedExecutionRun:
     run_ref: CaseRunRef | None = None
     manager: Any | None = None
     lease: Any | None = None
+    snapshot: Any = None
 
     async def events(
         self,
@@ -200,18 +201,55 @@ class AttachedExecutionRun:
         after: int | None,
         log_model_text_deltas: bool = False,
     ) -> AsyncIterator[ExecutionEvent]:
+        terminated = False
         try:
             async with self.execution_handle.subscribe(after=after) as events:
-                async for raw in events:
-                    event = _execution_event(raw)
-                    if self.manager is not None and self.run_ref is not None:
-                        event = _with_run_timing(event, self.manager, self.run_ref)
-                    if log_model_text_deltas and self.run_ref is not None:
-                        _append_model_text_delta(
-                            event,
-                            stream_dir=Path(self.run_ref.run_dir),
-                        )
-                    yield event
+                pending_event: asyncio.Task[Any] | None = None
+                try:
+                    while True:
+                        if pending_event is None:
+                            pending_event = asyncio.create_task(anext(events))
+                        try:
+                            raw = await asyncio.wait_for(
+                                asyncio.shield(pending_event),
+                                CHAT_KEEPALIVE_SECONDS,
+                            )
+                        except TimeoutError:
+                            yield _keepalive_event(
+                                self.execution_handle.execution_id, after or 0
+                            )
+                            continue
+                        except StopAsyncIteration:
+                            pending_event = None
+                            break
+                        pending_event = None
+                        event = _execution_event(raw)
+                        if event.kind in _TERMINAL_EVENTS:
+                            terminated = True
+                        if self.manager is not None and self.run_ref is not None:
+                            event = _with_run_timing(event, self.manager, self.run_ref)
+                        if log_model_text_deltas and self.run_ref is not None:
+                            _append_model_text_delta(
+                                event,
+                                stream_dir=Path(self.run_ref.run_dir),
+                            )
+                        yield event
+                finally:
+                    if pending_event is not None and not pending_event.done():
+                        pending_event.cancel()
+                        await asyncio.gather(pending_event, return_exceptions=True)
+            if (
+                not terminated
+                and self.snapshot is not None
+                and self.snapshot.status.terminal
+            ):
+                # The subscriber did not deliver a terminal event (its buffer may
+                # have been consumed before this client attached). Synthesize one
+                # from the durable snapshot so the client can finalize.
+                event = _terminal_event_from_snapshot(self.snapshot)
+                if self.manager is not None and self.run_ref is not None:
+                    event = _with_run_timing(event, self.manager, self.run_ref)
+                yield event
         finally:
             if self.lease is not None:
                 await self.lease.release()
@@ -267,7 +305,8 @@ class ChatRunRegistry:
                 raise
             if snapshot.status.terminal:
                 return AttachedExecutionRun(
-                    handle, run_ref, lease.runtime.manager, lease
+                    handle, run_ref, lease.runtime.manager, lease,
+                    snapshot=snapshot,
                 )
             try:
                 recovered = await self.coordinator.recover_turn(
@@ -394,6 +433,41 @@ def _keepalive_event(execution_id: str, sequence: int) -> ExecutionEvent:
         timestamp_unix_ns=timestamp,
         module_path="lora.transport",
         kind="lora.transport.keepalive",
+    )
+
+
+_STATUS_TO_TERMINAL_EVENT = {
+    "succeeded": "execution.completed",
+    "failed": "execution.failed",
+    "cancelled": "execution.cancelled",
+    "deadline_exceeded": "execution.deadline_exceeded",
+}
+
+
+def _terminal_event_from_snapshot(snapshot: Any) -> ExecutionEvent:
+    """Build a terminal SSE event from a Pygent ExecutionSnapshot.
+
+    Used when subscribing to a finished execution whose in-memory event buffer
+    has already drained, so the subscriber yields no terminal event.
+    """
+    kind = _STATUS_TO_TERMINAL_EVENT.get(
+        getattr(snapshot.status, "value", ""), "execution.failed"
+    )
+    timestamp = time.time_ns()
+    return ExecutionEvent(
+        schema_version="1",
+        event_id=f"{kind}-{timestamp}",
+        execution_id=snapshot.execution_id,
+        attempt_id=snapshot.attempt_id or "recovery",
+        trace_id=snapshot.trace_id or "recovery",
+        span_id="recovery",
+        sequence=snapshot.terminal_sequence
+        if snapshot.terminal_sequence is not None
+        else snapshot.last_sequence,
+        timestamp_unix_ns=timestamp,
+        module_path="lora.api",
+        kind=kind,
+        data={},
     )
 
 
