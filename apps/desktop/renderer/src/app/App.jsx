@@ -107,6 +107,7 @@ export function App() {
   });
   const [settings, setSettings] = useState(EMPTY_SETTINGS);
   const [pendingNewModelGroup, setPendingNewModelGroup] = useState("");
+  const [pendingNewSessionScope, setPendingNewSessionScope] = useState("");
   useEffect(() => {
     setPendingNewModelGroup((current) => current && settings.model_groups?.[current]
       ? current
@@ -368,18 +369,16 @@ export function App() {
         setStatus("Opening project");
         await api.updateSettings({ workspaceRoot: targetWorkspace, agent: "" });
       }
-      const session = await api.createSession({
-        caseId: "chat",
-        mode: "chat",
-        scopeId: scope?.scope_id === "conversation" ? "conversation" : undefined,
-        modelGroupName: pendingNewModelGroup || settings.default_model_group || undefined,
-      });
-      await refreshWorkbench({ selectSessionId: session.session_id });
-      setNotice("New chat created");
+      // Enter the empty new-chat state instead of creating a session up front:
+      // the composer shows the model-group selector there, and the first
+      // message creates the session with the chosen group.
+      setPendingNewSessionScope(scope?.scope_id === "conversation" ? "conversation" : "");
+      await refreshWorkbench({ preserveSessionId: "" });
+      setNotice("已进入新建会话：选择模型组后，发送第一条消息即创建会话。");
     } catch (err) {
       setError(readableError(err));
     }
-  }, [api, pendingNewModelGroup, refreshWorkbench, settings.default_model_group, settings.workspace_root]);
+  }, [api, refreshWorkbench, settings.workspace_root]);
 
   const handleDeleteSession = useCallback(
     async (sessionId, scope) => {
@@ -523,7 +522,7 @@ export function App() {
             sessionId: streamSessionId,
             caseId: "chat",
             modelGroupName: pendingNewModelGroup || settings.default_model_group || undefined,
-            scopeId: recovery?.session.scope_id || activeSession?.scope_id,
+            scopeId: recovery?.session.scope_id || activeSession?.scope_id || pendingNewSessionScope || undefined,
           },
           {
             onConnectionState: (state) => {
@@ -650,7 +649,7 @@ export function App() {
         }
       }
     },
-    [activeSession?.scope_id, api, pendingNewModelGroup, refreshWorkbench, setSessionRunning, settings.default_model_group],
+    [activeSession?.scope_id, api, pendingNewModelGroup, pendingNewSessionScope, refreshWorkbench, setSessionRunning, settings.default_model_group],
   );
   resumeSessionRef.current = (detail) => handleSendMessage("", detail);
 
@@ -762,12 +761,9 @@ export function App() {
       setStatus("Opening project");
       await api.updateSettings({ workspaceRoot, agent: "" });
       if (newTask === true) {
-        const session = await api.createSession({
-          caseId: "chat",
-          mode: "chat",
-          modelGroupName: pendingNewModelGroup || settings.default_model_group || undefined,
-        });
-        await refreshWorkbench({ selectSessionId: session.session_id });
+        // Enter the new-chat state; the first message creates the session.
+        setPendingNewSessionScope("");
+        await refreshWorkbench({ preserveSessionId: "" });
       } else {
         await refreshWorkbench({ selectFirst: true });
       }
@@ -778,7 +774,7 @@ export function App() {
     } finally {
       projectChooserBusyRef.current = false;
     }
-  }, [api, pendingNewModelGroup, refreshWorkbench, settings.default_model_group, settings.workspace_root]);
+  }, [api, refreshWorkbench, settings.workspace_root]);
 
   const appClassName = appLayoutClassName(layout);
   const fittedWidths = fitPanelWidths(panelWidths, layout, workbenchWidth);
@@ -857,6 +853,7 @@ export function App() {
         }}
         pendingNewModelGroup={pendingNewModelGroup}
         onChangeNewModelGroup={setPendingNewModelGroup}
+        pendingNewSessionScope={pendingNewSessionScope}
         onChangeModel={async (selectedModelKey) => {
           if (!activeSessionIdRef.current) return;
           await api.updateSessionModel(activeSessionIdRef.current, selectedModelKey, { scopeId: activeSession?.scope_id });
@@ -1133,7 +1130,7 @@ function SessionRow({
   );
 }
 
-export function ChatPane({ activeSession, messages, activityCollapseToken, settings, status, running, steeringReady = false, approvals, pendingSteerings = [], api, onSendMessage, onSteering, onApproval, projects = [], onSelectProject, onChooseProject, onChangePermissions, pendingNewModelGroup = "", onChangeNewModelGroup = () => {}, onChangeModel = () => {} }) {
+export function ChatPane({ activeSession, messages, activityCollapseToken, settings, status, running, steeringReady = false, approvals, pendingSteerings = [], api, onSendMessage, onSteering, onApproval, projects = [], onSelectProject, onChooseProject, onChangePermissions, pendingNewModelGroup = "", onChangeNewModelGroup = () => {}, pendingNewSessionScope = "", onChangeModel = () => {} }) {
   const [draft, setDraft] = useState("");
   const [configuring, setConfiguring] = useState(false);
   const [configError, setConfigError] = useState("");
@@ -1141,7 +1138,7 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
   const sendingRef = useRef(false);
   const pendingSteeringRef = useRef(null);
   const empty = messages.length === 0;
-  const selectedScope = activeSession?.scope_id || scopeIdFromWorkspace(settings.workspace_root);
+  const selectedScope = activeSession?.scope_id || pendingNewSessionScope || scopeIdFromWorkspace(settings.workspace_root);
   async function configure(action) {
     setConfiguring(true);
     setConfigError("");
