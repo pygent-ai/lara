@@ -1194,6 +1194,30 @@ test("existing idle chat exposes only child models from its fixed group", () => 
   assert.doesNotMatch(html, /aria-label="模型组"/);
 });
 
+test("new-chat composer keeps the pending model group and pending scope selectable", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.ChatPane, {
+    activeSession: null,
+    messages: [],
+    settings: {
+      workspace_root: "E:\\Projects\\lora",
+      model_groups: {
+        ds: { models: ["DeepSeek-V4-Flash-0731"] },
+        "glm-5.3-flash": { models: ["glm-5.3-flash"] },
+      },
+      default_model_group: "ds",
+      approvals_enabled: false,
+    },
+    status: "Ready", running: false, approvals: [], projects: [], api: {},
+    pendingNewModelGroup: "glm-5.3-flash",
+    pendingNewSessionScope: "conversation",
+    onChangeNewModelGroup() {},
+    onSendMessage() {}, onSteering() {}, onApproval() {}, onChangePermissions() {},
+  }));
+  assert.match(html, /aria-label="模型组"/);
+  assert.match(html, /glm-5\.3-flash/);
+  assert.match(html, /独立对话/);
+});
+
 test("automation triggers render as system-origin cards with the raw instruction", () => {
   const [message] = appModule.historyToMessages([{
     role: "user",
