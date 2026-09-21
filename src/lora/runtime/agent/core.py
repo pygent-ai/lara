@@ -43,7 +43,6 @@ from lora.tracing import DIFF_TOOL_SPEC, EventStore
 from .common import DEFAULT_REACT_MAX_STEPS
 from .compressor import LoraCompressorModule
 from .pipeline import (
-    ContextSnapshotModelModule,
     ConversationCheckpointModelModule,
     ConversationCheckpointToolModule,
     DynamicPromptModule,
@@ -268,7 +267,7 @@ class LoraAgent(Agent[UserMessage, AIMessage]):
             compression_model = self.new_model_layer()
             prepared_model = ConversationCheckpointModelModule(
                 self.config,
-                ContextSnapshotModelModule(ForegroundModelModule(model=model)),
+                ForegroundModelModule(model=model),
             )
             prepared_tools = ConversationCheckpointToolModule(
                 self.config,
