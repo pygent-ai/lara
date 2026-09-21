@@ -1243,6 +1243,30 @@ test("new-chat composer keeps the pending model group and pending scope selectab
   assert.match(html, /独立对话/);
 });
 
+test("entrance animation targets only appended messages, never history reloads", () => {
+  const { computeEnteringMessageIds, NO_ENTERING_MESSAGE_IDS } = appModule;
+  const live = [
+    { id: "user-1" }, { id: "assistant-1" },
+  ];
+  const previous = { sessionId: "s1", ids: live.map((message) => message.id) };
+
+  // Appending a new turn to the same session view animates the tail.
+  const appended = [...live, { id: "user-2" }, { id: "assistant-2" }];
+  const entering = computeEnteringMessageIds(previous, "s1", appended);
+  assert.equal(entering.size, 2);
+  assert.ok(entering.has("user-2"));
+  assert.ok(entering.has("assistant-2"));
+
+  // End-of-turn history refresh swaps every live id for history-*: no replay.
+  const reloaded = [{ id: "history-0" }, { id: "history-2-assistant" }, { id: "history-3" }, { id: "history-3-assistant" }];
+  assert.equal(computeEnteringMessageIds(previous, "s1", reloaded), NO_ENTERING_MESSAGE_IDS);
+
+  // Session switch and shrinking lists never animate.
+  assert.equal(computeEnteringMessageIds(previous, "s2", appended), NO_ENTERING_MESSAGE_IDS);
+  assert.equal(computeEnteringMessageIds(previous, "s1", live.slice(0, 1)), NO_ENTERING_MESSAGE_IDS);
+  assert.equal(computeEnteringMessageIds(previous, "s1", live), NO_ENTERING_MESSAGE_IDS);
+});
+
 test("automation triggers render as system-origin cards with the raw instruction", () => {
   const [message] = appModule.historyToMessages([{
     role: "user",

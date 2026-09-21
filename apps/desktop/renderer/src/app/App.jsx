@@ -1187,6 +1187,24 @@ function SessionRow({
   );
 }
 
+export const NO_ENTERING_MESSAGE_IDS = new Set();
+
+// Which message ids should play the entrance animation: only a strict
+// append to the previously rendered transcript of the same session view.
+// History reloads and session switches replace every id wholesale, and
+// replaying the reveal for the whole transcript reads as a flash.
+export function computeEnteringMessageIds(previous, sessionId, messages) {
+  if (previous.sessionId !== sessionId || messages.length <= previous.ids.length) {
+    return NO_ENTERING_MESSAGE_IDS;
+  }
+  for (let index = 0; index < previous.ids.length; index += 1) {
+    if (messages[index]?.id !== previous.ids[index]) {
+      return NO_ENTERING_MESSAGE_IDS;
+    }
+  }
+  return new Set(messages.slice(previous.ids.length).map((message) => message.id));
+}
+
 export function ChatPane({ activeSession, messages, activityCollapseToken, settings, status, running, steeringReady = false, approvals, pendingSteerings = [], api, onSendMessage, onSteering, onApproval, projects = [], onSelectProject, onChooseProject, onChangePermissions, pendingNewModelGroup = "", onChangeNewModelGroup = () => {}, pendingNewSessionScope = "", onChangeModel = () => {} }) {
   const [draft, setDraft] = useState("");
   const [configuring, setConfiguring] = useState(false);
@@ -1207,6 +1225,20 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
   const followTranscriptRef = useRef(true);
   const [awayFromLatest, setAwayFromLatest] = useState(false);
   const chatTitle = activeSession?.title || "Select or create a chat session";
+
+  // The entrance animation plays only for messages appended to the session
+  // view the user is already looking at; see enteringMessageIds.
+  const messageEntryRef = useRef({ sessionId: undefined, ids: [] });
+  const enteringMessageIds = useMemo(
+    () => computeEnteringMessageIds(messageEntryRef.current, activeSession?.session_id, messages),
+    [messages, activeSession?.session_id],
+  );
+  useEffect(() => {
+    messageEntryRef.current = {
+      sessionId: activeSession?.session_id,
+      ids: messages.map((message) => message.id),
+    };
+  });
 
   useEffect(() => {
     if (followTranscriptRef.current) scrollTranscriptToLatest(transcriptRef.current);
@@ -1263,7 +1295,8 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
             <span aria-hidden="true"> / </span>{activeSession?.selected_model_key || primaryModel(settings)}
           </p>
         </div>
-        <div className={`status-pill ${statusTone(status)}`}>{statusLabel(status)}</div>
+        {/* Remounts on status change so the entrance animation marks each transition. */}
+        <div key={status} className={`status-pill ${statusTone(status)}`}>{statusLabel(status)}</div>
       </header>
 
       <div className="transcript" ref={transcriptRef} onScroll={(event) => {
@@ -1272,10 +1305,10 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
         setAwayFromLatest(!followTranscriptRef.current);
       }}>
         {messages.map((message) => (
-          <MessageRow key={message.id} message={message} activityCollapseToken={activityCollapseToken} api={api} />
+          <MessageRow key={message.id} message={message} entering={enteringMessageIds.has(message.id)} activityCollapseToken={activityCollapseToken} api={api} />
         ))}
         {pendingSteerings.map((item) => (
-          <article className="message user pending-steering" key={`pending-${item.inputId}`}>
+          <article className="message user message-enter pending-steering" key={`pending-${item.inputId}`}>
             <div className="bubble">
               <span className="pending-steering-label">{item.stale ? "未生效 · 本轮已结束" : "待生效 · 下一处理边界"}</span>
               {item.text}
@@ -1404,7 +1437,7 @@ function ComposerMenu({ label, title, icon, value, options, disabled, onChange }
 
 // Memoized: during streaming every applied delta re-renders the transcript
 // once per frame, and only the active assistant message actually changes.
-const MessageRow = memo(function MessageRow({ message, activityCollapseToken, api }) {
+const MessageRow = memo(function MessageRow({ message, entering = false, activityCollapseToken, api }) {
   if (message.role === "activity") {
     return <ActivityMessage message={message} collapseToken={activityCollapseToken} api={api} />;
   }
@@ -1417,7 +1450,7 @@ const MessageRow = memo(function MessageRow({ message, activityCollapseToken, ap
   }
 
   return (
-    <article className={`message ${message.role}`}>
+    <article className={`message ${message.role}${entering ? " message-enter" : ""}`}>
       {message.role !== "user" && <div className="avatar">{message.role === "automation" ? <CalendarClock size={15} /> : "L"}</div>}
       <div className="bubble">
         {message.role === "automation" && <span className="automation-message-label">定时任务触发</span>}
