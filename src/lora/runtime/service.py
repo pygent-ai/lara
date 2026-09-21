@@ -103,6 +103,9 @@ if TYPE_CHECKING:
     from lora.orchestration.session_collaboration import SessionCollaborationService
 
 RECOVERY_CLAIM_WAIT_SECONDS = 31.0
+# Pygent agent graphs declare requires_finite_deadline=True, so an unlimited
+# deadline is rejected at admission; this ceiling is the practical maximum.
+TURN_DEADLINE_SECONDS = 24 * 60 * 60
 PROJECTION_OPERATION_METADATA_KEY = "projection_replacement_operation"
 PROJECTION_INPUT_ID_METADATA_KEY = "projection_replacement_input_id"
 PROJECTION_READY_INPUT_ID_METADATA_KEY = "projection_replacement_ready_input_id"
@@ -852,7 +855,7 @@ class LoraRuntimeService:
                     ),
                     deadline=deadline
                     if deadline is not None
-                    else time.monotonic() + 30 * 60,
+                    else time.monotonic() + TURN_DEADLINE_SECONDS,
                 ),
             )
         except BaseException:
@@ -884,11 +887,13 @@ class LoraRuntimeService:
         self,
         execution_id: str,
         *,
-        deadline: float,
+        deadline: float | None = None,
     ) -> Any:
         """Claim and resume one non-terminal durable Pygent execution."""
 
         await self.initialize()
+        if deadline is None:
+            deadline = time.monotonic() + TURN_DEADLINE_SECONDS
         stored = await self.history.get_execution(execution_id)
         if stored is None:
             raise KeyError(f"unknown durable execution {execution_id!r}")
@@ -1038,7 +1043,7 @@ class LoraRuntimeService:
                         if agent.llm is not None
                         else {}
                     ),
-                    deadline=time.monotonic() + 30 * 60,
+                    deadline=time.monotonic() + TURN_DEADLINE_SECONDS,
                 ),
             )
         except BaseException:
