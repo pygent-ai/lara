@@ -1652,9 +1652,6 @@ export function AssistantActivity({ message, collapseToken, api }) {
             return <ActivityTextSection section={section} key={section.id || `text-${index}`} />;
           })}
           {liveStatus && <div className="activity-live-status">{liveStatus}</div>}
-          {!sections.length && !liveStatus && isRunning && !hasVisibleAssistantContent(message) && (
-            <div className="activity-muted">Waiting for model output...</div>
-          )}
         </div>
       )}
     </div>
@@ -2583,16 +2580,21 @@ function activityLiveStatus(message) {
   }
   const sections = Array.isArray(message.sections) ? message.sections : [];
   const liveSection = latestLiveStatusSection(sections);
-  if (!liveSection) {
-    return hasVisibleAssistantContent(message) ? "" : "Thinking";
+  if (liveSection) {
+    if (liveSection.type === "tools") {
+      return latestToolDescriptionFromSection(liveSection);
+    }
+    // Actively streaming reasoning is its own live state, shown by the
+    // thinking block itself. Thinking or text behind finished tool calls
+    // means the next model request is already in flight.
+    const isStreamingThinking = liveSection.type === "text"
+      && liveSection.title === "Thinking"
+      && liveSection === sections[sections.length - 1];
+    return isStreamingThinking ? "" : "Calling the model...";
   }
-  if (liveSection.type === "tools") {
-    return latestToolDescriptionFromSection(liveSection);
-  }
-  if (liveSection.type === "text" && liveSection.title === "Thinking") {
-    return "";
-  }
-  return "";
+  // Turn start and the gap after tool results: the model request is in
+  // flight until reasoning, tool calls, or streamed text replaces it.
+  return hasVisibleAssistantContent(message) ? "" : "Calling the model...";
 }
 
 function latestLiveStatusSection(sections) {
