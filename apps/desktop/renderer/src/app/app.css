@@ -1260,7 +1260,6 @@ input:focus,
   border-left: 1px solid var(--line);
   overflow-y: auto;
   overflow-wrap: anywhere;
-  scroll-behavior: smooth;
 }
 .thinking-content .markdown-content { color: var(--muted); }
 @keyframes thinking-pulse { 50% { opacity: 1; } }
@@ -2941,7 +2940,6 @@ input:focus,
   .message.assistant.is-running .avatar, .activity-detail, .tool-group-body, .jump-latest { animation:none; }
   .activity-chevron, .activity-head, .tool-group-head, .composer-box, .composer-surface .send { transition:none; }
   .composer-surface .send:not(:disabled):hover { transform:none; }
-  .thinking-content { scroll-behavior:auto; }
 }
 
 .app-shell { position:relative; }
