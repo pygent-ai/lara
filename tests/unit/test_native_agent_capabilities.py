@@ -13,7 +13,6 @@ from pygent.llm import ModelExecution, ModelProviderResponse
 
 from lora.config import load_run_config
 from tests.unit.test_model_configuration import native_runtime_config
-from lora.runtime.context_snapshots import ContextSnapshotStore
 from lora.runtime.service import LoraRuntimeService
 from lora.schema import BashCliPreset
 from lora.sessions import AgentMessageState, SessionCollaborationStore, SessionManager
@@ -385,31 +384,6 @@ async def test_native_react_preserves_skill_cli_and_file_detection(
     )
     assert (Path(run_ref.run_dir) / "diffs" / "diff_events.jsonl").exists()
     assert [message.role for message in context.committed_messages] == [
-        "user",
-        "assistant",
-        "tool",
-        "assistant",
-    ]
-    snapshots = ContextSnapshotStore(session_ref.session_dir).list()
-    assert [snapshot["phase"] for snapshot in snapshots] == [
-        "request",
-        "response",
-        "request",
-        "response",
-    ]
-    assert [snapshot["compression_version"] for snapshot in snapshots] == [
-        0,
-        0,
-        0,
-        0,
-    ]
-    assert [snapshot["messages"][-1]["role"] for snapshot in snapshots] == [
-        "user",
-        "assistant",
-        "tool",
-        "assistant",
-    ]
-    assert [message["role"] for message in snapshots[-1]["messages"]] == [
         "user",
         "assistant",
         "tool",

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from collections import deque
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from lora.runtime.context_snapshots import ContextSnapshotStore
+from lora.core.io import read_json
+from lora.runtime.model_request_journal import ModelRequestJournal
 from lora.tracing import EventStore
 from lora_api.dependencies import ApiContext, get_api_context
 from lora_api.models.responses import TraceEventsResponse
@@ -32,10 +34,8 @@ def get_trace_events(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     store = EventStore(run_ref)
     events, events_total = _latest_jsonl_items(store.events_path, event_limit)
-    snapshots = (
-        []
-        if store.session_dir is None
-        else ContextSnapshotStore(store.session_dir).list()
+    snapshots = _context_snapshots(
+        context, run_ref.run_dir, session_id=session_id, case_run_id=case_run_id
     )
     snapshots_total = len(snapshots)
     snapshots = _latest_items(snapshots, context_snapshot_limit)
@@ -49,6 +49,25 @@ def get_trace_events(
         context_snapshots_total=snapshots_total,
         context_snapshots_truncated=len(snapshots) < snapshots_total,
     )
+
+
+def _context_snapshots(
+    context: ApiContext,
+    run_dir: str,
+    *,
+    session_id: str,
+    case_run_id: str,
+) -> list[dict[str, Any]]:
+    execution_id = read_json(
+        Path(run_dir) / "run_metadata.json", default={}
+    ).get("runtime_execution_id")
+    if not execution_id:
+        return []
+    journal = ModelRequestJournal(context.config.runtime_durability.history_path)
+    return [
+        {**snapshot, "session_id": session_id, "case_run_id": case_run_id}
+        for snapshot in journal.list(execution_id)
+    ]
 
 
 def _latest_jsonl_items(path: Any, limit: int | None) -> tuple[list[dict[str, Any]], int]:

@@ -10,7 +10,6 @@ import pytest
 from pygent.runtime.codec import context_from_dict
 
 from lora.runtime.context import LORA_CONTEXT_CODECS, LoraContext
-from lora.runtime.context_snapshots import ContextSnapshotStore
 from lora.sessions import SessionManager
 from tests.runtime_recovery_support import recovery_service
 
@@ -96,9 +95,6 @@ async def test_pygent_recovers_lora_turn_from_durable_message_boundary(
             assert agent_context.compression_count >= 1
             assert agent_context.projection_revision >= 1
             session_dir = Path(restored.session_dir)
-            snapshots = ContextSnapshotStore(session_dir).list()
-            assert snapshots
-            assert max(item["compression_version"] for item in snapshots) >= 1
             assert not (session_dir / "model_context.json").exists()
             assert not (session_dir / "transcript.jsonl").exists()
             assert not (session_dir / "compactions.jsonl").exists()

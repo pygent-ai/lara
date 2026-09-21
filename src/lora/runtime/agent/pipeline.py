@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 from dataclasses import replace
@@ -47,7 +46,6 @@ from pygent.tool import ToolSideEffect
 from lora.core.io import plain_data, plain_object
 from lora.runtime.context import LoraContext
 from lora.runtime.bash_tasks import BashTaskObservations
-from lora.runtime.context_snapshots import ContextSnapshotStore
 from lora.runtime.eternal_conversation import render_memory_access_instruction
 from lora.runtime.file_effect_models import DeferredFileEffectJob
 from lora.runtime.file_effects import FILE_EFFECT_TOOL_SPEC, DeferredFileEffectBatch
@@ -74,105 +72,6 @@ MANAGED_EFFECT_RECOVERY = ExecutionRequirements(
     recovery_safety=RecoverySafety.MODULE_BOUNDARY_RETRY,
     effect_safety=EffectSafety.MANAGED_EFFECTS,
 )
-
-
-def _context_snapshot_payload(
-    context: LoraContext,
-    current: PygentMessage,
-    *,
-    phase: str = "request",
-    response: AIMessage | None = None,
-) -> dict[str, Any]:
-    messages = [
-        {**message_to_dict(message), "source": "history", "position": index}
-        for index, message in enumerate(context.messages)
-    ]
-    messages.append(
-        {
-            **message_to_dict(current),
-            "source": "current",
-            "position": len(messages),
-        }
-    )
-    if response is not None:
-        messages.append(
-            {
-                **message_to_dict(response),
-                "source": "response",
-                "position": len(messages),
-            }
-        )
-    tools = [
-        {
-            "name": definition.name,
-            "description": definition.description,
-            "parameters": plain_data(definition.parameters),
-        }
-        for definition in context.tools
-    ]
-    identity = {
-        "case_run_id": context.case_run_id,
-        "turn_id": context.turn_id,
-        "compression_version": context.compression_count,
-        "projection_revision": context.projection_revision,
-        "phase": phase,
-        "system_prompt": context.system_prompt,
-        "messages": messages,
-        "tools": tools,
-    }
-    digest = hashlib.sha256(
-        json.dumps(identity, ensure_ascii=False, sort_keys=True).encode("utf-8")
-    ).hexdigest()[:24]
-    return {
-        "schema_version": 2,
-        "snapshot_id": f"context-{digest}",
-        "session_id": context.session_id,
-        "case_run_id": context.case_run_id,
-        "turn_id": context.turn_id,
-        "compression_version": context.compression_count,
-        "projection_revision": context.projection_revision,
-        "phase": phase,
-        "system_prompt": context.system_prompt,
-        "messages": messages,
-        "message_count": len(messages),
-        "tool_count": len(context.tools),
-        "tools": tools,
-    }
-
-
-async def checkpoint_context_snapshot(
-    context: LoraContext,
-    current: PygentMessage,
-    *,
-    phase: str = "request",
-    response: AIMessage | None = None,
-) -> dict[str, Any]:
-    payload = _context_snapshot_payload(
-        context,
-        current,
-        phase=phase,
-        response=response,
-    )
-    store = ContextSnapshotStore(_session_dir_for_run(Path(context.run_dir)))
-
-    async def operation():
-        saved = await asyncio.to_thread(store.save, payload)
-        return freeze_json(saved)
-
-    infrastructure = active_infrastructure()
-    if infrastructure is None:
-        return await asyncio.to_thread(store.save, payload)
-    effect = await infrastructure.execute_effect(
-        spec=EffectSpec(
-            effect_type="lora.context.snapshot",
-            side_effect=EffectSideEffect.WRITE,
-            idempotency=EffectIdempotency.INHERENT,
-            retry_policy=EffectRetryPolicy.REPLAY_SAFE,
-        ),
-        request=freeze_json_object(payload),
-        operation=operation,
-    )
-    return plain_object(thaw_json(effect.value))
 
 
 async def checkpoint_conversation_message(
@@ -513,36 +412,6 @@ class ForegroundModelModule(Module[PygentMessage, AIMessage]):
                     f"after {MAX_EMPTY_TOOL_FOLLOWUP_RETRIES} retries"
                 )
         raise AssertionError("unreachable")
-
-
-class ContextSnapshotModelModule(Module[PygentMessage, AIMessage]):
-    execution_requirements = MANAGED_EFFECT_RECOVERY
-    trusted_live_resource_attributes = ("inner",)
-
-    def __init__(self, inner: Module[PygentMessage, AIMessage]) -> None:
-        super().__init__()
-        self.inner = inner
-
-    async def forward(
-        self, message: PygentMessage, context: LoraContext
-    ) -> tuple[AIMessage, LoraContext]:
-        request_snapshot = await checkpoint_context_snapshot(context, message)
-        await self.emit(
-            kind="lora.context.snapshot",
-            data=freeze_json_object(request_snapshot),
-        )
-        answer, next_context = await self.inner(message, context)
-        response_snapshot = await checkpoint_context_snapshot(
-            next_context,
-            message,
-            phase="response",
-            response=answer,
-        )
-        await self.emit(
-            kind="lora.context.snapshot",
-            data=freeze_json_object(response_snapshot),
-        )
-        return answer, next_context
 
 
 class ConversationCheckpointModelModule(Module[PygentMessage, AIMessage]):
