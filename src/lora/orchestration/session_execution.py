@@ -142,7 +142,6 @@ class SessionExecutionCoordinator:
             run_ref = turn.run_ref
             assert run_ref is not None
             await self._register_case_run(turn)
-            deadline = asyncio.get_running_loop().time() + 30 * 60
             if turn.recovery_execution_id is None:
                 turn.execution_handle = await turn.runtime_service.start_turn(
                     manager=turn.manager,
@@ -154,12 +153,10 @@ class SessionExecutionCoordinator:
                     interactive_approvals=turn.command.interactive_approvals,
                     message_kind=turn.command.message_kind,
                     message_data=turn.command.message_data,
-                    deadline=deadline,
                 )
             else:
                 turn.execution_handle = await turn.runtime_service.recover_turn(
                     turn.recovery_execution_id,
-                    deadline=deadline,
                 )
             execution_handle = turn.execution_handle
             assert execution_handle is not None
