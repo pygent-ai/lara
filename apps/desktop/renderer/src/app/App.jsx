@@ -2,7 +2,7 @@ import { SettingsPage as SettingsPanel } from "../features/settings/SettingsPage
 import { settingsForSave } from "../features/settings/settingsModel.js";
 export { SettingsPanel };
 export { modelGroupValidationError, settingsForSave, protocolLabel, providerSelectionValue, renamedConnectionValue, protocolChoicesForConnection, capabilityPresetLabel } from "../features/settings/settingsModel.js";
-import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Folder,
   FolderCode,
@@ -501,6 +501,30 @@ export function App() {
         }
       };
 
+      // Stream deltas arrive in bursts faster than frames: buffer them and
+      // apply once per animation frame so the transcript renders at display
+      // cadence instead of once per SSE event.
+      let pendingDeltaEvents = [];
+      let deltaFlushQueued = false;
+      const flushDeltaEvents = () => {
+        deltaFlushQueued = false;
+        if (!pendingDeltaEvents.length) {
+          return;
+        }
+        const events = pendingDeltaEvents;
+        pendingDeltaEvents = [];
+        for (const event of events) {
+          projectLiveExecutionEvent(updateVisibleMessages, activeAssistantId, event);
+        }
+      };
+      const scheduleDeltaFlush = () => {
+        if (deltaFlushQueued) {
+          return;
+        }
+        deltaFlushQueued = true;
+        requestAnimationFrame(flushDeltaEvents);
+      };
+
       const nextMessages = recovery ? messagesForRecovery(recovery, assistantId) : [
         ...messagesRef.current,
         { id: `user-${Date.now()}`, role: "user", content: message },
@@ -586,6 +610,16 @@ export function App() {
               if (isStreamSessionVisible()) {
                 setLiveEvents(streamEvents);
               }
+              const isStreamDelta = eventKind === "model.text.delta" || eventKind === "model.reasoning.delta";
+              if (isStreamDelta) {
+                pendingDeltaEvents.push(data);
+                scheduleDeltaFlush();
+              } else {
+                // Queued deltas apply first so structural events (steering
+                // split, tool calls, completion) always read current messages.
+                flushDeltaEvents();
+                projectLiveExecutionEvent(updateVisibleMessages, activeAssistantId, data);
+              }
               // The runtime announces the ReAct boundary it drained a steering
               // input on: that is where the transcript splits and the input stops
               // being pending.
@@ -604,7 +638,6 @@ export function App() {
                 }
                 setPendingSteerings((items) => resolvePendingSteering(items, streamSessionId, inputId));
               }
-              projectLiveExecutionEvent(updateVisibleMessages, activeAssistantId, data);
               if (eventKind === "lora.approval.requested") {
                 setApprovals((items) => [
                   ...items.filter((item) => item.approval_id !== eventData.approval_id),
@@ -635,6 +668,7 @@ export function App() {
             },
           },
         );
+        flushDeltaEvents();
         const currentSessionId = activeSessionIdRef.current;
         if (streamSessionId) {
           pendingSessionMessagesRef.current.delete(streamSessionId);
@@ -655,6 +689,7 @@ export function App() {
           setStatus("Error");
         }
         setError(readableError(err));
+        flushDeltaEvents();
         projectLiveExecutionEvent(updateVisibleMessages, activeAssistantId, {
           kind: "lora.transport.error",
           data: { error: readableError(err) },
@@ -1367,7 +1402,9 @@ function ComposerMenu({ label, title, icon, value, options, disabled, onChange }
   </div>;
 }
 
-function MessageRow({ message, activityCollapseToken, api }) {
+// Memoized: during streaming every applied delta re-renders the transcript
+// once per frame, and only the active assistant message actually changes.
+const MessageRow = memo(function MessageRow({ message, activityCollapseToken, api }) {
   if (message.role === "activity") {
     return <ActivityMessage message={message} collapseToken={activityCollapseToken} api={api} />;
   }
@@ -1397,7 +1434,7 @@ function MessageRow({ message, activityCollapseToken, api }) {
       </div>
     </article>
   );
-}
+});
 
 function MarkdownContent({ content }) {
   const blocks = useMemo(() => parseMarkdownBlocks(content), [content]);
@@ -1516,19 +1553,11 @@ function ActivityMessage({ message, collapseToken, api }) {
   );
 }
 
-export function AssistantActivity({ message, collapseToken, api }) {
+// Owns the per-second clock for the "Processing for Xs" header so the tick
+// re-renders only the header instead of the whole activity subtree.
+function ActivityHeader({ message }) {
   const isRunning = message.status === "running";
-  const [expanded, setExpanded] = useState(isRunning);
   const [now, setNow] = useState(Date.now());
-  const sections = Array.isArray(message.sections) ? message.sections : [];
-  const liveStatus = activityLiveStatus(message);
-  const header = activityHeaderText(message, now);
-  const showDetail =
-    expanded && (sections.length > 0 || liveStatus || (isRunning && !hasVisibleAssistantContent(message)));
-
-  useEffect(() => {
-    setExpanded(message.status === "running");
-  }, [collapseToken, message.id, message.status]);
 
   useEffect(() => {
     if (!isRunning) {
@@ -1539,6 +1568,26 @@ export function AssistantActivity({ message, collapseToken, api }) {
   }, [isRunning]);
 
   return (
+    <span className="activity-title">
+      <span>{activityHeaderText(message, now)}</span>
+      <ChevronRight className="activity-chevron" aria-hidden="true" />
+    </span>
+  );
+}
+
+export function AssistantActivity({ message, collapseToken, api }) {
+  const isRunning = message.status === "running";
+  const [expanded, setExpanded] = useState(isRunning);
+  const sections = Array.isArray(message.sections) ? message.sections : [];
+  const liveStatus = activityLiveStatus(message);
+  const showDetail =
+    expanded && (sections.length > 0 || liveStatus || (isRunning && !hasVisibleAssistantContent(message)));
+
+  useEffect(() => {
+    setExpanded(message.status === "running");
+  }, [collapseToken, message.id, message.status]);
+
+  return (
     <div className={expanded ? "activity expanded" : "activity"}>
       <button
         className="activity-head"
@@ -1546,10 +1595,7 @@ export function AssistantActivity({ message, collapseToken, api }) {
         aria-expanded={expanded}
         onClick={() => setExpanded((value) => !value)}
       >
-        <span className="activity-title">
-          <span>{header}</span>
-          <ChevronRight className="activity-chevron" aria-hidden="true" />
-        </span>
+        <ActivityHeader message={message} />
       </button>
       {showDetail && (
         <div className="activity-detail">
@@ -1593,9 +1639,10 @@ export function ThinkingActivity({ content, running }) {
     ? `…${flattened.slice(-THINKING_PREVIEW_LIMIT)}`
     : flattened;
 
-  // While streaming, keep the newest reasoning in view. The user pausing to
-  // read an earlier part stops the follow until they return near the bottom;
-  // CSS scroll-behavior turns each append into a visible scroll motion.
+  // While streaming, keep the newest reasoning in view, scrolling instantly
+  // in the same cadence as the transcript around it: a smooth inner scroll
+  // restarted by every delta reads as tearing. The user pausing to read an
+  // earlier part stops the follow until they return near the bottom.
   useEffect(() => {
     if (!running) {
       return;
@@ -1643,7 +1690,7 @@ export function ThinkingActivity({ content, running }) {
   );
 }
 
-function ActivityTextSection({ section }) {
+const ActivityTextSection = memo(function ActivityTextSection({ section }) {
   const content = String(section.content || "").trim();
   if (!content) {
     return null;
@@ -1660,9 +1707,9 @@ function ActivityTextSection({ section }) {
       <pre className="activity-block">{content}</pre>
     </section>
   );
-}
+});
 
-function ToolGroup({ section, api }) {
+const ToolGroup = memo(function ToolGroup({ section, api }) {
   const safeCalls = Array.isArray(section.calls) ? section.calls : [];
   const [expanded, setExpanded] = useState(section.status === "running");
 
@@ -1692,7 +1739,7 @@ function ToolGroup({ section, api }) {
       )}
     </section>
   );
-}
+});
 
 function ToolCallRow({ call, api }) {
   const [expanded, setExpanded] = useState(false);
