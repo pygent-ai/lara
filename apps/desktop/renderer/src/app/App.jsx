@@ -465,6 +465,7 @@ export function App() {
       let streamSessionId = initialSessionId || null;
       let streamMessages = messagesRef.current;
       let streamEvents = [];
+      const streamScopeId = recovery?.session.scope_id || activeSession?.scope_id || pendingNewSessionScope || undefined;
       const startedWithoutSession = !streamSessionId;
       // Creating the session takes a round trip; if the user navigates before
       // the started event arrives, that session must not pull the view back.
@@ -529,7 +530,7 @@ export function App() {
             sessionId: streamSessionId,
             caseId: "chat",
             modelGroupName: pendingNewModelGroup || settings.default_model_group || undefined,
-            scopeId: recovery?.session.scope_id || activeSession?.scope_id || pendingNewSessionScope || undefined,
+            scopeId: streamScopeId,
           },
           {
             onConnectionState: (state) => {
@@ -552,7 +553,20 @@ export function App() {
                 pendingSessionMessagesRef.current.set(eventSessionId, streamMessages);
                 if (followSession) {
                   activeSessionIdRef.current = eventSessionId;
-                  setActiveSession((current) => current || { session_id: eventSessionId, scope_id: eventData.scope_id || activeSession?.scope_id });
+                  setActiveSession((current) => current || {
+                    session_id: eventSessionId,
+                    scope_id: eventData.scope_id || streamScopeId,
+                    model_group_name: pendingNewModelGroup || settings.default_model_group,
+                  });
+                  // The started event only carries identifiers, and the
+                  // background poll sleeps while the turn runs: fetch the
+                  // record once so the header and composer show the bound
+                  // group and models during the turn.
+                  void api.getSession(eventSessionId, { scopeId: streamScopeId }).then((detail) => {
+                    if (activeSessionIdRef.current === eventSessionId) {
+                      setActiveSession((current) => (current?.session_id === eventSessionId ? sessionFromDetail(detail) : current));
+                    }
+                  }).catch(() => {});
                 }
               }
               const terminalEvent = ["execution.completed", "execution.failed", "execution.deadline_exceeded", "execution.cancelled", "lora.transport.error"].includes(eventKind);
