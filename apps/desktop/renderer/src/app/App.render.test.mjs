@@ -1267,6 +1267,33 @@ test("entrance animation targets only appended messages, never history reloads",
   assert.equal(computeEnteringMessageIds(previous, "s1", live), NO_ENTERING_MESSAGE_IDS);
 });
 
+test("the transient model-call state shows wherever no other live state does", () => {
+  const render = (sections, content = "") => renderToStaticMarkup(React.createElement(appModule.AssistantActivity, {
+    message: { status: "running", content, startedAt: Date.now(), sections },
+  }));
+  // Turn start: the request is in flight before the first token.
+  assert.match(render([]), /activity-live-status[^>]*>Calling the model\.\.\.</);
+  // Gap between finished tool calls and the next model response.
+  const gap = render([
+    { type: "text", title: "Thinking", content: "First reasoning" },
+    { type: "tools", status: "done", calls: [{ id: "a", name: "read", status: "success" }] },
+    { type: "text", title: "Assistant content", content: "Checked" },
+  ]);
+  assert.match(gap, /activity-live-status[^>]*>Calling the model\.\.\.</);
+  // Actively streaming reasoning is its own state and replaces it.
+  const thinking = render([{ type: "text", title: "Thinking", content: "Streaming" }]);
+  assert.doesNotMatch(thinking, /activity-live-status/);
+  // A running tool call and streamed text each replace it as well.
+  const tooling = render([{ type: "tools", status: "running", calls: [{ id: "b", name: "glob", status: "running" }] }]);
+  assert.doesNotMatch(tooling, /Calling the model/);
+  const streaming = render(
+    [{ type: "tools", status: "done", calls: [{ id: "a", name: "read", status: "success" }] }],
+    "Partial answer",
+  );
+  assert.doesNotMatch(streaming, /Calling the model/);
+  assert.doesNotMatch(streaming, /Waiting for model output/);
+});
+
 test("automation triggers render as system-origin cards with the raw instruction", () => {
   const [message] = appModule.historyToMessages([{
     role: "user",
