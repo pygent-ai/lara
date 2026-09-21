@@ -250,7 +250,7 @@ export function App() {
       setMessages(previewMessages);
       setTraceEvents([]);
       setLiveEvents(previewLiveEvents);
-      setContextSnapshots(contextSnapshotsFromEvents(previewLiveEvents));
+      setContextSnapshots([]);
       let detail;
       try {
         detail = await api.getSession(sessionId, {
@@ -560,9 +560,6 @@ export function App() {
               );
               if (isStreamSessionVisible()) {
                 setLiveEvents(streamEvents);
-              }
-              if (eventKind === "lora.context.snapshot" && isStreamSessionVisible()) {
-                setContextSnapshots((current) => mergeContextSnapshots(current, [eventData]));
               }
               // The runtime announces the ReAct boundary it drained a steering
               // input on: that is where the transcript splits and the input stops
@@ -2061,14 +2058,6 @@ function eventTypePrefix(type) {
 
 function traceEventKey(event, tab, index) {
   return `${tab}:${event.type || "event"}:${event.id || index}`;
-}
-
-export function contextSnapshotsFromEvents(events) {
-  return mergeContextSnapshots(
-    (Array.isArray(events) ? events : [])
-      .filter((event) => event?.type === "lora.context.snapshot")
-      .map((event) => event.payload),
-  );
 }
 
 export function contextSnapshotRuns(snapshots) {

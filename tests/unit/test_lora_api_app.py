@@ -8,7 +8,7 @@ from fastapi import HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from httpx import ASGITransport, AsyncClient
 
-from lora.runtime.context_snapshots import ContextSnapshotStore
+from lora.core.io import read_json, write_json
 from lora.runtime.reminders import BootstrapStatus
 from lora.tracing import EventStore
 from lora_api.app import create_app
@@ -17,6 +17,7 @@ from lora_api.routers.health import health
 from lora_api.routers.tool_results import get_tool_result
 from lora_api.routers.traces import get_trace_events
 from lora_api.services.session_service import SessionService
+from tests.unit.test_model_request_journal import EXECUTION_ID, _prepared_event, _seed_journal
 
 
 @pytest.mark.asyncio
@@ -168,7 +169,10 @@ def test_get_tool_result_returns_persisted_result(tmp_path) -> None:
     }
 
 
-def test_trace_response_includes_session_context_snapshots(tmp_path) -> None:
+def test_trace_response_includes_session_context_snapshots(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
     context = ApiContext(
         workspace_root=str(tmp_path), state_path=str(tmp_path / "state.json")
     )
@@ -176,22 +180,44 @@ def test_trace_response_includes_session_context_snapshots(tmp_path) -> None:
     run = context.manager.start_case_run(
         session.session_id, "chat", run_config=context.config
     )
-    ContextSnapshotStore(session.session_dir).save(
-        {
-            "snapshot_id": "context-1",
-            "session_id": session.session_id,
-            "case_run_id": run.case_run_id,
-            "turn_id": "turn-1",
-            "compression_version": 0,
-            "projection_revision": 1,
-            "system_prompt": "system",
-            "messages": [],
-        }
+    metadata_path = Path(run.run_dir) / "run_metadata.json"
+    metadata = read_json(metadata_path)
+    metadata["runtime_execution_id"] = EXECUTION_ID
+    write_json(metadata_path, metadata)
+    _seed_journal(
+        Path(context.config.runtime_durability.history_path),
+        [(EXECUTION_ID, 0, _prepared_event("event-0"))],
     )
 
     response = get_trace_events(session.session_id, run.case_run_id, context)
 
-    assert [item["snapshot_id"] for item in response.context_snapshots] == ["context-1"]
+    assert [item["snapshot_id"] for item in response.context_snapshots] == [
+        "request-event-0"
+    ]
+    assert response.context_snapshots_total == 1
+    assert all(
+        item["session_id"] == session.session_id
+        and item["case_run_id"] == run.case_run_id
+        for item in response.context_snapshots
+    )
+
+
+def test_trace_response_skips_snapshots_without_journal_execution(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    context = ApiContext(
+        workspace_root=str(tmp_path), state_path=str(tmp_path / "state.json")
+    )
+    session = context.manager.create(case_id="chat", mode="chat")
+    run = context.manager.start_case_run(
+        session.session_id, "chat", run_config=context.config
+    )
+
+    response = get_trace_events(session.session_id, run.case_run_id, context)
+
+    assert response.context_snapshots == []
+    assert response.context_snapshots_total == 0
 
 
 def test_trace_response_can_limit_large_event_windows(tmp_path) -> None:
