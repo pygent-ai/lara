@@ -466,14 +466,21 @@ export function App() {
       let streamMessages = messagesRef.current;
       let streamEvents = [];
       const startedWithoutSession = !streamSessionId;
+      // Creating the session takes a round trip; if the user navigates before
+      // the started event arrives, that session must not pull the view back.
+      const initialLoadToken = sessionLoadTokenRef.current;
       let finalStatus = "Ready";
       let streamError = "";
       // Track the active assistant message id to support split-on-steering.
       let activeAssistantId = assistantId;
 
+      // A stream that has not bound a session yet belongs to the new-chat view
+      // it started in; after lora.chat.started only that session follows it.
       const isStreamSessionVisible = () => {
         const currentSessionId = activeSessionIdRef.current;
-        return currentSessionId === streamSessionId || (startedWithoutSession && !currentSessionId);
+        return streamSessionId
+          ? currentSessionId === streamSessionId
+          : startedWithoutSession && !currentSessionId;
       };
 
       const updateCachedMessages = (updater) => {
@@ -536,10 +543,14 @@ export function App() {
               const eventData = data.data || {};
               const eventSessionId = eventKind === "lora.chat.started" ? String(eventData.session_id || "") : "";
               if (eventSessionId && !streamSessionId) {
+                // Read visibility before binding: an unbound stream is visible
+                // from the new-chat view, and only while the user stayed there.
+                const followSession = isStreamSessionVisible()
+                  && sessionLoadTokenRef.current === initialLoadToken;
                 streamSessionId = eventSessionId;
                 setSessionRunning(eventSessionId, true);
                 pendingSessionMessagesRef.current.set(eventSessionId, streamMessages);
-                if (isStreamSessionVisible()) {
+                if (followSession) {
                   activeSessionIdRef.current = eventSessionId;
                   setActiveSession((current) => current || { session_id: eventSessionId, scope_id: eventData.scope_id || activeSession?.scope_id });
                 }
@@ -613,13 +624,13 @@ export function App() {
         const currentSessionId = activeSessionIdRef.current;
         if (streamSessionId) {
           pendingSessionMessagesRef.current.delete(streamSessionId);
-          await refreshWorkbench({
-            resumeExecution: false,
-            selectSessionId: currentSessionId === streamSessionId || !currentSessionId ? streamSessionId : "",
-            preserveSessionId: currentSessionId && currentSessionId !== streamSessionId ? currentSessionId : "",
-          });
+        }
+        if (streamSessionId && currentSessionId === streamSessionId) {
+          await refreshWorkbench({ resumeExecution: false, selectSessionId: streamSessionId });
         } else {
-          await refreshWorkbench({ selectFirst: true, resumeExecution: false });
+          // The user moved to another chat while this ran, or the turn never
+          // created a session: refresh the sidebar and keep the current view.
+          await sessionGroupSync.refresh();
         }
         if (isStreamSessionVisible()) {
           setStatus(finalStatus);
@@ -646,7 +657,7 @@ export function App() {
         }
       }
     },
-    [activeSession?.scope_id, api, pendingNewModelGroup, pendingNewSessionScope, refreshWorkbench, setSessionRunning, settings.default_model_group],
+    [activeSession?.scope_id, api, pendingNewModelGroup, pendingNewSessionScope, refreshWorkbench, sessionGroupSync, setSessionRunning, settings.default_model_group],
   );
   resumeSessionRef.current = (detail) => handleSendMessage("", detail);
 
