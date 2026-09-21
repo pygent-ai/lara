@@ -627,6 +627,7 @@ button:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  animation: conversation-reveal 180ms ease-out;
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -697,8 +698,18 @@ button:focus-visible {
   margin-bottom: 22px;
 }
 
+/* Plays once per message that enters an already-visible transcript; appended
+   only by ChatPane, so history reloads and session switches never replay it. */
+.message-enter {
+  animation: conversation-reveal 180ms ease-out;
+}
+
 .message.user {
   justify-content: flex-end;
+}
+
+.message.assistant.is-running .avatar {
+  animation: thinking-pulse 1.5s ease-in-out infinite;
 }
 
 .avatar {
@@ -2937,7 +2948,7 @@ input:focus,
 .jump-latest { background:var(--surface); backdrop-filter:blur(12px); border-color:#e2e8f0; font-size:12px; box-shadow:0 4px 18px #24385310; animation:conversation-reveal 180ms ease-out; }
 @keyframes conversation-reveal { from { opacity:0; transform:translateY(3px); } to { opacity:1; transform:translateY(0); } }
 @media (prefers-reduced-motion:reduce) {
-  .message.assistant.is-running .avatar, .activity-detail, .tool-group-body, .jump-latest { animation:none; }
+  .message-enter, .message.assistant.is-running .avatar, .status-pill, .activity-detail, .tool-group-body, .jump-latest { animation:none; }
   .activity-chevron, .activity-head, .tool-group-head, .composer-box, .composer-surface .send { transition:none; }
   .composer-surface .send:not(:disabled):hover { transform:none; }
 }
