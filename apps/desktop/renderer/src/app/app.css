@@ -1254,10 +1254,13 @@ input:focus,
 .thinking-activity[open] .thinking-chevron { transform: rotate(90deg); }
 .thinking-activity[open] .thinking-preview { visibility: hidden; }
 .thinking-content {
+  max-height: 240px;
   margin: 6px 0 12px 2px;
   padding: 2px 0 2px 14px;
   border-left: 1px solid var(--line);
+  overflow-y: auto;
   overflow-wrap: anywhere;
+  scroll-behavior: smooth;
 }
 .thinking-content .markdown-content { color: var(--muted); }
 @keyframes thinking-pulse { 50% { opacity: 1; } }
@@ -2938,6 +2941,7 @@ input:focus,
   .message.assistant.is-running .avatar, .activity-detail, .tool-group-body, .jump-latest { animation:none; }
   .activity-chevron, .activity-head, .tool-group-head, .composer-box, .composer-surface .send { transition:none; }
   .composer-surface .send:not(:disabled):hover { transform:none; }
+  .thinking-content { scroll-behavior:auto; }
 }
 
 .app-shell { position:relative; }

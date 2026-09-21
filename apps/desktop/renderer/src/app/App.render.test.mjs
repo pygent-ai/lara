@@ -1037,44 +1037,66 @@ test("missing or mismatched historical timing does not become a fabricated zero 
   assert.equal(activityHeaderText({ status: "error" }, 6000), "Failed");
 });
 
-test("thinking streams in one preview and completes when the answer or tools begin", () => {
-  const sections = [{ type: "text", title: "Thinking", content: "First line\nSecond line" }];
-  const message = { status: "running", sections, content: "" };
-  const state = appModule.thinkingActivityState(message);
-  assert.equal(state.running, true);
-  const html = renderToStaticMarkup(React.createElement(appModule.ThinkingActivity, state));
-  assert.match(html, /thinking-preview[^>]*>First line Second line</);
-  assert.match(html, /Thinking/);
-  assert.doesNotMatch(html, /<details[^>]* open/);
-  assert.equal(appModule.thinkingActivityState({ ...message, content: "Answer" }).running, false);
-  assert.equal(appModule.thinkingActivityState({ ...message, sections: [...sections, { type: "tools" }] }).running, false);
-  const completed = appModule.thinkingActivityState({ ...message, status: "success" });
-  const finished = renderToStaticMarkup(React.createElement(appModule.ThinkingActivity, completed));
+test("thinking streams with a live preview and completes when the answer or tools begin", () => {
+  const section = { type: "text", title: "Thinking", content: "First line\nSecond line" };
+  const live = renderToStaticMarkup(React.createElement(appModule.AssistantActivity, {
+    message: { status: "running", sections: [section], content: "" },
+  }));
+  assert.match(live, /<details[^>]* open/);
+  assert.match(live, /thinking-preview[^>]*>First line Second line</);
+  assert.match(live, /<span class="thinking-label">Thinking<\/span>/);
+  const longSection = {
+    type: "text", title: "Thinking",
+    content: `HEAD_MARKER ${"x ".repeat(200)}TAIL_END_MARKER`,
+  };
+  const long = renderToStaticMarkup(React.createElement(appModule.AssistantActivity, {
+    message: { status: "running", sections: [longSection], content: "" },
+  }));
+  assert.match(long, /thinking-preview[^>]*>[^<]*TAIL_END_MARKER</);
+  const answered = renderToStaticMarkup(React.createElement(appModule.AssistantActivity, {
+    message: { status: "running", sections: [section], content: "Answer" },
+  }));
+  assert.match(answered, /Thinking complete/);
+  assert.doesNotMatch(answered, /thinking-preview/);
+  assert.doesNotMatch(answered, /<details[^>]* open/);
+  const tooling = renderToStaticMarkup(React.createElement(appModule.AssistantActivity, {
+    message: { status: "running", sections: [section, { type: "tools", status: "running", calls: [] }], content: "" },
+  }));
+  assert.match(tooling, /Thinking complete/);
+  assert.doesNotMatch(tooling, /thinking-preview/);
+  const finished = renderToStaticMarkup(React.createElement(appModule.ThinkingActivity, {
+    content: "First line\nSecond line", running: false,
+  }));
   assert.match(finished, /Thinking complete/);
   assert.doesNotMatch(finished, /thinking-preview/);
+  assert.doesNotMatch(finished, /<details[^>]* open/);
   assert.match(finished, /First line/);
   assert.match(finished, /Second line/);
 });
 
-test("reasoning stays below processing activity and tool output", () => {
+test("reasoning renders in chronological position among activity and tool output", () => {
   const html = renderToStaticMarkup(React.createElement(appModule.AssistantActivity, {
     message: {
       status: "running", content: "", startedAt: Date.now(),
       sections: [
-        { type: "text", title: "Assistant content", content: "Earlier activity" },
+        { type: "text", title: "Thinking", content: "First reasoning" },
         { type: "tools", status: "done", calls: [] },
+        { type: "text", title: "Assistant content", content: "Earlier activity" },
         { type: "text", title: "Thinking", content: "Latest reasoning" },
       ],
     },
   }));
-  assert.ok(html.indexOf("Processing for") < html.indexOf("Earlier activity"));
-  assert.ok(html.indexOf("Earlier activity") < html.indexOf('class="thinking-activity"'));
-  assert.ok(html.indexOf('class="tool-group"') < html.indexOf('class="thinking-activity"'));
-  assert.match(html, /Thinking/);
+  assert.equal((html.match(/class="thinking-activity"/g) || []).length, 2);
+  assert.ok(html.indexOf("Processing for") < html.indexOf("First reasoning"));
+  assert.ok(html.indexOf("First reasoning") < html.indexOf('class="tool-group"'));
+  assert.ok(html.indexOf('class="tool-group"') < html.indexOf("Earlier activity"));
+  assert.ok(html.indexOf("Earlier activity") < html.indexOf("Latest reasoning"));
+  assert.match(html, /<span class="thinking-label">Thinking<\/span>/);
+  assert.match(html, /Thinking complete/);
   assert.doesNotMatch(html, /Waiting for model output/);
 });
 
-test("finished reasoning stays at the bottom while processing continues", () => {
+test("finished reasoning renders in place while processing continues", () => {
   const html = renderToStaticMarkup(React.createElement(appModule.AssistantActivity, {
     message: {
       status: "running", content: "Answer", startedAt: Date.now(),
@@ -1105,8 +1127,11 @@ test("history preserves reasoning from the final assistant message", () => {
     { role: "assistant", content: "Answer", metadata: { reasoning_content: "Full final reasoning" } },
   ]);
   assert.equal(message.content, "Answer");
-  assert.equal(appModule.thinkingActivityState(message).content, "Full final reasoning");
-  assert.equal(appModule.thinkingActivityState(message).running, false);
+  const thinking = (message.sections || []).filter(
+    (section) => section.type === "text" && section.title === "Thinking",
+  );
+  assert.equal(thinking.length, 1);
+  assert.equal(thinking[0].content, "Full final reasoning");
 });
 
 test("model-id changes remain saveable with an existing credential reference", () => {

@@ -1520,12 +1520,11 @@ export function AssistantActivity({ message, collapseToken, api }) {
   const isRunning = message.status === "running";
   const [expanded, setExpanded] = useState(isRunning);
   const [now, setNow] = useState(Date.now());
-  const sections = visibleActivitySections(message);
+  const sections = Array.isArray(message.sections) ? message.sections : [];
   const liveStatus = activityLiveStatus(message);
-  const thinking = thinkingActivityState(message);
   const header = activityHeaderText(message, now);
   const showDetail =
-    expanded && (sections.length > 0 || thinking.content || liveStatus || (isRunning && !hasVisibleAssistantContent(message)));
+    expanded && (sections.length > 0 || liveStatus || (isRunning && !hasVisibleAssistantContent(message)));
 
   useEffect(() => {
     setExpanded(message.status === "running");
@@ -1554,45 +1553,92 @@ export function AssistantActivity({ message, collapseToken, api }) {
       </button>
       {showDetail && (
         <div className="activity-detail">
-          {sections.map((section, index) =>
-            section.type === "tools" ? (
-              <ToolGroup section={section} key={section.id || `tools-${index}`} api={api} />
-            ) : (
-              <ActivityTextSection section={section} key={section.id || `text-${index}`} />
-            ),
-          )}
+          {sections.map((section, index) => {
+            if (section.type === "tools") {
+              return <ToolGroup section={section} key={section.id || `tools-${index}`} api={api} />;
+            }
+            if (section.type === "text" && section.title === "Thinking") {
+              const content = String(section.content || "");
+              if (!content.trim()) {
+                return null;
+              }
+              return (
+                <ThinkingActivity
+                  key={section.id || `thinking-${index}`}
+                  content={content}
+                  running={isRunning && !message.content && index === sections.length - 1}
+                />
+              );
+            }
+            return <ActivityTextSection section={section} key={section.id || `text-${index}`} />;
+          })}
           {liveStatus && <div className="activity-live-status">{liveStatus}</div>}
-          {!sections.length && !thinking.content && !liveStatus && isRunning && !hasVisibleAssistantContent(message) && (
+          {!sections.length && !liveStatus && isRunning && !hasVisibleAssistantContent(message) && (
             <div className="activity-muted">Waiting for model output...</div>
           )}
-          {thinking.content && <ThinkingActivity {...thinking} />}
         </div>
       )}
     </div>
   );
 }
 
-export function thinkingActivityState(message) {
-  const sections = Array.isArray(message.sections) ? message.sections : [];
-  const isThinking = (section) => section.type === "text" && section.title === "Thinking";
-  const lastThinkingIndex = sections.findLastIndex(isThinking);
-  return {
-    content: sections.filter(isThinking).map((section) => String(section.content || "")).filter(Boolean).join("\n\n"),
-    running: message.status === "running" && !message.content && lastThinkingIndex >= 0
-      && lastThinkingIndex === sections.length - 1,
-  };
-}
+const THINKING_PREVIEW_LIMIT = 160;
 
 export function ThinkingActivity({ content, running }) {
+  const contentRef = useRef(null);
+  const followRef = useRef(true);
+  const userClosedRef = useRef(false);
+  const flattened = content.replace(/\s+/g, " ").trim();
+  const preview = flattened.length > THINKING_PREVIEW_LIMIT
+    ? `…${flattened.slice(-THINKING_PREVIEW_LIMIT)}`
+    : flattened;
+
+  // While streaming, keep the newest reasoning in view. The user pausing to
+  // read an earlier part stops the follow until they return near the bottom;
+  // CSS scroll-behavior turns each append into a visible scroll motion.
+  useEffect(() => {
+    if (!running) {
+      return;
+    }
+    const node = contentRef.current;
+    if (node && followRef.current) {
+      node.scrollTop = node.scrollHeight;
+    }
+  }, [content, running]);
+
   return (
-    <details className="thinking-activity">
+    <details
+      className="thinking-activity"
+      open={running && !userClosedRef.current ? true : undefined}
+      onToggle={(event) => {
+        if (!running) {
+          return;
+        }
+        const open = event.currentTarget.open;
+        userClosedRef.current = !open;
+        if (open) {
+          followRef.current = true;
+          const node = contentRef.current;
+          if (node) {
+            node.scrollTop = node.scrollHeight;
+          }
+        }
+      }}
+    >
       <summary className="thinking-summary">
         <span className="thinking-label">{running ? "Thinking" : "Thinking complete"}</span>
         {running && <span className="thinking-indicator running" aria-hidden="true" />}
-        {running && <span className="thinking-preview">{content.replace(/\s+/g, " ").trim()}</span>}
+        {running && <span className="thinking-preview">{preview}</span>}
         <ChevronRight className="thinking-chevron" size={14} aria-hidden="true" />
       </summary>
-      <div className="thinking-content"><MarkdownContent content={content} /></div>
+      <div
+        className="thinking-content"
+        ref={contentRef}
+        onScroll={(event) => {
+          const node = event.currentTarget;
+          followRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 32;
+        }}
+      ><MarkdownContent content={content} /></div>
     </details>
   );
 }
@@ -2449,11 +2495,6 @@ export function projectLiveAssistantEvent(message, event, now = Date.now()) {
   }
 
   return message;
-}
-
-function visibleActivitySections(message) {
-  const sections = Array.isArray(message.sections) ? message.sections : [];
-  return sections.filter((section) => !(section.type === "text" && section.title === "Thinking"));
 }
 
 function activityLiveStatus(message) {
