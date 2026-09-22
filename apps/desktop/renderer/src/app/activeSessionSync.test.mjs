@@ -7,11 +7,17 @@ function fixture(overrides = {}) {
   const resumed = [];
   const detail = { session: { session_id: "child", last_case_run_id: "new-run" }, history: [] };
   const trace = { events: [{ id: "new-event" }], context_snapshots: [{ id: "new-context" }] };
+  const activity = { events: [{ id: "activity-event" }], events_total: 1, events_truncated: false };
   const controller = new AbortController();
   return {
-    snapshots, resumed, detail, trace, controller,
+    snapshots, resumed, detail, trace, activity, controller,
     options: {
-      api: { getSession: async () => detail, getTraceEvents: async () => trace, ...overrides },
+      api: {
+        getSession: async () => detail,
+        getTraceEvents: async () => trace,
+        getSessionActivity: async () => activity,
+        ...overrides,
+      },
       sessionId: "child", scopeId: "conversation", signal: controller.signal,
       isCurrent: () => true,
       onResume: (value) => resumed.push(value),
@@ -24,6 +30,7 @@ test("a background-completed run refreshes trace and context for the open sessio
   const f = fixture();
   let sessionOptions;
   let traceOptions;
+  let activityOptions;
   f.options.api.getSession = async (_sessionId, options) => {
     sessionOptions = options;
     return f.detail;
@@ -34,11 +41,17 @@ test("a background-completed run refreshes trace and context for the open sessio
     traceOptions = options;
     return f.trace;
   };
+  f.options.api.getSessionActivity = async (sessionId, options) => {
+    assert.equal(sessionId, "child");
+    activityOptions = options;
+    return f.activity;
+  };
   await refreshActiveSession(f.options);
   assert.equal(sessionOptions.historyLimit, 200);
   assert.equal(traceOptions.eventLimit, 500);
   assert.equal(traceOptions.contextSnapshotLimit, 50);
-  assert.deepEqual(f.snapshots, [[f.detail, f.trace]]);
+  assert.equal(activityOptions.eventLimit, 500);
+  assert.deepEqual(f.snapshots, [[f.detail, f.trace, f.activity]]);
 });
 
 test("an externally started execution attaches to the existing stream", async () => {
@@ -84,10 +97,11 @@ test("switching sessions or aborting during trace loading discards the stale sna
   }
 });
 
-test("a session without a run clears previous trace and context", async () => {
+test("a session without a run clears previous trace and keeps session activity", async () => {
   const f = fixture({ getTraceEvents: () => assert.fail("no run") });
   f.detail.session.last_case_run_id = null;
   await refreshActiveSession(f.options);
+  assert.deepEqual(f.snapshots[0][2], f.activity);
   assert.deepEqual(f.snapshots[0][1], {
     events: [],
     events_total: 0,

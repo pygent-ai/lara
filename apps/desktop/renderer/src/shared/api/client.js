@@ -9,13 +9,24 @@ export function createApiClient(options = {}) {
     throw new Error("Fetch API is not available");
   }
 
-  async function jsonRequest(path, { method = "GET", body, signal } = {}) {
+  // Polled sidebar list: remember the ETag so unchanged payloads come back
+  // as 304 and the renderer keeps its current state without any work.
+  let sessionGroupsEtag = "";
+
+  async function jsonRequest(path, { method = "GET", body, headers, signal, onResponse } = {}) {
     const response = await fetchImpl(`${baseUrl}${path}`, {
       method,
-      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+      headers: {
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+        ...headers,
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal,
     });
+    onResponse?.(response);
+    if (response.status === 304) {
+      return null;
+    }
     if (!response.ok) {
       const error = new Error(await responseErrorText(response));
       error.status = response.status;
@@ -92,7 +103,28 @@ export function createApiClient(options = {}) {
         body: { scope_id: scopeId },
       }),
     listSessions: (options = {}) => jsonRequest("/sessions", options),
-    listSessionGroups: (options = {}) => jsonRequest("/sessions/groups", options),
+    listSessionGroups: (options = {}) => jsonRequest("/sessions/groups", {
+      ...options,
+      headers: {
+        ...(sessionGroupsEtag ? { "If-None-Match": sessionGroupsEtag } : {}),
+        ...options.headers,
+      },
+      onResponse: (response) => {
+        sessionGroupsEtag = response.headers.get("etag") || "";
+      },
+    }),
+    updateProjectOrder: (orderedScopeIds, options = {}) =>
+      jsonRequest("/projects/order", {
+        ...options,
+        method: "PATCH",
+        body: { ordered_scope_ids: orderedScopeIds },
+      }),
+    updateSessionOrder: (scopeId, orderedSessionIds, options = {}) =>
+      jsonRequest("/sessions/groups/order", {
+        ...options,
+        method: "PATCH",
+        body: { scope_id: scopeId, ordered_session_ids: orderedSessionIds },
+      }),
     createSession: (request = {}, options = {}) =>
       jsonRequest("/sessions", {
         ...options,
@@ -122,6 +154,13 @@ export function createApiClient(options = {}) {
         `/traces/${encodeURIComponent(sessionId)}/${encodeURIComponent(caseRunId)}${queryString({
           event_limit: eventLimit,
           context_snapshot_limit: contextSnapshotLimit,
+        })}`,
+        options,
+      ),
+    getSessionActivity: (sessionId, { eventLimit, ...options } = {}) =>
+      jsonRequest(
+        `/traces/${encodeURIComponent(sessionId)}/activity${queryString({
+          event_limit: eventLimit,
         })}`,
         options,
       ),
@@ -232,7 +271,7 @@ async function streamChatTurn({ baseUrl, fetchImpl, request, onEvent, onConnecti
           if (Number.isFinite(data.sequence)) {
             afterSequence = Math.max(afterSequence ?? -1, data.sequence);
           }
-          terminal ||= ["execution.completed", "execution.failed", "execution.cancelled", "execution.deadline_exceeded", "lora.transport.error"].includes(data.kind);
+          terminal ||= ["execution.completed", "execution.failed", "execution.cancelled", "execution.deadline_exceeded", "lara.transport.error"].includes(data.kind);
           emitStreamEvent(event, onEvent);
         },
         signal,
@@ -375,11 +414,11 @@ function parseSseBlock(block) {
 }
 
 function defaultBaseUrl() {
-  const windowBaseUrl = globalThis.window?.__LORA_API_BASE_URL__;
+  const windowBaseUrl = globalThis.window?.__LARA_API_BASE_URL__;
   if (typeof windowBaseUrl === "string" && windowBaseUrl.trim()) {
     return windowBaseUrl;
   }
-  const viteBaseUrl = import.meta.env?.VITE_LORA_API_BASE_URL;
+  const viteBaseUrl = import.meta.env?.VITE_LARA_API_BASE_URL;
   return typeof viteBaseUrl === "string" && viteBaseUrl.trim() ? viteBaseUrl : DEFAULT_BASE_URL;
 }
 
