@@ -21,6 +21,8 @@ function Invoke-PyInstaller {
     $arguments = @(
         "run",
         "--no-project",
+        "--reinstall-package",
+        "lara",
         "--with",
         "pyinstaller",
         "--with",

@@ -32,6 +32,7 @@
     "electron-builder": "^26.2.1"
   },
   "build": {
+    "electronDist": "../../node_modules/electron/dist",
     "appId": "com.lara.desktop",
     "productName": "Lara Desktop",
     "directories": {
