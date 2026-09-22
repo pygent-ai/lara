@@ -13,21 +13,21 @@
 会话中 agent 一开始确实尝试了 `read`，但连续遇到路径解析失败：
 
 ```text
-read file_path=/root/lora/README.md
-=> 错误：文件不存在 E:\root\lora\README.md
+read file_path=/root/lara/README.md
+=> 错误：文件不存在 E:\root\lara\README.md
 
 bash pwd
-=> /e/Projects/lora
+=> /e/Projects/lara
 
-read file_path=/e/Projects/lora/README.md
-=> 错误：文件不存在 E:\e\Projects\lora\README.md
+read file_path=/e/Projects/lara/README.md
+=> 错误：文件不存在 E:\e\Projects\lara\README.md
 ```
 
 随后 agent 判断 `read` 的路径解析不可靠，改用 `bash cat`、`cat -n`、`sed -n`、`grep` 等命令继续工作。这个行为符合当前提示词里的 fallback 规则，但不是期望的工具使用模式。
 
 ## 问题摘要
 
-在 Windows 主机上，`bash` 工具暴露的是 Git Bash/MSYS 风格路径，例如 `/e/Projects/lora`；而 pygent 的文件类工具按 Windows `Path` 规则解析路径，把 `/e/Projects/lora` 错误转换成 `E:\e\Projects\lora`。
+在 Windows 主机上，`bash` 工具暴露的是 Git Bash/MSYS 风格路径，例如 `/e/Projects/lara`；而 pygent 的文件类工具按 Windows `Path` 规则解析路径，把 `/e/Projects/lara` 错误转换成 `E:\e\Projects\lara`。
 
 这会造成三个后果：
 
@@ -39,16 +39,16 @@ read file_path=/e/Projects/lora/README.md
 
 验证环境：
 
-- workspace root: `E:\Projects\lora`
-- bash 工作目录显示: `/e/Projects/lora`
+- workspace root: `E:\Projects\lara`
+- bash 工作目录显示: `/e/Projects/lara`
 - 工具来源: `pygent.toolkits.FileToolkits` 与 `pygent.toolkits.BashToolkits`
 
-| 工具 | Windows 路径 `E:\Projects\lora` | MSYS 路径 `/e/Projects/lora` | 相对路径 `.` / `README.md` | 结论 |
+| 工具 | Windows 路径 `E:\Projects\lara` | MSYS 路径 `/e/Projects/lara` | 相对路径 `.` / `README.md` | 结论 |
 | --- | --- | --- | --- | --- |
-| `read` | 成功读取 | 失败，解析为 `E:\e\Projects\lora\...` | 拒绝相对文件路径 | 受影响 |
-| `glob` | 成功 | 失败，解析为 `E:\e\Projects\lora` | 成功，按 workspace 解析 | 受影响 |
-| `grep` | 成功 | 失败，解析为 `E:\e\Projects\lora` | 成功，按 workspace 解析 | 受影响 |
-| `bash.working_directory` | 成功 | 失败，解析为 `E:\e\Projects\lora` | 成功，按 workspace 解析 | 受影响 |
+| `read` | 成功读取 | 失败，解析为 `E:\e\Projects\lara\...` | 拒绝相对文件路径 | 受影响 |
+| `glob` | 成功 | 失败，解析为 `E:\e\Projects\lara` | 成功，按 workspace 解析 | 受影响 |
+| `grep` | 成功 | 失败，解析为 `E:\e\Projects\lara` | 成功，按 workspace 解析 | 受影响 |
+| `bash.working_directory` | 成功 | 失败，解析为 `E:\e\Projects\lara` | 成功，按 workspace 解析 | 受影响 |
 | `write` | schema 要求绝对路径 | 同类路径解析风险，且可能创建错误目录 | 拒绝相对路径 | 高风险，需修复并测试 |
 | `edit` | schema 要求绝对路径 | 同类路径解析风险 | 拒绝相对路径 | 需修复并测试 |
 
@@ -86,9 +86,9 @@ read file_path=/e/Projects/lora/README.md
 
 pygent 文件类工具需要在 Windows 上统一支持以下路径输入：
 
-1. Windows 绝对路径：`E:\Projects\lora\README.md`
-2. Windows slash 路径：`E:/Projects/lora/README.md`
-3. Git Bash/MSYS 路径：`/e/Projects/lora/README.md`
+1. Windows 绝对路径：`E:\Projects\lara\README.md`
+2. Windows slash 路径：`E:/Projects/lara/README.md`
+3. Git Bash/MSYS 路径：`/e/Projects/lara/README.md`
 4. workspace 相对路径：按各工具现有策略支持或明确拒绝
 5. `~` 用户目录路径：如果现有工具支持，应保持兼容
 
@@ -103,9 +103,9 @@ pygent 文件类工具需要在 Windows 上统一支持以下路径输入：
 建议支持：
 
 ```text
-/e/Projects/lora/README.md -> E:\Projects\lora\README.md
+/e/Projects/lara/README.md -> E:\Projects\lara\README.md
 /c/Users/name/file.txt     -> C:\Users\name\file.txt
-E:/Projects/lora/file.txt  -> E:\Projects\lora\file.txt
+E:/Projects/lara/file.txt  -> E:\Projects\lara\file.txt
 ```
 
 规则：
@@ -133,7 +133,7 @@ E:/Projects/lora/file.txt  -> E:\Projects\lora\file.txt
 当前 `read` 路径不存在时，工具结果外层表现为成功，内容里包含：
 
 ```text
-错误：文件不存在 E:\e\Projects\lora\README.md
+错误：文件不存在 E:\e\Projects\lara\README.md
 ```
 
 这会误导上层 agent。需求：
@@ -163,7 +163,7 @@ Accepts Windows absolute paths such as E:\Projects\repo\file.txt, Windows slash 
 
 ### 5. 避免写入错误位置
 
-`write` 是最高风险工具。修复前，如果传入 `/e/Projects/lora/out.txt`，实现可能会创建或尝试创建 `E:\e\Projects\lora\out.txt`。
+`write` 是最高风险工具。修复前，如果传入 `/e/Projects/lara/out.txt`，实现可能会创建或尝试创建 `E:\e\Projects\lara\out.txt`。
 
 需求：
 
@@ -188,45 +188,45 @@ Accepts Windows absolute paths such as E:\Projects\repo\file.txt, Windows slash 
 ### read
 
 ```text
-workspace_root = E:\Projects\lora
+workspace_root = E:\Projects\lara
 ```
 
-- `read(file_path="E:\Projects\lora\README.md", limit=2)` 成功。
-- `read(file_path="E:/Projects/lora/README.md", limit=2)` 成功。
-- `read(file_path="/e/Projects/lora/README.md", limit=2)` 成功。
-- `read(file_path="/e/Projects/lora/missing.md")` 返回结构化错误，外层 status 为 `error`。
+- `read(file_path="E:\Projects\lara\README.md", limit=2)` 成功。
+- `read(file_path="E:/Projects/lara/README.md", limit=2)` 成功。
+- `read(file_path="/e/Projects/lara/README.md", limit=2)` 成功。
+- `read(file_path="/e/Projects/lara/missing.md")` 返回结构化错误，外层 status 为 `error`。
 - 如果 `read` 仍拒绝相对路径，`read(file_path="README.md")` 返回结构化错误，schema 必须明确说明。
 
 ### glob
 
-- `glob(path="E:\Projects\lora", pattern="README.md")` 返回 README。
-- `glob(path="E:/Projects/lora", pattern="README.md")` 返回 README。
-- `glob(path="/e/Projects/lora", pattern="README.md")` 返回 README。
+- `glob(path="E:\Projects\lara", pattern="README.md")` 返回 README。
+- `glob(path="E:/Projects/lara", pattern="README.md")` 返回 README。
+- `glob(path="/e/Projects/lara", pattern="README.md")` 返回 README。
 - `glob(path=".", pattern="README.md")` 返回 README。
 - 缺省 `path` 时从 workspace root 搜索。
 
 ### grep
 
-- `grep(path="E:\Projects\lora", pattern="Lora", output_mode="content", head_limit=2)` 成功。
-- `grep(path="E:/Projects/lora", pattern="Lora", output_mode="content", head_limit=2)` 成功。
-- `grep(path="/e/Projects/lora", pattern="Lora", output_mode="content", head_limit=2)` 成功。
-- `grep(path=".", pattern="Lora", output_mode="content", head_limit=2)` 成功。
+- `grep(path="E:\Projects\lara", pattern="Lara", output_mode="content", head_limit=2)` 成功。
+- `grep(path="E:/Projects/lara", pattern="Lara", output_mode="content", head_limit=2)` 成功。
+- `grep(path="/e/Projects/lara", pattern="Lara", output_mode="content", head_limit=2)` 成功。
+- `grep(path=".", pattern="Lara", output_mode="content", head_limit=2)` 成功。
 
 ### bash
 
-- `bash(command="pwd && ls README.md")` 仍在 bash 环境输出 `/e/Projects/lora`。
-- `bash(command="pwd", working_directory="E:\Projects\lora")` 成功。
-- `bash(command="pwd", working_directory="E:/Projects/lora")` 成功。
-- `bash(command="pwd", working_directory="/e/Projects/lora")` 成功。
+- `bash(command="pwd && ls README.md")` 仍在 bash 环境输出 `/e/Projects/lara`。
+- `bash(command="pwd", working_directory="E:\Projects\lara")` 成功。
+- `bash(command="pwd", working_directory="E:/Projects/lara")` 成功。
+- `bash(command="pwd", working_directory="/e/Projects/lara")` 成功。
 - `bash(command="pwd", working_directory=".")` 成功。
 
 ### write
 
-使用临时目录，例如 `E:\Projects\lora\.lora\path-compat-test\write.txt`。
+使用临时目录，例如 `E:\Projects\lara\.lara\path-compat-test\write.txt`。
 
-- `write(file_path="E:\Projects\lora\.lora\path-compat-test\write.txt", content="ok")` 写入目标文件。
-- `write(file_path="E:/Projects/lora/.lora/path-compat-test/write.txt", content="ok")` 写入同一个目标文件。
-- `write(file_path="/e/Projects/lora/.lora/path-compat-test/write.txt", content="ok")` 写入同一个目标文件。
+- `write(file_path="E:\Projects\lara\.lara\path-compat-test\write.txt", content="ok")` 写入目标文件。
+- `write(file_path="E:/Projects/lara/.lara/path-compat-test/write.txt", content="ok")` 写入同一个目标文件。
+- `write(file_path="/e/Projects/lara/.lara/path-compat-test/write.txt", content="ok")` 写入同一个目标文件。
 - 不应创建 `E:\e\Projects\...`。
 - 对 workspace 外路径按现有安全策略允许或拒绝，但必须返回结构化状态。
 
@@ -234,16 +234,16 @@ workspace_root = E:\Projects\lora
 
 使用 `write` 创建的临时文件。
 
-- `edit(file_path="E:\Projects\lora\.lora\path-compat-test\write.txt", old_string="ok", new_string="edited")` 成功。
-- `edit(file_path="E:/Projects/lora/.lora/path-compat-test/write.txt", old_string="edited", new_string="ok")` 成功。
-- `edit(file_path="/e/Projects/lora/.lora/path-compat-test/write.txt", old_string="ok", new_string="edited")` 成功。
+- `edit(file_path="E:\Projects\lara\.lara\path-compat-test\write.txt", old_string="ok", new_string="edited")` 成功。
+- `edit(file_path="E:/Projects/lara/.lara/path-compat-test/write.txt", old_string="edited", new_string="ok")` 成功。
+- `edit(file_path="/e/Projects/lara/.lara/path-compat-test/write.txt", old_string="ok", new_string="edited")` 成功。
 - 不应访问或创建 `E:\e\Projects\...`。
 
 ## 非目标
 
 - 不要求 `read/write/edit` 必须支持相对路径；只要求 schema 与行为一致。
 - 不要求改变 bash 输出路径风格；bash 继续输出 `/e/...` 是可以接受的。
-- 不要求 Lora 在 prompt 中继续用额外规则弥补工具缺陷。修复应优先发生在 pygent 工具层。
+- 不要求 Lara 在 prompt 中继续用额外规则弥补工具缺陷。修复应优先发生在 pygent 工具层。
 
 ## 推荐实现顺序
 
@@ -256,5 +256,5 @@ workspace_root = E:\Projects\lora
 
 ## 成功标准
 
-修复完成后，agent 从 `bash pwd` 得到 `/e/Projects/lora` 后，可以直接把 `/e/Projects/lora/README.md` 交给 `read`，并成功读取文件。模型不再因为结构化文件工具路径失败而转向大量 `bash cat`。
+修复完成后，agent 从 `bash pwd` 得到 `/e/Projects/lara` 后，可以直接把 `/e/Projects/lara/README.md` 交给 `read`，并成功读取文件。模型不再因为结构化文件工具路径失败而转向大量 `bash cat`。
 

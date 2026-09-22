@@ -13,13 +13,13 @@ import pytest
 from pygent import AIMessage, ToolCall, thaw_json
 from pygent.llm import ModelExecution, ModelProviderResponse
 
-from lora.config import load_run_config
+from lara.config import load_run_config
 from tests.unit.test_model_configuration import native_runtime_config
-from lora.runtime.service import LoraRuntimeService
-from lora.sessions import SessionManager
-from lora_api.dependencies import get_api_context
-from lora_api.routers.chat import router
-from lora_api.services.chat_runner import ChatRunRegistry
+from lara.runtime.service import LaraRuntimeService
+from lara.sessions import SessionManager
+from lara_api.dependencies import get_api_context
+from lara_api.routers.chat import router
+from lara_api.services.chat_runner import ChatRunRegistry
 
 
 @pytest.mark.asyncio
@@ -50,7 +50,7 @@ async def test_http_steering_reaches_running_react_and_persists_once(tmp_path: P
     manager = SessionManager(config)
     session = manager.create("chat", mode="chat")
     run = manager.start_case_run(session.session_id, "chat", run_config=config)
-    service = LoraRuntimeService(config)
+    service = LaraRuntimeService(config)
     invoker = Invoker()
     service._model_invokers[config.resolved_agent.alias] = invoker
     for agent in service._agent_definitions.values():
@@ -84,7 +84,7 @@ async def test_http_steering_reaches_running_react_and_persists_once(tmp_path: P
         assert message.content == "use Chinese"
         assert any(item.content == "focus on tests" for item in context.messages)
         history = manager.load(session.session_id).history
-        steering = [item for item in history if item.get("kind") == "lora.user.steering"]
+        steering = [item for item in history if item.get("kind") == "lara.user.steering"]
         assert [item["content"] for item in steering] == ["focus on tests", "use Chinese"]
     finally:
         release.set()
@@ -130,7 +130,7 @@ async def test_steering_announces_its_react_boundary_once(tmp_path: Path) -> Non
     manager = SessionManager(config)
     session = manager.create("chat", mode="chat")
     run = manager.start_case_run(session.session_id, "chat", run_config=config)
-    service = LoraRuntimeService(config)
+    service = LaraRuntimeService(config)
     invoker = Invoker()
     assert config.resolved_agent is not None
     service._model_invokers[config.resolved_agent.alias] = invoker
@@ -160,9 +160,9 @@ async def test_steering_announces_its_react_boundary_once(tmp_path: Path) -> Non
         await asyncio.wait_for(collector, 10)
         boundaries = [
             data for kind, data in streamed
-            if kind == "lora.runtime.message"
+            if kind == "lara.runtime.message"
             and data.get("role") == "user"
-            and data.get("kind") == "lora.user.steering"
+            and data.get("kind") == "lara.user.steering"
         ]
         assert [(item["content"], item["data"]["input_id"]) for item in boundaries] == [
             ("focus on tests", "input-1"),

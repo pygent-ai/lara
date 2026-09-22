@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-from lora.core.io import append_jsonl, read_jsonl_snapshot
+from lara.core.io import append_jsonl, read_jsonl_snapshot
 
 
 def test_jsonl_snapshot_waits_for_an_in_process_append(

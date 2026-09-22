@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lora.evaluation import FailureAnalyzer
-from lora.schema import ContextEvent
+from lara.evaluation import FailureAnalyzer
+from lara.schema import ContextEvent
 
 
 class FailureAnalyzerTests(unittest.TestCase):

@@ -94,8 +94,8 @@ export function useSettingsDraft(settings, api, disabled) {
       const key = nextConnectionKey(current.connections);
       let credentialIndex = 1;
       const used = new Set([...Object.values(current.connections).map(connection => connection.credential?.env), ...Object.keys(current.credentialValues)]);
-      while (used.has(`LORA_PROVIDER_${credentialIndex}_API_KEY`)) credentialIndex += 1;
-      const connection = { ...emptyNativeConnection(key), credential: { env: `LORA_PROVIDER_${credentialIndex}_API_KEY` }, credential_source: "missing", protocols: { openai_chat_completions: { base_url: "" } } };
+      while (used.has(`LARA_PROVIDER_${credentialIndex}_API_KEY`)) credentialIndex += 1;
+      const connection = { ...emptyNativeConnection(key), credential: { env: `LARA_PROVIDER_${credentialIndex}_API_KEY` }, credential_source: "missing", protocols: { openai_chat_completions: { base_url: "" } } };
       return { ...current, connections: { ...current.connections, [key]: connection } };
     });
   }
@@ -165,12 +165,6 @@ export function useSettingsDraft(settings, api, disabled) {
     });
   }
 
-  function applyCapabilityPreset(modelKey, presetName) {
-    const preset = catalogs?.capability_presets?.[presetName];
-    if (!preset) return;
-    setDraft((current) => ({ ...current, models: { ...current.models, [modelKey]: { ...current.models[modelKey], capabilities: structuredClone(preset) } } }));
-  }
-
   async function discoverModelIds(modelKey) {
     const model = draft.models[modelKey];
     if (!api?.discoverModels || !model) return;
@@ -186,5 +180,5 @@ export function useSettingsDraft(settings, api, disabled) {
     }
   }
 
-  return { settings, api, disabled, draft, setDraft, catalogs, discovered, discoveryState, setField, setModel, setModelId, setConnection, setConnectionProvider, setConnectionProtocolUrl, addConnectionProtocol, removeConnectionProtocol, setConnectionAuthentication, addConnection, renameConnection, removeConnection, renameModel, removeModel, toggleGroupModel, moveGroupModel, renameGroup, applyCapabilityPreset, discoverModelIds };
+  return { settings, api, disabled, draft, setDraft, catalogs, discovered, discoveryState, setField, setModel, setModelId, setConnection, setConnectionProvider, setConnectionProtocolUrl, addConnectionProtocol, removeConnectionProtocol, setConnectionAuthentication, addConnection, renameConnection, removeConnection, renameModel, removeModel, toggleGroupModel, moveGroupModel, renameGroup, discoverModelIds };
 }

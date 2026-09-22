@@ -7,11 +7,11 @@ import pytest
 from pygent import AIMessage, PygentAgent, ToolCall, ToolMessage, UserMessage
 from pygent.llm import ModelExecution, ModelProviderResponse
 
-from lora.config import load_run_config
+from lara.config import load_run_config
 from tests.unit.test_model_configuration import native_runtime_config
-from lora.runtime.agent.common import DEFAULT_REACT_MAX_STEPS
-from lora.runtime.agent.core import LoraAgent
-from lora.runtime.eternal_conversation import (
+from lara.runtime.agent.common import DEFAULT_REACT_MAX_STEPS
+from lara.runtime.agent.core import LaraAgent
+from lara.runtime.eternal_conversation import (
     EXTRACTOR_SYSTEM_PROMPT,
     MAX_MEMORY_JOB_ATTEMPTS,
     DynamicMemoryCli,
@@ -22,12 +22,12 @@ from lora.runtime.eternal_conversation import (
     load_projection,
     render_memory_context,
 )
-from lora.runtime.service import (
+from lara.runtime.service import (
     MAX_IDENTICAL_MEMORY_TOOL_REJECTIONS,
-    LoraRuntimeService,
+    LaraRuntimeService,
 )
-from lora.schema import EternalConversationConfig, RunConfig
-from lora.sessions import SessionManager
+from lara.schema import EternalConversationConfig, RunConfig
+from lara.sessions import SessionManager
 
 SCRIPT = (
     Path(__file__).resolve().parents[3]
@@ -157,7 +157,7 @@ async def test_background_memory_runner_uses_native_pygent_react(
 ) -> None:
     config = native_runtime_config(tmp_path)
     invoker = _MemoryReActInvoker()
-    real_agent = LoraAgent
+    real_agent = LaraAgent
     created_react_agents: list[dict] = []
 
     def make_pygent_agent(**kwargs):
@@ -173,13 +173,13 @@ async def test_background_memory_runner_uses_native_pygent_react(
         agent.llm = invoker
         return agent
 
-    monkeypatch.setattr("lora.runtime.service.LoraAgent", make_agent)
-    monkeypatch.setattr("lora.runtime.service.PygentAgent", make_pygent_agent)
-    service = object.__new__(LoraRuntimeService)
+    monkeypatch.setattr("lara.runtime.service.LaraAgent", make_agent)
+    monkeypatch.setattr("lara.runtime.service.PygentAgent", make_pygent_agent)
+    service = object.__new__(LaraRuntimeService)
     service.config = config
     received = []
 
-    from lora.runtime.eternal_conversation import MemoryAgentTool
+    from lara.runtime.eternal_conversation import MemoryAgentTool
 
     async def publish(payload: dict) -> dict:
         if len(payload["value"]) > 700:
@@ -237,7 +237,7 @@ async def test_wait_idle_isolates_failed_background_job_from_foreground() -> Non
 async def test_retry_pending_restarts_only_the_failed_memory_job(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config = RunConfig(workspace_root=str(tmp_path), lora_root=str(tmp_path / ".lora"))
+    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
     manager = SessionManager(config)
     ref = manager.create("retry-memory", mode="chat")
     session = manager.load(ref.session_id)
@@ -273,7 +273,7 @@ async def test_memory_workers_do_not_inherit_foreground_execution_context(
 ) -> None:
     foreground_scope = ContextVar("test_foreground_scope", default=None)
     observed = []
-    config = RunConfig(workspace_root=str(tmp_path), lora_root=str(tmp_path / ".lora"))
+    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
     manager = SessionManager(config)
     ref = manager.create("chat", mode="chat")
     session = manager.load(ref.session_id)
@@ -486,7 +486,7 @@ def test_extractor_retains_named_entities_as_retrievable_memory() -> None:
 async def test_harness_records_raw_history_publishes_snapshot_and_builds_memory(
     tmp_path: Path,
 ) -> None:
-    config = RunConfig(workspace_root=str(tmp_path), lora_root=str(tmp_path / ".lora"))
+    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
     manager = SessionManager(config)
     ref = manager.create("chat", mode="chat")
     session = manager.load(ref.session_id)
@@ -582,7 +582,7 @@ async def test_harness_records_raw_history_publishes_snapshot_and_builds_memory(
 async def test_harness_retries_invalid_json_and_only_freezes_uncovered_history(
     tmp_path: Path,
 ) -> None:
-    config = RunConfig(workspace_root=str(tmp_path), lora_root=str(tmp_path / ".lora"))
+    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
     manager = SessionManager(config)
     ref = manager.create("chat", mode="chat")
     calls: list[tuple[str, dict]] = []
@@ -689,7 +689,7 @@ async def test_harness_retries_invalid_json_and_only_freezes_uncovered_history(
 async def test_failed_builder_keeps_pending_ut_and_recovers_without_rolling_back_turn(
     tmp_path: Path,
 ) -> None:
-    config = RunConfig(workspace_root=str(tmp_path), lora_root=str(tmp_path / ".lora"))
+    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
     manager = SessionManager(config)
     ref = manager.create("chat", mode="chat")
     session = manager.load(ref.session_id)

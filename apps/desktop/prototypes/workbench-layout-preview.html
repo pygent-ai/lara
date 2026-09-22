@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Lora Workbench Layout Preview</title>
+    <title>Lara Workbench Layout Preview</title>
     <style>
       :root {
         --bg: #eef3f5;
@@ -638,8 +638,8 @@
         <div class="history-shell">
           <div class="history-top">
             <div class="brand">
-              <h1 class="brand-title">Lora</h1>
-              <p class="brand-path">E:\Projects\lora</p>
+              <h1 class="brand-title">Lara</h1>
+              <p class="brand-path">E:\Projects\lara</p>
             </div>
             <button class="icon-button" id="toggleHistory" title="展开或收起历史会话" type="button">
               <span class="rail-glyph chevron" id="historyChevron">‹</span>
@@ -741,7 +741,7 @@
 
           <footer class="composer">
             <div class="composer-box">
-              <textarea placeholder="Message Lora..."></textarea>
+              <textarea placeholder="Message Lara..."></textarea>
               <button class="send" type="button">Send</button>
             </div>
           </footer>
@@ -810,7 +810,7 @@
         const collapsed = app.classList.contains("history-collapsed");
         historyChevron.textContent = collapsed ? "›" : "‹";
         historyButton.title = collapsed ? "展开历史会话" : "收起历史会话";
-        brandTitle.textContent = collapsed ? "L" : "Lora";
+        brandTitle.textContent = collapsed ? "L" : "Lara";
       });
 
       traceButton.addEventListener("click", () => {

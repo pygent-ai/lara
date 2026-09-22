@@ -8,14 +8,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lora.core.paths import project_lora_root
+from lara.core.paths import project_lara_root
 from tests.native_config_support import native_model_config_yaml
 
 
 def _isolated_cli_env(root: Path) -> dict[str, str]:
     home = root / "home"
     home.mkdir(parents=True, exist_ok=True)
-    config_path = home / ".lora" / "config.yaml"
+    config_path = home / ".lara" / "config.yaml"
     if not config_path.exists():
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(native_model_config_yaml(), encoding="utf-8")
@@ -33,7 +33,7 @@ def _isolated_cli_env(root: Path) -> dict[str, str]:
 
 
 def _write_user_config(root: Path, content: str) -> None:
-    config_path = root / "home" / ".lora" / "config.yaml"
+    config_path = root / "home" / ".lara" / "config.yaml"
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(content, encoding="utf-8")
 
@@ -65,7 +65,7 @@ class CliScenarioTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "lora",
+                    "lara",
                     "--workspace-root",
                     str(root),
                     "session",
@@ -84,7 +84,7 @@ class CliScenarioTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "lora",
+                    "lara",
                     "--workspace-root",
                     str(root),
                     "session",
@@ -104,7 +104,7 @@ class CliScenarioTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "lora",
+                    "lara",
                     "--workspace-root",
                     str(root),
                     "case",
@@ -120,7 +120,7 @@ class CliScenarioTests(unittest.TestCase):
             )
             run_payload = json.loads(run.stdout)
             self.assertEqual(run_payload["status"], "passed")
-            self.assertIn("Lora agent is wired into chat", run_payload["final_answer"])
+            self.assertIn("Lara agent is wired into chat", run_payload["final_answer"])
             self.assertTrue((Path(run_payload["run_dir"]) / "case.yaml").exists())
             self.assertTrue((Path(run_payload["run_dir"]) / "run_config.json").exists())
             self.assertTrue((Path(run_payload["run_dir"]) / "events.jsonl").exists())
@@ -133,7 +133,7 @@ class CliScenarioTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "lora",
+                    "lara",
                     "--workspace-root",
                     str(root),
                     "case",
@@ -176,7 +176,7 @@ class CliScenarioTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "lora",
+                    "lara",
                     "--workspace-root",
                     str(root),
                     "optimize",
@@ -202,7 +202,7 @@ class CliScenarioTests(unittest.TestCase):
             root = Path(tmp)
             cases_dir = root / "cases"
             cases_dir.mkdir()
-            (project_lora_root(root, root / "home" / ".lora")).mkdir(parents=True)
+            (project_lara_root(root, root / "home" / ".lara")).mkdir(parents=True)
             pass_case = cases_dir / "pass.yaml"
             pass_case.write_text(
                 "\n".join(
@@ -213,7 +213,7 @@ class CliScenarioTests(unittest.TestCase):
                         "expect:",
                         "  answer:",
                         "    contains:",
-                        "      - Lora agent is wired into chat",
+                        "      - Lara agent is wired into chat",
                         "",
                     ]
                 ),
@@ -236,7 +236,7 @@ class CliScenarioTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (
-                project_lora_root(root, root / "home" / ".lora") / "regression.json"
+                project_lara_root(root, root / "home" / ".lara") / "regression.json"
             ).write_text(
                 json.dumps(
                     {
@@ -255,7 +255,7 @@ class CliScenarioTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "lora",
+                    "lara",
                     "--workspace-root",
                     str(root),
                     "regression",
@@ -300,7 +300,7 @@ class CliScenarioTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "lora",
+                    "lara",
                     "--workspace-root",
                     str(root),
                     "session",
@@ -335,7 +335,7 @@ class CliScenarioTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "lora",
+                    "lara",
                     "--workspace-root",
                     str(root),
                     "case",
@@ -352,7 +352,7 @@ class CliScenarioTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "lora",
+                    "lara",
                     "--workspace-root",
                     str(root),
                     "session",
@@ -380,7 +380,7 @@ class CliScenarioTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "lora",
+                    "lara",
                     "--workspace-root",
                     str(root),
                     "session",
@@ -415,7 +415,7 @@ class CliScenarioTests(unittest.TestCase):
                     [
                         sys.executable,
                         "-m",
-                        "lora",
+                        "lara",
                         "--workspace-root",
                         str(root),
                         "case",
@@ -452,7 +452,7 @@ class CliScenarioTests(unittest.TestCase):
                         "expect:",
                         "  answer:",
                         "    contains:",
-                        "      - Lora agent is wired into chat",
+                        "      - Lara agent is wired into chat",
                         "  files:",
                         "    unchanged:",
                         "      - sandbox/input.txt",
@@ -467,7 +467,7 @@ class CliScenarioTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "lora",
+                    "lara",
                     "--workspace-root",
                     str(root),
                     "case",
@@ -525,7 +525,7 @@ class CliScenarioTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "lora",
+                    "lara",
                     "--workspace-root",
                     str(root),
                     "case",
@@ -541,7 +541,7 @@ class CliScenarioTests(unittest.TestCase):
             self.assertIn("workspace.setup[].path", run.stderr)
             self.assertEqual(outside.read_text(encoding="utf-8"), "safe")
             run_dirs = list(
-                (project_lora_root(root, root / "home" / ".lora") / "sessions").glob(
+                (project_lara_root(root, root / "home" / ".lara") / "sessions").glob(
                     "*/cases/unsafe-case/runs/*"
                 )
             )
@@ -557,7 +557,7 @@ class CliScenarioTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "lora",
+                    "lara",
                     "--workspace-root",
                     str(root),
                     "session",
@@ -587,7 +587,7 @@ class CliScenarioTests(unittest.TestCase):
             )
             self.assertEqual(payload["status"], "passed")
             self.assertTrue(payload["execution_id"])
-            self.assertIn("Lora agent is wired into chat", payload["final_answer"])
+            self.assertIn("Lara agent is wired into chat", payload["final_answer"])
             self.assertTrue(payload["session_id"].startswith("chat-chat-"))
             self.assertTrue((run_dir / "events.jsonl").exists())
             self.assertTrue((run_dir / "messages.jsonl").exists())
@@ -603,7 +603,7 @@ class CliScenarioTests(unittest.TestCase):
                 prompt_event["payload"]["prompt_text_path"]
             ).read_text(encoding="utf-8")
             static_prompt = (
-                project_lora_root(root, root / "home" / ".lora")
+                project_lara_root(root, root / "home" / ".lara")
                 / "sessions"
                 / payload["session_id"]
                 / "context"
@@ -616,7 +616,7 @@ class CliScenarioTests(unittest.TestCase):
             self.assertNotIn("# Runtime Context", static_prompt)
             self.assertNotIn("__SYSTEM_PROMPT_REQUEST_BOUNDARY__", rendered_prompt)
             self.assertNotIn("# Runtime Context", rendered_prompt)
-            self.assertIn("# Lora Control Plane", rendered_prompt)
+            self.assertIn("# Lara Control Plane", rendered_prompt)
             self.assertIn("# Available Tools", rendered_prompt)
             self.assertIn("# Tool Result Handling", rendered_prompt)
             self.assertIn("# Context Budget", rendered_prompt)
@@ -628,7 +628,7 @@ class CliScenarioTests(unittest.TestCase):
                 "system.coding_rules", prompt_event["payload"]["static_module_ids"]
             )
             self.assertIn(
-                "system.lora_control_plane",
+                "system.lara_control_plane",
                 prompt_event["payload"]["request_system_module_ids"],
             )
             self.assertIn(
@@ -655,7 +655,7 @@ class CliScenarioTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "lora",
+                    "lara",
                     "--workspace-root",
                     str(root),
                     "session",
@@ -676,7 +676,7 @@ class CliScenarioTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "lora",
+                    "lara",
                     "--workspace-root",
                     str(root),
                     "session",
@@ -702,7 +702,7 @@ class CliScenarioTests(unittest.TestCase):
             base = [
                 sys.executable,
                 "-m",
-                "lora",
+                "lara",
                 "--workspace-root",
                 str(root),
                 "session",
@@ -792,7 +792,7 @@ class CliScenarioTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "lora",
+                    "lara",
                     "--workspace-root",
                     str(root),
                     "chat",
@@ -825,7 +825,7 @@ class CliScenarioTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "lora",
+                    "lara",
                     "--workspace-root",
                     str(root),
                     "--agent",
@@ -877,7 +877,7 @@ class CliScenarioTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "lora",
+                    "lara",
                     "--workspace-root",
                     str(root),
                     "--agent",

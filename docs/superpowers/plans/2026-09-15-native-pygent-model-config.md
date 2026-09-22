@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace Lora's route/fallback model configuration with native Pygent models and model groups, while fixing a conversation to one group and allowing idle-time preferred-model changes that retain fallback.
+**Goal:** Replace Lara's route/fallback model configuration with native Pygent models and model groups, while fixing a conversation to one group and allowing idle-time preferred-model changes that retain fallback.
 
 **Architecture:** The user YAML owns the exact `models` and `model_groups` mapping parsed by `pygent.ModelConfig.from_mapping()`. `RunConfig` carries that immutable native config plus an agent default group; each Session persists its fixed group and preferred child, and runtime admission selects a Pygent dynamic profile whose order is preferred-first followed by the configured remainder. Settings and discovery expose safe native metadata only, while the desktop edits a complete draft and uses explicit Session APIs for model selection.
 
@@ -12,31 +12,31 @@
 
 ## Global Constraints
 
-- Persist `models` and `model_groups` in the exact mapping accepted by `pygent.ModelConfig.from_mapping()`; do not introduce a Lora connection or model-group schema.
+- Persist `models` and `model_groups` in the exact mapping accepted by `pygent.ModelConfig.from_mapping()`; do not introduce a Lara connection or model-group schema.
 - Reject legacy `agents[].model_request.routes` and `fallback`; do not migrate or execute them.
 - Keep an unconfigured installation bootable for Settings, but reject chat execution until a valid native model config and group exist.
 - Store only credential environment-variable references in YAML and API responses; never return, log, or persist credential values in session/run data.
 - A Session chooses its group only at creation. It may change its preferred child only while idle, and fallback remains enabled in configured group order.
 - Use Pygent provider clients, protocol adapters, catalogs, `ModelGroup`, dynamic profiles, and `ExecutionOptions.model_calls` directly.
 - Preserve unrelated user settings during atomic `config.yaml` replacement.
-- Use `.venv\Scripts\python.exe -m pytest` for Python verification while the packaged `lora-api.exe` is running and locking the environment.
+- Use `.venv\Scripts\python.exe -m pytest` for Python verification while the packaged `lara-api.exe` is running and locking the environment.
 
 ---
 
 ### Task 1: Native Config Domain and Loader
 
 **Files:**
-- Modify: `src/lora/schema/models.py`
-- Modify: `src/lora/schema/__init__.py`
-- Modify: `src/lora/config/loader.py`
-- Modify: `src/lora/config/editor.py`
-- Modify: `src/lora/config/__init__.py`
+- Modify: `src/lara/schema/models.py`
+- Modify: `src/lara/schema/__init__.py`
+- Modify: `src/lara/config/loader.py`
+- Modify: `src/lara/config/editor.py`
+- Modify: `src/lara/config/__init__.py`
 - Modify: `tests/unit/test_config.py`
 
 **Interfaces:**
 - Produces: `ResolvedAgentConfig(alias: str, default_model_group: str, retry: ModelRetryConfig)`.
 - Produces: `RunConfig.model_config_mapping: dict[str, Any]`, `RunConfig.model_config: ModelConfig | None`, `RunConfig.model_configuration_status: Literal["configured", "unconfigured", "legacy"]`, and `RunConfig.model_configuration_error: str | None`.
-- Produces: `replace_user_model_config(user_lora_root, *, model_config, agents) -> Path`, which validates before atomically preserving unrelated YAML keys.
+- Produces: `replace_user_model_config(user_lara_root, *, model_config, agents) -> Path`, which validates before atomically preserving unrelated YAML keys.
 - Consumes: Pygent `ModelConfig.from_mapping()` as the only model/group parser.
 
 - [ ] **Step 1: Replace route-loader tests with native and unconfigured-state failures**
@@ -44,8 +44,8 @@
 ```python
 def test_native_pygent_model_config_is_loaded_without_route_translation(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    (tmp_path / ".lora").mkdir()
-    (tmp_path / ".lora" / "config.yaml").write_text(NATIVE_CONFIG, encoding="utf-8")
+    (tmp_path / ".lara").mkdir()
+    (tmp_path / ".lara" / "config.yaml").write_text(NATIVE_CONFIG, encoding="utf-8")
     config = load_run_config(workspace_root=tmp_path / "workspace")
     assert tuple(config.model_config.models) == ("main", "backup")
     assert tuple(entry.name for entry in config.model_config.model_groups["coding"].models) == ("main", "backup")
@@ -122,20 +122,20 @@ Run: `.venv\Scripts\python.exe -m pytest tests/unit/test_config.py -q`
 Expected: PASS.
 
 ```powershell
-git add src/lora/schema src/lora/config tests/unit/test_config.py
+git add src/lara/schema src/lara/config tests/unit/test_config.py
 git commit -m "feat: load native pygent model configuration"
 ```
 
 ### Task 2: Pygent-Native Client, Adapter, Catalog, and Discovery Services
 
 **Files:**
-- Create: `src/lora/runtime/model_configuration.py`
-- Modify: `src/lora/runtime/__init__.py`
+- Create: `src/lara/runtime/model_configuration.py`
+- Modify: `src/lara/runtime/__init__.py`
 - Create: `tests/unit/test_model_configuration.py`
 
 **Interfaces:**
-- Produces: `CredentialEnvironment(user_lora_root: Path, transient: Mapping[str, str] = {})`, a read-only mapping that resolves env-file, process-environment, and keyring values without copying secrets into config objects.
-- Produces: `build_model_invoker(config: ModelConfig, *, credential_environ: Mapping[str, str]) -> LoraModelInvoker`.
+- Produces: `CredentialEnvironment(user_lara_root: Path, transient: Mapping[str, str] = {})`, a read-only mapping that resolves env-file, process-environment, and keyring values without copying secrets into config objects.
+- Produces: `build_model_invoker(config: ModelConfig, *, credential_environ: Mapping[str, str]) -> LaraModelInvoker`.
 - Produces: `preferred_models(config: ModelConfig, group_name: str, preferred_model_key: str) -> tuple[ModelEntry, ...]`.
 - Produces: `preferred_profile_name(model_key: str) -> str` returning `preferred:<model_key>`.
 - Produces: `discover_models(*, protocol: str, connection: ModelConnection, timeout: float = 10.0) -> tuple[ModelInfo, ...]`.
@@ -165,7 +165,7 @@ def test_build_model_invoker_uses_each_native_protocol(protocol):
 
 Run: `.venv\Scripts\python.exe -m pytest tests/unit/test_model_configuration.py -q`
 
-Expected: FAIL because `lora.runtime.model_configuration` does not exist.
+Expected: FAIL because `lara.runtime.model_configuration` does not exist.
 
 - [ ] **Step 3: Implement native factories without URL/provider guessing**
 
@@ -193,7 +193,7 @@ def preferred_models(config, group_name, preferred_model_key):
     return (by_name[preferred_model_key], *(entry for entry in group.models if entry.name != preferred_model_key))
 ```
 
-Resolve `connection.credential` with Pygent's `CredentialRef.resolve(credential_environ)`, where `CredentialEnvironment.__getitem__()` delegates to Lora's existing `lookup_credential()` so user-file, environment, and keyring sources remain supported. For `proxy`, inject an `httpx.AsyncClient(proxy=connection.proxy, verify=connection.verify_ssl)` and wrap the native client in a small ownership adapter whose `aclose()` closes both the Pygent client and injected HTTP client; otherwise pass `verify_ssl` directly to the native Pygent client. Merge the four native adapter maps and reject unsupported protocols by exact protocol value.
+Resolve `connection.credential` with Pygent's `CredentialRef.resolve(credential_environ)`, where `CredentialEnvironment.__getitem__()` delegates to Lara's existing `lookup_credential()` so user-file, environment, and keyring sources remain supported. For `proxy`, inject an `httpx.AsyncClient(proxy=connection.proxy, verify=connection.verify_ssl)` and wrap the native client in a small ownership adapter whose `aclose()` closes both the Pygent client and injected HTTP client; otherwise pass `verify_ssl` directly to the native Pygent client. Merge the four native adapter maps and reject unsupported protocols by exact protocol value.
 
 - [ ] **Step 4: Add discovery lifecycle tests and implementation**
 
@@ -217,15 +217,15 @@ Run: `.venv\Scripts\python.exe -m pytest tests/unit/test_model_configuration.py 
 Expected: PASS.
 
 ```powershell
-git add src/lora/runtime/model_configuration.py src/lora/runtime/__init__.py tests/unit/test_model_configuration.py
+git add src/lara/runtime/model_configuration.py src/lara/runtime/__init__.py tests/unit/test_model_configuration.py
 git commit -m "feat: build model clients from pygent configuration"
 ```
 
 ### Task 3: Session Model Selection Persistence
 
 **Files:**
-- Modify: `src/lora/schema/models.py`
-- Modify: `src/lora/sessions/manager.py`
+- Modify: `src/lara/schema/models.py`
+- Modify: `src/lara/sessions/manager.py`
 - Modify: `tests/unit/test_session_manager.py`
 
 **Interfaces:**
@@ -285,17 +285,17 @@ Run: `.venv\Scripts\python.exe -m pytest tests/unit/test_session_manager.py test
 Expected: PASS.
 
 ```powershell
-git add src/lora/schema/models.py src/lora/sessions/manager.py tests/unit/test_session_manager.py tests/unit/test_schema.py
+git add src/lara/schema/models.py src/lara/sessions/manager.py tests/unit/test_session_manager.py tests/unit/test_schema.py
 git commit -m "feat: persist session model selection"
 ```
 
 ### Task 4: Runtime Dynamic Profiles and Admission
 
 **Files:**
-- Modify: `src/lora/runtime/agent/core.py`
-- Modify: `src/lora/runtime/service.py`
-- Modify: `src/lora/orchestration/session_turns.py`
-- Modify: `src/lora/orchestration/runtime_keys.py`
+- Modify: `src/lara/runtime/agent/core.py`
+- Modify: `src/lara/runtime/service.py`
+- Modify: `src/lara/orchestration/session_turns.py`
+- Modify: `src/lara/orchestration/runtime_keys.py`
 - Modify: `tests/unit/test_model_usage_defaults.py`
 - Modify: `tests/unit/test_runtime_service.py`
 - Modify: `tests/unit/test_runtime_pool.py`
@@ -303,8 +303,8 @@ git commit -m "feat: persist session model selection"
 **Interfaces:**
 - Consumes: Task 2 `build_model_invoker`, `preferred_models`, and `preferred_profile_name`.
 - Consumes: Task 3 `SessionManager.model_selection()`.
-- Changes: `LoraAgent.__init__(..., model_group_name: str | None = None)` resolves the explicit Session group or the agent default.
-- Changes: `LoraAgent.new_model_layer()` declares `ModelGroup.deferred(name=f"lora:{group_name}")` and `ModelCallPolicy(allow_profile_override=True)` for managed execution; direct background execution uses the same native group as a concrete `ModelGroup`.
+- Changes: `LaraAgent.__init__(..., model_group_name: str | None = None)` resolves the explicit Session group or the agent default.
+- Changes: `LaraAgent.new_model_layer()` declares `ModelGroup.deferred(name=f"lara:{group_name}")` and `ModelCallPolicy(allow_profile_override=True)` for managed execution; direct background execution uses the same native group as a concrete `ModelGroup`.
 - Changes: `RuntimeService.new_agent(*, interactive_approvals: bool, model_group_name: str, config: RunConfig | None = None)` includes the group name in its definition cache key.
 - Changes: `RuntimeService.bind(module, agent)` publishes one immutable profile per group child.
 - Changes: every Session execution passes `ExecutionOptions(model_calls={requirement_name: {"profile": preferred_profile_name(selected_model_key)}})`.
@@ -324,7 +324,7 @@ async def test_bind_publishes_one_preferred_first_profile_per_child(native_agent
 async def test_start_turn_admits_persisted_session_preference(native_session):
     await service.start_turn(manager=manager, message="hello", run_ref=run_ref, turn_id="turn-1", interactive_approvals=True)
     options = service._start_agent_execution.await_args.kwargs["execution"]
-    assert options.model_calls == {"lora:coding": {"profile": "preferred:backup"}}
+    assert options.model_calls == {"lara:coding": {"profile": "preferred:backup"}}
 ```
 
 - [ ] **Step 2: Run runtime tests and verify RED**
@@ -338,8 +338,8 @@ Expected: FAIL because binding publishes only one legacy profile and admission h
 ```python
 def new_model_layer(self) -> ModelCallLayer:
     native_group = self.config.model_config.model_groups[self.model_group_name]
-    group = ModelGroup.deferred(name=f"lora:{self.model_group_name}") if self.managed_model else ModelGroup(
-        name=f"lora:{self.model_group_name}", models=native_group.models,
+    group = ModelGroup.deferred(name=f"lara:{self.model_group_name}") if self.managed_model else ModelGroup(
+        name=f"lara:{self.model_group_name}", models=native_group.models,
     )
     retry = self.resolved_agent.retry
     return ModelCallLayer(
@@ -374,18 +374,18 @@ Run: `.venv\Scripts\python.exe -m pytest tests/unit/test_model_usage_defaults.py
 Expected: PASS.
 
 ```powershell
-git add src/lora/runtime/agent/core.py src/lora/runtime/service.py src/lora/orchestration tests/unit/test_model_usage_defaults.py tests/unit/test_runtime_service.py tests/unit/test_runtime_pool.py
+git add src/lara/runtime/agent/core.py src/lara/runtime/service.py src/lara/orchestration tests/unit/test_model_usage_defaults.py tests/unit/test_runtime_service.py tests/unit/test_runtime_pool.py
 git commit -m "feat: select session models with pygent profiles"
 ```
 
 ### Task 5: Native Settings, Catalog, and Discovery API
 
 **Files:**
-- Modify: `src/lora_api/models/requests.py`
-- Modify: `src/lora_api/models/responses.py`
-- Modify: `src/lora_api/routers/settings.py`
-- Modify: `src/lora_api/services/project_service.py`
-- Modify: `tests/unit/test_lora_api_settings.py`
+- Modify: `src/lara_api/models/requests.py`
+- Modify: `src/lara_api/models/responses.py`
+- Modify: `src/lara_api/routers/settings.py`
+- Modify: `src/lara_api/services/project_service.py`
+- Modify: `tests/unit/test_lara_api_settings.py`
 - Modify: `tests/unit/test_secrets.py`
 
 **Interfaces:**
@@ -413,7 +413,7 @@ def test_settings_remain_available_for_legacy_config(legacy_context):
 
 - [ ] **Step 2: Run focused API settings tests and verify RED**
 
-Run: `.venv\Scripts\python.exe -m pytest tests/unit/test_lora_api_settings.py tests/unit/test_secrets.py -q`
+Run: `.venv\Scripts\python.exe -m pytest tests/unit/test_lara_api_settings.py tests/unit/test_secrets.py -q`
 
 Expected: FAIL because request/response models still expose route fields.
 
@@ -433,24 +433,24 @@ Map Pygent validation failures to HTTP 422 with `{"code": "invalid_model_configu
 
 - [ ] **Step 5: Run API tests and commit**
 
-Run: `.venv\Scripts\python.exe -m pytest tests/unit/test_lora_api_settings.py tests/unit/test_secrets.py tests/unit/test_lora_api_app.py -q`
+Run: `.venv\Scripts\python.exe -m pytest tests/unit/test_lara_api_settings.py tests/unit/test_secrets.py tests/unit/test_lara_api_app.py -q`
 
 Expected: PASS.
 
 ```powershell
-git add src/lora_api src/lora/config tests/unit/test_lora_api_settings.py tests/unit/test_secrets.py tests/unit/test_lora_api_app.py
+git add src/lara_api src/lara/config tests/unit/test_lara_api_settings.py tests/unit/test_secrets.py tests/unit/test_lara_api_app.py
 git commit -m "feat: expose native pygent model settings"
 ```
 
 ### Task 6: Session Creation and Preferred-Model API
 
 **Files:**
-- Modify: `src/lora/orchestration/session_execution.py`
-- Modify: `src/lora_api/models/requests.py`
-- Modify: `src/lora_api/models/responses.py`
-- Modify: `src/lora_api/routers/sessions.py`
-- Modify: `src/lora_api/services/session_service.py`
-- Modify: `tests/unit/test_lora_api_session_groups.py`
+- Modify: `src/lara/orchestration/session_execution.py`
+- Modify: `src/lara_api/models/requests.py`
+- Modify: `src/lara_api/models/responses.py`
+- Modify: `src/lara_api/routers/sessions.py`
+- Modify: `src/lara_api/services/session_service.py`
+- Modify: `tests/unit/test_lara_api_session_groups.py`
 - Modify: `tests/unit/test_session_execution_coordinator.py`
 
 **Interfaces:**
@@ -481,7 +481,7 @@ Also cover different sessions using different groups, unknown group, out-of-grou
 
 - [ ] **Step 2: Run focused Session API tests and verify RED**
 
-Run: `.venv\Scripts\python.exe -m pytest tests/unit/test_lora_api_session_groups.py tests/unit/test_session_execution_coordinator.py -q`
+Run: `.venv\Scripts\python.exe -m pytest tests/unit/test_lara_api_session_groups.py tests/unit/test_session_execution_coordinator.py -q`
 
 Expected: FAIL because Session responses and the model update endpoint do not exist.
 
@@ -495,12 +495,12 @@ Before Task 5's config replacement, enumerate all known Session scopes from `bui
 
 - [ ] **Step 5: Run tests and commit**
 
-Run: `.venv\Scripts\python.exe -m pytest tests/unit/test_lora_api_session_groups.py tests/unit/test_session_execution_coordinator.py tests/unit/test_lora_api_settings.py -q`
+Run: `.venv\Scripts\python.exe -m pytest tests/unit/test_lara_api_session_groups.py tests/unit/test_session_execution_coordinator.py tests/unit/test_lara_api_settings.py -q`
 
 Expected: PASS.
 
 ```powershell
-git add src/lora/orchestration/session_execution.py src/lora_api tests/unit/test_lora_api_session_groups.py tests/unit/test_session_execution_coordinator.py tests/unit/test_lora_api_settings.py
+git add src/lara/orchestration/session_execution.py src/lara_api tests/unit/test_lara_api_session_groups.py tests/unit/test_session_execution_coordinator.py tests/unit/test_lara_api_settings.py
 git commit -m "feat: manage fixed session model groups"
 ```
 
@@ -629,13 +629,13 @@ git commit -m "feat: select conversation models in desktop"
 ### Task 9: Contracts, Examples, Documentation, and Full Verification
 
 **Files:**
-- Modify: `contracts/openapi/lora-api.json`
+- Modify: `contracts/openapi/lara-api.json`
 - Modify: `docs/api/local-service.md`
 - Modify: `docs/guides/api-key-management.md`
-- Modify: `src/lora/config/README.md`
-- Modify: `src/lora/runtime/README.md`
-- Modify: `src/lora/sessions/README.md`
-- Modify: `lora.yaml.example`
+- Modify: `src/lara/config/README.md`
+- Modify: `src/lara/runtime/README.md`
+- Modify: `src/lara/sessions/README.md`
+- Modify: `lara.yaml.example`
 - Modify: `user-config.yaml.example`
 - Modify: `.env.example`
 - Modify: tests and fixtures still referencing `routes`, `fallback`, `model_name`, or `max_attempts_per_route`
@@ -646,7 +646,7 @@ git commit -m "feat: select conversation models in desktop"
 
 - [ ] **Step 1: Locate and replace remaining active legacy references**
 
-Run: `rg -n "model_request\.routes|routes:|fallback:|model_name|max_attempts_per_route" src tests apps contracts lora.yaml.example user-config.yaml.example .env.example docs/api docs/guides src/lora/*/README.md`
+Run: `rg -n "model_request\.routes|routes:|fallback:|model_name|max_attempts_per_route" src tests apps contracts lara.yaml.example user-config.yaml.example .env.example docs/api docs/guides src/lara/*/README.md`
 
 Expected: matches identify fixtures, contract fields, and active documentation that must use native `models`, `model_groups`, `model_id`, and `max_attempts_per_model`. Historical design/feedback documents remain unchanged.
 
@@ -656,15 +656,15 @@ Use the complete native example from the approved spec, including explicit capab
 
 - [ ] **Step 3: Regenerate or update OpenAPI and assert contract endpoints**
 
-Run: `.venv\Scripts\python.exe -c "import json; from lora_api.app import create_app; json.dump(create_app().openapi(), open('contracts/openapi/lora-api.json','w',encoding='utf-8'), ensure_ascii=False, indent=2)"`
+Run: `.venv\Scripts\python.exe -c "import json; from lara_api.app import create_app; json.dump(create_app().openapi(), open('contracts/openapi/lara-api.json','w',encoding='utf-8'), ensure_ascii=False, indent=2)"`
 
 Then add/adjust API tests asserting `/settings/model-catalogs`, `/settings/models/discover`, `/sessions/{session_id}/model`, native settings fields, and absence of route response fields.
 
 - [ ] **Step 4: Run static and focused verification**
 
-Run: `.venv\Scripts\python.exe -m pytest tests/unit/test_config.py tests/unit/test_model_configuration.py tests/unit/test_model_usage_defaults.py tests/unit/test_lora_api_settings.py tests/unit/test_lora_api_session_groups.py -q`
+Run: `.venv\Scripts\python.exe -m pytest tests/unit/test_config.py tests/unit/test_model_configuration.py tests/unit/test_model_usage_defaults.py tests/unit/test_lara_api_settings.py tests/unit/test_lara_api_session_groups.py -q`
 
-Run: `.venv\Scripts\python.exe -m pyright src/lora/config src/lora/schema src/lora/runtime/model_configuration.py src/lora/runtime/agent/core.py src/lora/runtime/service.py src/lora_api`
+Run: `.venv\Scripts\python.exe -m pyright src/lara/config src/lara/schema src/lara/runtime/model_configuration.py src/lara/runtime/agent/core.py src/lara/runtime/service.py src/lara_api`
 
 Run: `npm --prefix apps/desktop test`
 
@@ -681,6 +681,6 @@ Expected: the complete Python suite passes (including scenario tests and subtest
 - [ ] **Step 6: Commit final contracts and documentation**
 
 ```powershell
-git add contracts docs src/lora/config/README.md src/lora/runtime/README.md src/lora/sessions/README.md lora.yaml.example user-config.yaml.example .env.example tests
+git add contracts docs src/lara/config/README.md src/lara/runtime/README.md src/lara/sessions/README.md lara.yaml.example user-config.yaml.example .env.example tests
 git commit -m "docs: document native pygent model groups"
 ```

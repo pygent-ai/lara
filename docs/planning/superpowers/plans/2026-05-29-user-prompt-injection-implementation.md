@@ -17,9 +17,9 @@
 **Files:**
 - Modify: `tests/unit/test_config.py`
 - Modify: `tests/unit/test_runtime_adapter.py`
-- Modify: `src/lora/schema/models.py`
-- Modify: `src/lora/config.py`
-- Modify: `src/lora/runtime.py`
+- Modify: `src/lara/schema/models.py`
+- Modify: `src/lara/config.py`
+- Modify: `src/lara/runtime.py`
 
 - [ ] **Step 1: Write failing tests**
 
@@ -44,7 +44,7 @@ Expected: pass.
 **Files:**
 - Modify: `tests/unit/test_runtime_adapter.py`
 - Modify: `tests/scenario/test_cli_flow.py`
-- Modify: `src/lora/agent.py`
+- Modify: `src/lara/agent.py`
 
 - [ ] **Step 1: Write failing tests**
 
@@ -68,7 +68,7 @@ Expected: pass.
 
 **Files:**
 - Modify: `tests/unit/test_runtime_adapter.py`
-- Modify: `src/lora/agent.py`
+- Modify: `src/lara/agent.py`
 
 - [ ] **Step 1: Write failing test**
 

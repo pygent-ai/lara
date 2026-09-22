@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lora.config import load_run_config
-from lora.core.io import append_jsonl
-from lora.runtime.context_compression import (
+from lara.config import load_run_config
+from lara.core.io import append_jsonl
+from lara.runtime.context_compression import (
     collect_recent_file_reads,
     parse_summary,
     render_file_read_block,
@@ -126,7 +126,7 @@ def test_context_compression_config_resolves_from_model_and_runtime_config(
     monkeypatch,
 ) -> None:
     home = tmp_path / "home"
-    user_root = home / ".lora"
+    user_root = home / ".lara"
     user_root.mkdir(parents=True)
     (user_root / "config.yaml").write_text(
         """agent:
@@ -149,7 +149,7 @@ context_compression:
 """,
         encoding="utf-8",
     )
-    monkeypatch.setattr("lora.config.loader.Path.home", lambda: home)
+    monkeypatch.setattr("lara.config.loader.Path.home", lambda: home)
 
     config = load_run_config(workspace_root=tmp_path)
 

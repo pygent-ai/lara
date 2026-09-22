@@ -1,4 +1,4 @@
-export const ACKNOWLEDGED_SESSION_STATUSES_KEY = "lora.desktop.acknowledged-session-statuses.v1";
+export const ACKNOWLEDGED_SESSION_STATUSES_KEY = "lara.desktop.acknowledged-session-statuses.v1";
 
 export function sessionStatusIdentity(session) {
   return [

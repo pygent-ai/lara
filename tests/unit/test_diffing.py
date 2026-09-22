@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from lora.tracing.diffing import DiffRecorder
+from lara.tracing.diffing import DiffRecorder
 
 
 class _Store:

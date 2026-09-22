@@ -6,17 +6,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lora.evaluation import CaseManager, RegressionRegistrar, TestGenerator
-from lora.schema import RunConfig
-from lora.sessions import SessionManager
-from lora.tracing import EventStore
+from lara.evaluation import CaseManager, RegressionRegistrar, TestGenerator
+from lara.schema import RunConfig
+from lara.sessions import SessionManager
+from lara.tracing import EventStore
 
 
 class TestGeneratorTests(unittest.TestCase):
     def test_generate_failed_run_writes_case_metadata_and_event(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            config = RunConfig(workspace_root=root, lora_root=root / ".lora")
+            config = RunConfig(workspace_root=root, lara_root=root / ".lara")
             manager = SessionManager(config)
             source_case = _write_case(root / "case.yaml", expected="missing-token")
             session = manager.create("source-case")
@@ -67,7 +67,7 @@ class TestGeneratorTests(unittest.TestCase):
     def test_generate_passed_run_is_skipped(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            config = RunConfig(workspace_root=root, lora_root=root / ".lora")
+            config = RunConfig(workspace_root=root, lara_root=root / ".lara")
             manager = SessionManager(config)
             source_case = _write_case(root / "case.yaml", expected="ok")
             session = manager.create("source-case")
@@ -94,7 +94,7 @@ class RegressionRegistrarTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "cases").mkdir()
-            config = RunConfig(workspace_root=root, lora_root=root / ".lora")
+            config = RunConfig(workspace_root=root, lara_root=root / ".lara")
             z_case = _write_case(root / "cases" / "z.yaml", expected="z")
             a_case = _write_case(
                 root / "cases" / "a.yaml", expected="a", case_id="a-case"
@@ -106,7 +106,7 @@ class RegressionRegistrarTests(unittest.TestCase):
             duplicate = registrar.register(z_case)
 
             manifest = json.loads(
-                (root / ".lora" / "regression.json").read_text(encoding="utf-8")
+                (root / ".lara" / "regression.json").read_text(encoding="utf-8")
             )
             self.assertEqual(first["status"], "registered")
             self.assertEqual(duplicate["status"], "unchanged")

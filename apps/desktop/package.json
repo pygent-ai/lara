@@ -1,5 +1,5 @@
 {
-  "name": "@lora/desktop",
+  "name": "@lara/desktop",
   "private": true,
   "version": "0.3.2",
   "type": "module",
@@ -23,6 +23,8 @@
     "lucide-react": "^1.21.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "vite": "^7.2.7"
   },
   "devDependencies": {
@@ -30,8 +32,8 @@
     "electron-builder": "^26.2.1"
   },
   "build": {
-    "appId": "com.lora.desktop",
-    "productName": "Lora Desktop",
+    "appId": "com.lara.desktop",
+    "productName": "Lara Desktop",
     "directories": {
       "output": "release"
     },
@@ -42,8 +44,8 @@
     ],
     "extraResources": [
       {
-        "from": "../../build/package/lora-api",
-        "to": "backend/lora-api"
+        "from": "../../build/package/lara-api",
+        "to": "backend/lara-api"
       }
     ],
     "win": {
@@ -53,7 +55,7 @@
       "artifactName": "${productName}-${version}-setup.${ext}"
     },
     "portable": {
-      "artifactName": "Lora-Desktop-${version}-portable.${ext}"
+      "artifactName": "Lara-Desktop-${version}-portable.${ext}"
     },
     "nsis": {
       "oneClick": false,

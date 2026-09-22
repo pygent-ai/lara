@@ -48,6 +48,49 @@ after(async () => {
   await vite?.close();
 });
 
+test("assistant markdown keeps identifiers literal and renders fenced code", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.MarkdownContent, {
+    content: "把 file_path 改成 model_config\n\n```python\ndef f():\n    return 1\n```\n",
+  }));
+
+  assert.doesNotMatch(html, /<em>/);
+  assert.match(html, /file_path 改成 model_config/);
+  assert.match(html, /markdown-code/);
+  assert.match(html, /markdown-code-language">python</);
+  assert.match(html, /def f\(\):/);
+});
+
+test("assistant markdown supports gfm tables, tilde fences, and safe links", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.MarkdownContent, {
+    content: [
+      "~~~js",
+      "const a = 1;",
+      "~~~",
+      "",
+      "| a | b |",
+      "| --- | --- |",
+      "| 1 | 2 |",
+      "",
+      "[docs](https://example.com)",
+      "",
+      "<script>alert(1)</script>",
+    ].join("\n"),
+  }));
+
+  assert.match(html, /markdown-table-wrap/);
+  assert.match(html, /markdown-code-language">js</);
+  assert.match(html, /href="https:\/\/example\.com"/);
+  assert.doesNotMatch(html, /<script>/);
+});
+
+test("assistant markdown renders an incomplete streaming fence as code", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.MarkdownContent, {
+    content: "```js\nconsole.log('streaming')",
+  }));
+
+  assert.match(html, /markdown-code-language">js</);
+  assert.match(html, /console\.log\(/);
+});
 test("a render error surfaces a message instead of a blank window", () => {
   const { ErrorBoundary } = errorBoundaryModule;
   // SSR cannot recover from a throwing child, so drive the boundary directly:

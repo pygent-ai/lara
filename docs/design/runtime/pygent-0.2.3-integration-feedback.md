@@ -1,6 +1,6 @@
 # Pygent 0.2.3 integration feedback
 
-This note records issues observed while moving Lora API, CLI, case execution,
+This note records issues observed while moving Lara API, CLI, case execution,
 approvals, delegation and file-effect persistence onto one `LocalRuntime`.
 
 ## High priority

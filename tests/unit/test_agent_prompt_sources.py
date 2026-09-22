@@ -1,5 +1,5 @@
-from lora.runtime.agent.prompt_models import PromptRenderContext
-from lora.runtime.agent.prompt_sources import (
+from lara.runtime.agent.prompt_models import PromptRenderContext
+from lara.runtime.agent.prompt_sources import (
     _render_available_tools_prompt,
     _render_system_action_safety_prompt,
     _render_system_coding_rules_prompt,
@@ -8,7 +8,7 @@ from lora.runtime.agent.prompt_sources import (
     _render_system_tool_policy_prompt,
     _render_token_budget_prompt,
 )
-from lora.runtime.agent.prompts import (
+from lara.runtime.agent.prompts import (
     PromptComposer,
     PromptRegistry,
     StaticPromptSessionCache,
@@ -19,14 +19,14 @@ def _context(tmp_path, *, tool_names=None) -> PromptRenderContext:
     return PromptRenderContext(
         session_id="chat-test",
         workspace_root=tmp_path,
-        session_dir=tmp_path / ".lora" / "sessions" / "chat-test",
+        session_dir=tmp_path / ".lara" / "sessions" / "chat-test",
         turn_id="turn-1",
         projection={},
         tool_names=list(tool_names or []),
-        user_lora_root=tmp_path / "user-lora",
-        project_lora_root=tmp_path / ".lora",
-        user_skills_dir=tmp_path / "user-lora" / "skills",
-        project_skills_dir=tmp_path / ".lora" / "skills",
+        user_lara_root=tmp_path / "user-lara",
+        project_lara_root=tmp_path / ".lara",
+        user_skills_dir=tmp_path / "user-lara" / "skills",
+        project_skills_dir=tmp_path / ".lara" / "skills",
     )
 
 
@@ -139,19 +139,19 @@ def test_dynamic_tools_and_context_rules_are_capability_aware(tmp_path) -> None:
     assert "without narrating private deliberation" in output_prompt
 
 
-def test_lora_control_plane_routes_scheduled_tasks_through_lora(tmp_path) -> None:
+def test_lara_control_plane_routes_scheduled_tasks_through_lara(tmp_path) -> None:
     context = _context(tmp_path)
     prompt, _ = PromptComposer().compose_request_system(context)
 
     assert "unqualified scheduled or recurring task" in prompt
-    assert "Lora automation" in prompt
+    assert "Lara automation" in prompt
     assert "schtasks, cron, systemd timers, or background loops" in prompt
     assert "explicitly requests an operating-system scheduler" in prompt
     assert "list or show command" in prompt
 
     modules = PromptRegistry().resolve(phase="request_system")
-    assert "system.lora_control_plane" in [item.id for item in modules]
-    module = next(item for item in modules if item.id == "system.lora_control_plane")
+    assert "system.lara_control_plane" in [item.id for item in modules]
+    module = next(item for item in modules if item.id == "system.lara_control_plane")
     assert module.type == "policy"
     assert module.cache_scope == "request"
 

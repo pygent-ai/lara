@@ -6,16 +6,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from lora.orchestration import ManagedSessionTurn, TurnCommand, TurnState
-from lora.schema import RunConfig
-from lora.sessions import SessionManager
-from lora_api.services.chat_runner import ActiveChatRun, AttachedExecutionRun
-from lora_api.services.session_service import SessionService
+from lara.orchestration import ManagedSessionTurn, TurnCommand, TurnState
+from lara.schema import RunConfig
+from lara.sessions import SessionManager
+from lara_api.services.chat_runner import ActiveChatRun, AttachedExecutionRun
+from lara_api.services.session_service import SessionService
 
 
 def make_manager(tmp_path):
     return SessionManager(
-        RunConfig(workspace_root=tmp_path, lora_root=tmp_path / ".lora")
+        RunConfig(workspace_root=tmp_path, lara_root=tmp_path / ".lara")
     )
 
 
@@ -81,7 +81,7 @@ async def test_terminal_stream_waits_for_durable_timing_and_replays_it(
                     "span_id": "span-1",
                     "sequence": 1,
                     "timestamp_unix_ns": 123,
-                    "module_path": "lora",
+                    "module_path": "lara",
                     "kind": kind,
                     "data": {},
                 }

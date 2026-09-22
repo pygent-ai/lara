@@ -8,9 +8,9 @@ import httpx
 import pytest
 from pygent.llm import ModelConfig, OpenAICompatibleClient
 
-from lora.runtime import model_configuration
-from lora.runtime.service import LoraRuntimeService
-from lora.sessions import SessionManager
+from lara.runtime import model_configuration
+from lara.runtime.service import LaraRuntimeService
+from lara.sessions import SessionManager
 from tests.unit.test_model_configuration import native_runtime_config
 
 
@@ -76,7 +76,7 @@ async def test_default_read_reaches_provider_with_native_content(
         manager = SessionManager(config)
         session = manager.create(case_id="media", mode="chat")
         run = manager.start_case_run(session.session_id, "media", run_config=config)
-        service = LoraRuntimeService(config)
+        service = LaraRuntimeService(config)
         try:
             handle = await service.start_turn(
                 manager=manager, message=f"Read {filename}", run_ref=run,

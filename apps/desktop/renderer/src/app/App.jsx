@@ -41,7 +41,8 @@ import {
   toggleHistory,
   toggleTrace,
 } from "./layoutState.js";
-import { parseInlineMarkdown, parseMarkdownBlocks } from "./markdown.js";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   acknowledgeStoredSessionStatus,
   loadAcknowledgedSessionStatuses,
@@ -1684,110 +1685,65 @@ const MessageRow = memo(function MessageRow({ message, entering = false, activit
   );
 });
 
-function MarkdownContent({ content }) {
-  const blocks = useMemo(() => parseMarkdownBlocks(content), [content]);
+// Streaming messages re-parse on every content change; micromark is fast
+// enough for transcript-sized texts, and the memo keeps non-streaming
+// renders from reparsing.
+export function MarkdownContent({ content }) {
+  const body = useMemo(
+    () => (
+      <ReactMarkdown components={MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]}>
+        {String(content || "")}
+      </ReactMarkdown>
+    ),
+    [content],
+  );
+  return <div className="markdown-content">{body}</div>;
+}
 
+// Visual parity with the previous hand-rolled renderer: capped heading
+// levels, the language label on fenced blocks, the table scroll wrapper,
+// and links that open in a new tab. react-markdown already escapes raw
+// HTML and strips unsafe URL schemes, so agent output stays inert.
+const MARKDOWN_COMPONENTS = {
+  a: MarkdownLink,
+  h1: MarkdownHeading,
+  h2: MarkdownHeading,
+  h3: MarkdownHeading,
+  h4: MarkdownHeading,
+  h5: MarkdownHeading,
+  h6: MarkdownHeading,
+  pre: MarkdownPre,
+  table: MarkdownTable,
+};
+
+function MarkdownHeading({ node, children }) {
+  const level = Math.min(Number(String(node?.tagName || "h1").slice(1)) || 1, 3);
+  const Tag = `h${level}`;
+  return <Tag>{children}</Tag>;
+}
+
+function MarkdownPre({ children }) {
+  const code = Array.isArray(children) ? children[0] : children;
+  const className = String(code?.props?.className || "");
+  const language = /(?:^|\s)language-([\w+.#-]+)/.exec(className)?.[1] || "";
   return (
-    <div className="markdown-content">
-      {blocks.map((block, index) => (
-        <MarkdownBlock key={index} block={block} />
-      ))}
-    </div>
+    <pre className="markdown-code">
+      {language && <span className="markdown-code-language">{language}</span>}
+      {children}
+    </pre>
   );
 }
 
-function MarkdownBlock({ block }) {
-  if (block.type === "heading") {
-    const HeadingTag = `h${block.level}`;
-    return <HeadingTag>{renderInlineMarkdown(block.text)}</HeadingTag>;
-  }
-
-  if (block.type === "code") {
-    return (
-      <pre className="markdown-code">
-        {block.language && <span className="markdown-code-language">{block.language}</span>}
-        <code>{block.text}</code>
-      </pre>
-    );
-  }
-
-  if (block.type === "quote") {
-    return <blockquote>{renderInlineMarkdown(block.text)}</blockquote>;
-  }
-
-  if (block.type === "list") {
-    const ListTag = block.ordered ? "ol" : "ul";
-    return (
-      <ListTag>
-        {block.items.map((item, index) => (
-          <li key={index}>{renderInlineMarkdown(item)}</li>
-        ))}
-      </ListTag>
-    );
-  }
-
-  if (block.type === "table") {
-    return (
-      <div className="markdown-table-wrap">
-        <table>
-          <thead>
-            <tr>
-              {block.header.map((cell, index) => (
-                <th key={index} style={tableCellStyle(block.alignments[index])}>
-                  {renderInlineMarkdown(cell)}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {block.rows.map((row, rowIndex) => (
-              <tr key={rowIndex}>
-                {row.map((cell, cellIndex) => (
-                  <td key={cellIndex} style={tableCellStyle(block.alignments[cellIndex])}>
-                    {renderInlineMarkdown(cell)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  }
-
-  if (block.type === "rule") {
-    return <hr />;
-  }
-
-  return <p>{renderInlineMarkdown(block.text)}</p>;
+function MarkdownTable({ children }) {
+  return <div className="markdown-table-wrap"><table>{children}</table></div>;
 }
 
-function tableCellStyle(alignment) {
-  return alignment ? { textAlign: alignment } : undefined;
-}
-
-function renderInlineMarkdown(text) {
-  return parseInlineMarkdown(text).map((segment, index) => renderInlineSegment(segment, index));
-}
-
-function renderInlineSegment(segment, key) {
-  if (segment.type === "strong") {
-    return <strong key={key}>{segment.children.map((child, index) => renderInlineSegment(child, index))}</strong>;
-  }
-  if (segment.type === "em") {
-    return <em key={key}>{segment.children.map((child, index) => renderInlineSegment(child, index))}</em>;
-  }
-  if (segment.type === "code") {
-    return <code key={key}>{segment.text}</code>;
-  }
-  if (segment.type === "link") {
-    return (
-      <a key={key} href={segment.href} target="_blank" rel="noreferrer">
-        {segment.children.map((child, index) => renderInlineSegment(child, index))}
-      </a>
-    );
-  }
-  return <React.Fragment key={key}>{segment.text}</React.Fragment>;
+function MarkdownLink({ children, href }) {
+  return (
+    <a href={href} target="_blank" rel="noreferrer noopener">
+      {children}
+    </a>
+  );
 }
 
 function ActivityMessage({ message, collapseToken, api }) {

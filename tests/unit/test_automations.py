@@ -8,16 +8,16 @@ from typing import Any, cast
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from lora.automations import (
+from lara.automations import (
     AUTOMATION_MESSAGE_KIND,
     AutomationScheduler,
     AutomationStore,
     automation_trigger_message,
 )
-from lora.automations.models import next_occurrence
-from lora.schema import RunConfig
-from lora.sessions import SessionManager
-from lora_api.app import create_app
+from lara.automations.models import next_occurrence
+from lara.schema import RunConfig
+from lara.sessions import SessionManager
+from lara_api.app import create_app
 
 
 def _future(minutes: int = 10) -> str:
@@ -149,7 +149,7 @@ def test_heartbeat_requires_existing_session(tmp_path: Path, monkeypatch) -> Non
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    from lora.automations.service import AutomationService
+    from lara.automations.service import AutomationService
 
     service = AutomationService(AutomationStore(tmp_path / "automations.sqlite3"))
     with pytest.raises(FileNotFoundError):
@@ -169,7 +169,7 @@ async def test_scheduler_submits_unattended_standalone_trigger(tmp_path: Path) -
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     config = RunConfig(
-        workspace_root=str(workspace), lora_root=str(workspace / ".lora")
+        workspace_root=str(workspace), lara_root=str(workspace / ".lara")
     )
     store = AutomationStore(tmp_path / "automations.sqlite3")
     automation = store.create(

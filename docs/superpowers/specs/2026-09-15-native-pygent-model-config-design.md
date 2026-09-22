@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved direction: replace Lora's route-based model configuration with Pygent's native model configuration. Do not migrate or execute the legacy `routes` and `fallback` format. The user's existing configuration was copied verbatim to `C:\Users\Administrator\.lora\config.pre-model-connections-20260915-190310.yaml` before this design was written.
+Approved direction: replace Lara's route-based model configuration with Pygent's native model configuration. Do not migrate or execute the legacy `routes` and `fallback` format. The user's existing configuration was copied verbatim to `C:\Users\Administrator\.lora\config.pre-model-connections-20260915-190310.yaml` before this design was written.
 
 ## Goals
 
@@ -10,20 +10,20 @@ Approved direction: replace Lora's route-based model configuration with Pygent's
 - Let a user work with multiple provider connections and select credential-visible models from each connection.
 - Let a user configure multiple named Pygent `ModelGroup` values and choose one when creating a conversation.
 - Keep a conversation's model group fixed while allowing its preferred child model to change between turns. The preferred model runs first and the remaining group members retain their configured fallback order.
-- Use Pygent's provider, capability, connection, client, adapter, model-catalog, and model-group types instead of parallel Lora equivalents.
+- Use Pygent's provider, capability, connection, client, adapter, model-catalog, and model-group types instead of parallel Lara equivalents.
 - Reuse existing credential references without reading or displaying secret values.
 
 ## Non-goals
 
 - No automatic conversion of legacy routes.
-- No Lora-specific named-connection schema or connection-to-model compiler.
+- No Lara-specific named-connection schema or connection-to-model compiler.
 - No secret export, secret reveal, or secret copy into `config.yaml`.
 - No automatic model choice based on capabilities.
 - No live paid model invocation as part of configuration.
 
 ## Authoritative configuration
 
-The user configuration keeps Lora's non-model settings, but its model subtree is a native Pygent mapping:
+The user configuration keeps Lara's non-model settings, but its model subtree is a native Pygent mapping:
 
 ```yaml
 connections:
@@ -93,9 +93,9 @@ agents:
         backoff_multiplier: 2
 ```
 
-The `connections`, `models`, and `model_groups` values are passed unchanged to `ModelConfig.from_mapping()`. Pygent validates unknown fields, URLs, credentials, capabilities, duplicate entries, and group references. Lora validates only its surrounding application settings and that every agent's default references an existing model group.
+The `connections`, `models`, and `model_groups` values are passed unchanged to `ModelConfig.from_mapping()`. Pygent validates unknown fields, URLs, credentials, capabilities, duplicate entries, and group references. Lara validates only its surrounding application settings and that every agent's default references an existing model group.
 
-Pygent 0.3.16 defines reusable top-level `ConnectionConfig` values. Multiple models reference one connection by key and independently select one of its protocol endpoints. Lora persists this contract directly and does not introduce a parallel connection abstraction.
+Pygent 0.3.16 defines reusable top-level `ConnectionConfig` values. Multiple models reference one connection by key and independently select one of its protocol endpoints. Lara persists this contract directly and does not introduce a parallel connection abstraction.
 
 ## Cutover and unconfigured state
 
@@ -124,13 +124,13 @@ For a connection draft, the backend constructs the native Pygent client selected
 
 If live listing is unsupported or fails, the response contains a structured per-connection error. The UI then offers models from Pygent's bundled capability catalog filtered by provider and protocol, plus an explicit custom model ID path. A discovery failure never deletes an already configured model.
 
-Only protocols with an installed Pygent adapter can be saved as executable Lora models. Catalog-only media protocols remain visible as unsupported information and cannot be added to a text-agent group.
+Only protocols with an installed Pygent adapter can be saved as executable Lara models. Catalog-only media protocols remain visible as unsupported information and cannot be added to a text-agent group.
 
 ## Settings experience
 
 The model section has three ordered steps:
 
-1. **Connections**: add a provider/protocol/base URL/credential reference, then load models. These are editor drafts derived into native model entries, not a persisted Lora schema.
+1. **Connections**: add a provider/protocol/base URL/credential reference, then load models. These are editor drafts derived into native model entries, not a persisted Lara schema.
 2. **Models**: select one or more models per connection, assign stable unique model keys, review capabilities, and optionally edit custom capabilities/provider options.
 3. **Model groups**: create multiple named groups and order selected model keys. Drag or arrow controls change Pygent fallback order. Each agent selects one default group for new conversations.
 
@@ -144,9 +144,9 @@ The general Settings summary displays the configured groups and their ordered `m
 
 ## Runtime assembly
 
-`RunConfig` holds the parsed Pygent `ModelConfig` and the agent's default Pygent `ModelGroup`, rather than Lora `ModelRouteConfig` objects. A Session selection resolves the fixed group and preferred model for an execution. Retry fields use Pygent terminology (`max_attempts_per_model`).
+`RunConfig` holds the parsed Pygent `ModelConfig` and the agent's default Pygent `ModelGroup`, rather than Lara `ModelRouteConfig` objects. A Session selection resolves the fixed group and preferred model for an execution. Retry fields use Pygent terminology (`max_attempts_per_model`).
 
-At the deployment boundary Lora:
+At the deployment boundary Lara:
 
 - resolves each referenced `ConnectionConfig.credential` through the existing credential sources;
 - creates one native Pygent client per model key using its protocol and connection;
@@ -159,7 +159,7 @@ At the deployment boundary Lora:
 
 The runtime no longer fabricates a capability preset, guesses DeepSeek from a URL, forces `openai_chat_completions`, or translates fallback IDs. Trace and usage events use Pygent `model_key`, `provider`, `model_id`, and group name directly.
 
-Changing the preferred child does not create a different Lora model group and does not disable fallback. For a configured group `[A, B, C]`, selecting `B` produces the Pygent execution order `[B, A, C]`; selecting `C` produces `[C, A, B]`. Pygent's normal continuation rule remains authoritative inside an admitted execution.
+Changing the preferred child does not create a different Lara model group and does not disable fallback. For a configured group `[A, B, C]`, selecting `B` produces the Pygent execution order `[B, A, C]`; selecting `C` produces `[C, A, B]`. Pygent's normal continuation rule remains authoritative inside an admitted execution.
 
 ## API contracts
 

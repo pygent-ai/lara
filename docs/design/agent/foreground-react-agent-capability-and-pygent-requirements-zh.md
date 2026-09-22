@@ -1,4 +1,4 @@
-# Lora 前台 ReAct Agent 能力基线与 Pygent 基础框架诉求
+# Lara 前台 ReAct Agent 能力基线与 Pygent 基础框架诉求
 
 ## 文档目标
 
@@ -17,13 +17,13 @@
 - 时机：每次模型请求前生成最终有效 System Prompt。
 - 可以包含稳定部分和请求级动态部分，但对模型表现为一个 System Prompt。
 - 压缩后需要重新生成，不能把旧请求的动态 System Prompt 固化进 continuation。
-- 具体内容、模块、顺序和缓存策略由 Lora 管理。
+- 具体内容、模块、顺序和缓存策略由 Lara 管理。
 
 ### 1.2 System Tools
 
 - 落点：`Context.tools`。
 - 时机：每次模型请求前确定本次真正可见的 Tool Definitions。
-- Tool name、description、schema 和启用策略由 Lora 管理。
+- Tool name、description、schema 和启用策略由 Lara 管理。
 - Pygent 负责把有效工具发送给模型，并执行合法 tool calls。
 - System Tools 不进入 conversation messages。
 
@@ -48,7 +48,7 @@
 
 ### 2.3 User-side System Reminder
 
-系统生成、通过 user role 交给模型的运行时提醒。Lora 使用 `UserMessage.kind / metadata` 标记类别，不要求 Pygent 增加 Reminder 消息类型。
+系统生成、通过 user role 交给模型的运行时提醒。Lara 使用 `UserMessage.kind / metadata` 标记类别，不要求 Pygent 增加 Reminder 消息类型。
 
 #### Initial CLI/Skill
 
@@ -70,7 +70,7 @@
 
 ### 2.4 Tool-side System Reminder
 
-工具执行后产生，并附在当前 `ToolMessage`。Lora 负责生成和消费，Pygent 不需要理解 Reminder 语义。
+工具执行后产生，并附在当前 `ToolMessage`。Lara 负责生成和消费，Pygent 不需要理解 Reminder 语义。
 
 #### New CLI
 
@@ -122,7 +122,7 @@ Pygent 0.2.19 现有的 `Message`、`Context`、`Module`、`ModelCallLayer`、`T
 
 ### 2. Durable `select()`
 
-允许 Model Module 等待“模型响应”和“新的 execution input”中的第一个完成者，使 Lora 能在模型边界把 steering 转成新的 `UserMessage`，不需要修改标准 `ReActLayer`。
+允许 Model Module 等待“模型响应”和“新的 execution input”中的第一个完成者，使 Lara 能在模型边界把 steering 转成新的 `UserMessage`，不需要修改标准 `ReActLayer`。
 
 ### 3. Final Model Request Snapshot
 
@@ -143,9 +143,9 @@ Pygent 只暴露最终请求，不理解其中的 Prompt 或 Reminder 分类。
 - Prompt Registry / Prompt Profile。
 - System Reminder、User-side Reminder、Tool-side Reminder 类型。
 - CLI、Skill、Memory、Compression 抽象。
-- Lora 专用 ReAct hooks 或另一套 Agent 状态机。
+- Lara 专用 ReAct hooks 或另一套 Agent 状态机。
 
-这些业务概念继续由 Lora 使用现有 `Context` 和 `Message.kind / data / metadata` 表达。
+这些业务概念继续由 Lara 使用现有 `Context` 和 `Message.kind / data / metadata` 表达。
 
 ## 验收标准
 

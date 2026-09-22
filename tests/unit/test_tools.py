@@ -10,9 +10,9 @@ from types import SimpleNamespace
 from pygent import ToolKit, thaw_json
 from pygent import ToolResult as PygentToolResult
 
-from lora.runtime.tools import ToolObserver
-from lora.schema import CaseRunRef
-from lora.tracing import DiffTool, EventStore
+from lara.runtime.tools import ToolObserver
+from lara.schema import CaseRunRef
+from lara.tracing import DiffTool, EventStore
 
 
 class ToolTests(unittest.IsolatedAsyncioTestCase):
@@ -252,7 +252,7 @@ class ToolTests(unittest.IsolatedAsyncioTestCase):
             )
             interceptor = ToolObserver(EventStore(run))
             ctx = "turn-0001"
-            output = 'src/lora/agent.py:32|DEFAULT_PYGENT_TOOL_NAMES = ("bash", "read")'
+            output = 'src/lara/agent.py:32|DEFAULT_PYGENT_TOOL_NAMES = ("bash", "read")'
 
             result = await _call_and_record(
                 interceptor,
@@ -277,7 +277,7 @@ class ToolTests(unittest.IsolatedAsyncioTestCase):
                 run_dir=Path(tmp) / "run",
             )
             interceptor = ToolObserver(
-                EventStore(run), bash_full_output_allowlist=["lora"]
+                EventStore(run), bash_full_output_allowlist=["lara"]
             )
             ctx = "turn-0001"
             output = "\n".join(f"line-{index:04d}" for index in range(700))
@@ -285,7 +285,7 @@ class ToolTests(unittest.IsolatedAsyncioTestCase):
             result = await _call_and_record(
                 interceptor,
                 "bash",
-                {"command": "lora session run --new --message hello"},
+                {"command": "lara session run --new --message hello"},
                 ctx,
                 lambda command: output,
             )
@@ -307,7 +307,7 @@ class ToolTests(unittest.IsolatedAsyncioTestCase):
                 run_dir=Path(tmp) / "run",
             )
             interceptor = ToolObserver(
-                EventStore(run), bash_full_output_allowlist=["lora"]
+                EventStore(run), bash_full_output_allowlist=["lara"]
             )
             ctx = "turn-0001"
             output = "\n".join(f"line-{index:04d}" for index in range(700))
@@ -315,7 +315,7 @@ class ToolTests(unittest.IsolatedAsyncioTestCase):
             result = await _call_and_record(
                 interceptor,
                 "bash",
-                {"command": "lorax chat"},
+                {"command": "larax chat"},
                 ctx,
                 lambda command: output,
             )
@@ -382,7 +382,7 @@ class ToolTests(unittest.IsolatedAsyncioTestCase):
             ctx = "turn-0001"
 
             with unittest.mock.patch(
-                "lora.runtime.tools.FileEffectTracker.snapshot_workspace",
+                "lara.runtime.tools.FileEffectTracker.snapshot_workspace",
                 side_effect=AssertionError("snapshot should be deferred"),
             ):
                 result = await _call_and_record(
@@ -458,9 +458,9 @@ class ToolTests(unittest.IsolatedAsyncioTestCase):
             result = await _call_and_record(
                 interceptor,
                 "bash",
-                {"command": 'rg -n "DiffTool" src/lora'},
+                {"command": 'rg -n "DiffTool" src/lara'},
                 ctx,
-                lambda command: "src/lora/tracing/diffing.py:135:class DiffTool",
+                lambda command: "src/lara/tracing/diffing.py:135:class DiffTool",
             )
 
             self.assertIsNone(result.deferred_job)
@@ -795,7 +795,7 @@ class FileEffectTrackerSpecTests(unittest.IsolatedAsyncioTestCase):
 
             for ignored in [
                 ".git",
-                ".lora",
+                ".lara",
                 ".venv",
                 "__pycache__",
                 ".pytest_cache",
@@ -1092,7 +1092,7 @@ class FileEffectTrackerSpecTests(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             FileEffectTracker = _file_effect_tracker_class()
-            session_dir = Path(tmp) / ".lora" / "sessions" / "s1"
+            session_dir = Path(tmp) / ".lara" / "sessions" / "s1"
             run_dir = session_dir / "cases" / "c1" / "runs" / "r1"
             session_dir.mkdir(parents=True)
             (session_dir / "session.json").write_text("{}", encoding="utf-8")
@@ -1158,7 +1158,7 @@ async def _call_and_record(
     *,
     model_tool_call_id: str | None = None,
 ) -> SimpleNamespace:
-    """Exercise only Lora's projection after a synthetic Pygent tool outcome."""
+    """Exercise only Lara's projection after a synthetic Pygent tool outcome."""
 
     call_id = model_tool_call_id or f"test-{name}"
     try:
@@ -1214,7 +1214,7 @@ async def _call_and_record(
 
 
 def _file_effect_tracker_class():
-    import lora.runtime.tools as tools
+    import lara.runtime.tools as tools
 
     try:
         return tools.FileEffectTracker

@@ -85,7 +85,7 @@ test("development launcher asks Electron to quit before closing Vite", async () 
   await new Promise((resolve) => setImmediate(resolve));
   harness.signalSource.emit("SIGINT");
 
-  assert.deepEqual(harness.calls.at(-1), ["send", { type: "lora:dev-shutdown" }]);
+  assert.deepEqual(harness.calls.at(-1), ["send", { type: "lara:dev-shutdown" }]);
   assert.equal(harness.calls.some(([name]) => name === "vite:close"), false);
 
   harness.child.exitCode = 0;

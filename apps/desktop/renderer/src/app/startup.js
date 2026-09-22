@@ -1,5 +1,5 @@
 export async function waitForDesktopBackend({
-  desktop = globalThis.loraDesktop,
+  desktop = globalThis.laraDesktop,
   delay = () => new Promise((resolve) => setTimeout(resolve, 150)),
   now = Date.now,
   timeoutMs = 45_000,

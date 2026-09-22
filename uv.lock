@@ -438,7 +438,7 @@ wheels = [
 ]
 
 [[package]]
-name = "lora"
+name = "lara"
 version = "0.3.2"
 source = { editable = "." }
 dependencies = [

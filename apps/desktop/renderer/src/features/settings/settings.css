@@ -140,6 +140,7 @@
 .capability-editor { margin:0 18px 18px; padding:20px; background:var(--input-bg); border:1px solid var(--line); border-radius:10px; }
 .capability-purpose { display:grid; grid-template-columns:minmax(220px,1.2fr) minmax(180px,1fr); gap:24px; align-items:end; }
 .capability-purpose p, .capability-notice { font-size:12px; line-height:1.8; color:var(--muted); margin:0; }
+.capability-hint, .capability-rename { grid-column:1 / -1; }
 .capability-tags { display:flex; flex-wrap:wrap; gap:7px; margin:16px 0; }
 .capability-tags > span { padding:4px 9px; border:1px solid var(--line-strong); border-radius:5px; background:var(--surface); font-size:11px; color:var(--text); }
 .capability-notice { margin-bottom:14px; }

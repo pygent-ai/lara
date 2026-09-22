@@ -2,7 +2,7 @@
 
 ## Approved scope
 
-Upgrade the pinned official package from 0.3.12 to 0.3.15, based on the release assessment approved with “开始升级”. Reuse Pygent's managed Bash tasks and existing Lora approvals, audit, file-effect and runtime API paths. Call timeout is in seconds and controls foreground observation, not command termination. Preserve unrelated working-tree changes.
+Upgrade the pinned official package from 0.3.12 to 0.3.15, based on the release assessment approved with “开始升级”. Reuse Pygent's managed Bash tasks and existing Lara approvals, audit, file-effect and runtime API paths. Call timeout is in seconds and controls foreground observation, not command termination. Preserve unrelated working-tree changes.
 
 ## Implementation
 

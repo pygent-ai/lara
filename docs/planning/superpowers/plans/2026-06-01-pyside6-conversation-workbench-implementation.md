@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a first working PySide6 desktop application for chatting with Lora, managing chat sessions, and inspecting runtime events.
+**Goal:** Build a first working PySide6 desktop application for chatting with Lara, managing chat sessions, and inspecting runtime events.
 
-**Architecture:** Add a top-level `gui` package beside `lora`. Keep testable data/session helpers separate from Qt widgets, then compose them in `gui.main_window`. `gui` imports Lora core APIs; `lora` does not import `gui`.
+**Architecture:** Add a top-level `gui` package beside `lara`. Keep testable data/session helpers separate from Qt widgets, then compose them in `gui.main_window`. `gui` imports Lara core APIs; `lara` does not import `gui`.
 
-**Tech Stack:** Python 3.13, PySide6, unittest, existing Lora runtime/session/config APIs.
+**Tech Stack:** Python 3.13, PySide6, unittest, existing Lara runtime/session/config APIs.
 
 ---
 
@@ -22,7 +22,7 @@
 - Create `src/gui/widgets/sessions.py`: session sidebar widget.
 - Create `src/gui/widgets/inspector.py`: run trace inspector widget.
 - Create `src/gui/widgets/settings.py`: runtime settings dialog.
-- Modify `pyproject.toml`: add PySide6 dependency, `lora-gui` script, and `src/gui` package.
+- Modify `pyproject.toml`: add PySide6 dependency, `lara-gui` script, and `src/gui` package.
 - Create `tests/unit/test_gui_session_model.py`: non-visual session model coverage.
 - Create `tests/unit/test_gui_worker.py`: worker helper coverage without launching a real agent.
 
@@ -42,8 +42,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lora.config import load_run_config
-from lora.session import SessionManager
+from lara.config import load_run_config
+from lara.session import SessionManager
 
 from gui.session_model import ChatSessionRecord, ChatSessionStore
 
@@ -89,8 +89,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from lora.io import read_json
-from lora.session import SessionManager
+from lara.io import read_json
+from lara.session import SessionManager
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,7 +162,7 @@ from __future__ import annotations
 
 import unittest
 
-from lora.runtime import RuntimeMessage
+from lara.runtime import RuntimeMessage
 
 from gui.workers import InspectorEvent, runtime_message_to_inspector_event
 
@@ -270,11 +270,11 @@ dependencies = [
 ]
 
 [project.scripts]
-lora = "lora.cli:main"
-lora-gui = "gui.__main__:main"
+lara = "lara.cli:main"
+lara-gui = "gui.__main__:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/lora", "src/gui"]
+packages = ["src/lara", "src/gui"]
 ```
 
 - [ ] **Step 2: Verify entry point help path**

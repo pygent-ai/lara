@@ -9,10 +9,10 @@ from typing import Any
 from pygent import AIMessage, ToolCall, ToolMessage, UserMessage
 from pygent.llm import ModelExecution, ModelProviderResponse
 
-from lora.config import load_run_config
+from lara.config import load_run_config
 from tests.unit.test_model_configuration import native_runtime_config
-from lora.runtime.service import LoraRuntimeService
-from lora.sessions import SessionManager
+from lara.runtime.service import LaraRuntimeService
+from lara.sessions import SessionManager
 
 
 class ScriptedRecoveryInvoker:
@@ -59,7 +59,7 @@ def recovery_service(
     workspace: Path,
     *,
     force_compression: bool = False,
-) -> tuple[Any, LoraRuntimeService]:
+) -> tuple[Any, LaraRuntimeService]:
     config = native_runtime_config(workspace)
     config.eternal_conversation.enabled = False
     config.runtime_approvals.enabled = False
@@ -67,7 +67,7 @@ def recovery_service(
         config.context_window = 40_000
         config.context_compression_trigger_ratio = 0.8
     assert config.resolved_agent is not None
-    service = LoraRuntimeService(config)
+    service = LaraRuntimeService(config)
     invoker = ScriptedRecoveryInvoker()
     service._model_invokers[config.resolved_agent.alias] = invoker
     for agent in service._agent_definitions.values():
@@ -112,8 +112,8 @@ async def crash_at_boundary(
         "recovery",
         run_config=config,
     )
-    import lora.runtime.agent.core as core_module
-    import lora.runtime.agent.pipeline as pipeline_module
+    import lara.runtime.agent.core as core_module
+    import lara.runtime.agent.pipeline as pipeline_module
 
     original = pipeline_module.checkpoint_conversation_message
 

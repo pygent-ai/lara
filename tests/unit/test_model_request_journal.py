@@ -4,7 +4,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from lora.runtime.model_request_journal import ModelRequestJournal
+from lara.runtime.model_request_journal import ModelRequestJournal
 
 EXECUTION_ID = "b5d2b414-3e39-4e5a-b922-3539fb6cf6db"
 OTHER_EXECUTION_ID = "00000000-0000-0000-0000-000000000000"
@@ -15,7 +15,7 @@ def _prepared_event(
     *,
     messages: list[dict[str, str]] | None = None,
     current_message: dict[str, str] | None = None,
-    system_prompt: str = "You are Lora.",
+    system_prompt: str = "You are Lara.",
     projection_revision: int = 1,
 ) -> dict:
     return {
@@ -80,7 +80,7 @@ def test_list_maps_prepared_events_into_request_snapshots(tmp_path: Path) -> Non
     snapshot = snapshots[0]
     assert snapshot["snapshot_id"] == "request-event-0"
     assert snapshot["phase"] == "request"
-    assert snapshot["system_prompt"] == "You are Lora."
+    assert snapshot["system_prompt"] == "You are Lara."
     assert [message["role"] for message in snapshot["messages"]] == ["user", "user"]
     assert snapshot["message_count"] == 2
     assert snapshot["tool_count"] == 1

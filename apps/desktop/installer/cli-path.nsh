@@ -3,11 +3,11 @@
 !ifdef BUILD_UNINSTALLER
 
 !macro customUnInstall
-  Push "$INSTDIR\resources\backend\lora-api"
-  Call un.RemoveLoraCliFromUserPath
+  Push "$INSTDIR\resources\backend\lara-api"
+  Call un.RemoveLaraCliFromUserPath
 !macroend
 
-Function un.RemoveLoraCliFromUserPath
+Function un.RemoveLaraCliFromUserPath
   Exch $0
   Push $1
   Push $2
@@ -82,11 +82,11 @@ FunctionEnd
 !else
 
 !macro customInstall
-  Push "$INSTDIR\resources\backend\lora-api"
-  Call AddLoraCliToUserPath
+  Push "$INSTDIR\resources\backend\lara-api"
+  Call AddLaraCliToUserPath
 !macroend
 
-Function AddLoraCliToUserPath
+Function AddLaraCliToUserPath
   Exch $0
   Push $1
   Push $2
@@ -96,7 +96,7 @@ Function AddLoraCliToUserPath
   Push $6
   Push $7
 
-  IfFileExists "$0\lora.exe" 0 done
+  IfFileExists "$0\lara.exe" 0 done
 
   ReadRegStr $1 HKCU "Environment" "Path"
   ${If} $1 == ""

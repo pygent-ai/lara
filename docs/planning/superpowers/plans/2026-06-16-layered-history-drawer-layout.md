@@ -122,7 +122,7 @@ In `SessionSidebar.__init__`, add state before layout creation:
 Replace the current brand card title block:
 
 ```python
-        title = QLabel("Lora")
+        title = QLabel("Lara")
         title.setObjectName("Brand")
         self.workspace = QLabel("")
         self.workspace.setObjectName("SidebarMeta")
@@ -139,7 +139,7 @@ with:
         brand_row_layout = QHBoxLayout(brand_row)
         brand_row_layout.setContentsMargins(0, 0, 0, 0)
         brand_row_layout.setSpacing(8)
-        self.brand_title = QLabel("Lora")
+        self.brand_title = QLabel("Lara")
         self.brand_title.setObjectName("Brand")
         self.collapse_button = QToolButton()
         self.collapse_button.setObjectName("SidebarCollapseButton")
@@ -179,7 +179,7 @@ Add these methods to `SessionSidebar` before `set_workspace`:
         self.section_label.setVisible(not collapsed)
         self.session_tree.setVisible(not collapsed)
         self.info_card.setVisible(not collapsed)
-        self.brand_title.setText("L" if collapsed else "Lora")
+        self.brand_title.setText("L" if collapsed else "Lara")
         self.collapse_button.setText(">" if collapsed else "<")
         self.collapse_button.setToolTip("Expand history" if collapsed else "Collapse history")
         self.new_button.setText("" if collapsed else "New Chat")

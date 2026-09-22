@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 from pygent.runtime.codec import context_from_dict
 
-from lora.runtime.context import LORA_CONTEXT_CODECS, LoraContext
-from lora.sessions import SessionManager
+from lara.runtime.context import LARA_CONTEXT_CODECS, LaraContext
+from lara.sessions import SessionManager
 from tests.runtime_recovery_support import recovery_service
 
 
@@ -24,7 +24,7 @@ from tests.runtime_recovery_support import recovery_service
         ("assistant", True),
     ],
 )
-async def test_pygent_recovers_lora_turn_from_durable_message_boundary(
+async def test_pygent_recovers_lara_turn_from_durable_message_boundary(
     boundary: str,
     force_compression: bool,
 ) -> None:
@@ -89,9 +89,9 @@ async def test_pygent_recovers_lora_turn_from_durable_message_boundary(
         if force_compression:
             agent_context = context_from_dict(
                 restored.metadata["agent_context"],
-                registry=LORA_CONTEXT_CODECS,
+                registry=LARA_CONTEXT_CODECS,
             )
-            assert isinstance(agent_context, LoraContext)
+            assert isinstance(agent_context, LaraContext)
             assert agent_context.compression_count >= 1
             assert agent_context.projection_revision >= 1
             session_dir = Path(restored.session_dir)

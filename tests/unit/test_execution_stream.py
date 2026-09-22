@@ -7,8 +7,8 @@ import pytest
 from pydantic import ValidationError
 from pygent.core import ExecutionEvent as PygentExecutionEvent
 
-from lora_api.models.requests import ChatTurnRequest, UpdateSettingsRequest
-from lora_api.services.chat_runner import _execution_event, _sse
+from lara_api.models.requests import ChatTurnRequest, UpdateSettingsRequest
+from lara_api.services.chat_runner import _execution_event, _sse
 
 
 def test_execution_event_preserves_native_journal_contract() -> None:
@@ -24,7 +24,7 @@ def test_execution_event_preserves_native_journal_contract() -> None:
             "sequence": 7,
             "timestamp_unix_ns": 123,
             "kind": "model.text.delta",
-            "module_path": "lora.react.model",
+            "module_path": "lara.react.model",
             "data": {"text": "hello"},
         }
     )
@@ -39,7 +39,7 @@ def test_execution_event_preserves_native_journal_contract() -> None:
         "sequence": 7,
         "timestamp_unix_ns": 123,
         "kind": "model.text.delta",
-        "module_path": "lora.react.model",
+        "module_path": "lara.react.model",
         "data": {"text": "hello"},
     }
     payload = json.loads(_sse(event).split("data: ", 1)[1])
@@ -62,7 +62,7 @@ def test_execution_event_matches_checked_in_json_schema() -> None:
                 "parent_span_id": None,
                 "sequence": 1,
                 "timestamp_unix_ns": 1,
-                "module_path": "lora",
+                "module_path": "lara",
                 "kind": "execution.started",
                 "data": {},
             }
@@ -84,7 +84,7 @@ def test_execution_event_accepts_pygent_event_without_translation() -> None:
         parent_span_id=None,
         sequence=1,
         timestamp_unix_ns=123,
-        module_path="lora.react.model",
+        module_path="lara.react.model",
         kind="model.text.delta",
         data={"text": "hello"},
     )
@@ -115,7 +115,7 @@ def test_execution_event_rejects_pre_026_shape() -> None:
                 "span_id": "span-1",
                 "sequence": 1,
                 "timestamp_unix_ns": 123,
-                "module_path": "lora.react.model",
+                "module_path": "lara.react.model",
                 "kind": "model.text.delta",
                 "data": {"text": "hello"},
             }

@@ -18,8 +18,34 @@ export function purposeCapabilities(id, current) {
   if (id === "generation") { capabilities.modalities.output = ["image"]; capabilities.streaming.output = []; }
   return capabilities;
 }
+export function templateOptions(catalogs, { provider, protocol } = {}) {
+  return (catalogs?.model_capabilities || [])
+    .map(item => ({ ...item, key: `${item.provider}/${item.model_id}/${item.protocol}` }))
+    .sort((a, b) => templateRank(a, provider, protocol) - templateRank(b, provider, protocol) || a.model_id.localeCompare(b.model_id) || a.protocol.localeCompare(b.protocol));
+}
+
+function templateRank(item, provider, protocol) {
+  if (item.provider === provider && item.protocol === protocol) return 0;
+  if (item.provider === provider) return 1;
+  return 2;
+}
+
+export function limitsEqual(a, b) {
+  return ["context_tokens", "max_output_tokens"].every(key => (a?.[key] ?? null) === (b?.[key] ?? null));
+}
+
+export function capabilitiesEqual(a, b) {
+  return capabilitySignature(a) === capabilitySignature(b) && limitsEqual(a?.limits, b?.limits);
+}
+
 export function capabilitySignature(value) {
-  return JSON.stringify([value?.modalities?.input, value?.modalities?.output, value?.streaming?.output, value?.tools, value?.structured_output, value?.reasoning]);
+  return stableStringify([value?.modalities?.input, value?.modalities?.output, value?.streaming?.output, value?.tools, value?.structured_output, value?.reasoning]);
+}
+
+function stableStringify(value) {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (value && typeof value === "object") return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
+  return JSON.stringify(value) ?? "null";
 }
 export function updateCapability(current, section, field, value) {
   const next = { ...current, [section]: { ...current[section], [field]: value } };
