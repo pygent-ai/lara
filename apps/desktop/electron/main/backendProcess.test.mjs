@@ -12,17 +12,17 @@ import {
   waitForBackend,
 } from "./backendProcess.mjs";
 
-test("desktop user data is stored under the user Lora directory", () => {
+test("desktop user data is stored under the user Lara directory", () => {
   const homePath = path.resolve("test-home");
   assert.equal(
     resolveUserDataPath(homePath),
-    path.join(homePath, ".lora", "desktop"),
+    path.join(homePath, ".lara", "desktop"),
   );
 });
 
-test("packaged backend launch uses bundled lora-api exe from Electron resources", () => {
-  const resourcesPath = "C:\\Program Files\\Lora Desktop\\resources";
-  const workspaceRoot = "C:\\Users\\Alice\\AppData\\Roaming\\Lora Desktop";
+test("packaged backend launch uses bundled lara-api exe from Electron resources", () => {
+  const resourcesPath = "C:\\Program Files\\Lara Desktop\\resources";
+  const workspaceRoot = "C:\\Users\\Alice\\AppData\\Roaming\\Lara Desktop";
 
   const launch = resolveBackendLaunch({
     appPath: `${resourcesPath}\\app.asar`,
@@ -33,7 +33,7 @@ test("packaged backend launch uses bundled lora-api exe from Electron resources"
     workspaceRoot,
   });
 
-  const expectedCommand = path.win32.join(resourcesPath, "backend", "lora-api", "lora-api.exe");
+  const expectedCommand = path.win32.join(resourcesPath, "backend", "lara-api", "lara-api.exe");
   assert.equal(launch.command, expectedCommand);
   assert.deepEqual(launch.args, [
     "--host",
@@ -46,8 +46,8 @@ test("packaged backend launch uses bundled lora-api exe from Electron resources"
   assert.equal(launch.cwd, path.win32.dirname(expectedCommand));
 });
 
-test("development backend launch runs lora-api directly from the project environment", () => {
-  const repoRoot = "E:\\Projects\\lora";
+test("development backend launch runs lara-api directly from the project environment", () => {
+  const repoRoot = "E:\\Projects\\lara";
 
   const launch = resolveBackendLaunch({
     appPath: `${repoRoot}\\apps\\desktop`,
@@ -58,7 +58,7 @@ test("development backend launch runs lora-api directly from the project environ
     resourcesPath: `${repoRoot}\\apps\\desktop`,
   });
 
-  assert.equal(launch.command, path.win32.join(repoRoot, ".venv", "Scripts", "lora-api.exe"));
+  assert.equal(launch.command, path.win32.join(repoRoot, ".venv", "Scripts", "lara-api.exe"));
   assert.deepEqual(launch.args, [
     "--host",
     "127.0.0.1",
@@ -86,7 +86,7 @@ test("findAvailablePort skips an occupied preferred port", async () => {
 test("waitForBackend accepts only the backend instance it started", async () => {
   const response = {
     ok: true,
-    headers: new Headers({ "X-Lora-Backend-Instance": "instance-new" }),
+    headers: new Headers({ "X-Lara-Backend-Instance": "instance-new" }),
   };
 
   await assert.doesNotReject(
@@ -110,7 +110,7 @@ test("waitForBackend rejects when the spawned backend exits behind a stale healt
     expectedInstanceId: "instance-new",
     fetchImpl: async () => ({
       ok: true,
-      headers: new Headers({ "X-Lora-Backend-Instance": "instance-old" }),
+      headers: new Headers({ "X-Lara-Backend-Instance": "instance-old" }),
     }),
     timeoutMs: 1_000,
     retryDelayMs: 10,
@@ -118,7 +118,7 @@ test("waitForBackend rejects when the spawned backend exits behind a stale healt
 
   setImmediate(() => child.emit("exit", 1, null));
 
-  await assert.rejects(waiting, /lora-api exited before becoming ready/);
+  await assert.rejects(waiting, /lara-api exited before becoming ready/);
 });
 
 test("backend spawn errors fail immediately and clean up readiness listeners", async () => {
@@ -128,7 +128,7 @@ test("backend spawn errors fail immediately and clean up readiness listeners", a
     fetchImpl: async () => ({ ok: false, status: 503 }),
   });
   setImmediate(() => child.emit("error", new Error("ENOENT")));
-  await assert.rejects(waiting, /Unable to start lora-api: ENOENT/);
+  await assert.rejects(waiting, /Unable to start lara-api: ENOENT/);
   assert.equal(child.listenerCount("exit"), 0);
   assert.equal(child.listenerCount("error"), 0);
 });

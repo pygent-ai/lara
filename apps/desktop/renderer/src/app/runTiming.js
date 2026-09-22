@@ -20,19 +20,21 @@ function parseTimestamp(value) {
 
 export function activityHeaderText(message, now) {
   const running = message.status === "running";
-  const label = running ? "Processing" : message.status === "error" ? "Failed" : "Processed";
   const end = running ? now : message.endedAt;
   if (!Number.isFinite(message.startedAt) || !Number.isFinite(end) || end < message.startedAt) {
-    return label;
+    return running ? "处理中" : message.status === "error" ? "失败" : "已完成";
   }
   const duration = formatProcessedDuration((end - message.startedAt) / 1000);
-  return `${label} ${message.status === "error" ? "after" : "for"} ${duration}`;
+  if (running) {
+    return `处理中 ${duration}`;
+  }
+  return message.status === "error" ? `${duration}后失败` : `已完成 ${duration}`;
 }
 
 function formatProcessedDuration(seconds) {
   const value = Math.max(0, Math.floor(seconds));
-  if (value < 60) return `${value}s`;
+  if (value < 60) return `${value} 秒`;
   const minutes = Math.floor(value / 60);
   const remainder = value % 60;
-  return remainder > 0 ? `${minutes}min${remainder}s` : `${minutes}min`;
+  return remainder > 0 ? `${minutes} 分 ${remainder} 秒` : `${minutes} 分`;
 }

@@ -4,17 +4,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lora.schema import CaseDefinition, CaseRunRef, CaseRunResult, ContextEvent, ResolvedAgentConfig, RunConfig, SessionRef
+from lara.schema import CaseDefinition, CaseRunRef, CaseRunResult, ContextEvent, ResolvedAgentConfig, RunConfig, SessionRef
 from tests.unit.test_model_configuration import native_mapping
 
 
 class SchemaTests(unittest.TestCase):
     def test_run_config_normalizes_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            config = RunConfig(workspace_root=tmp, lora_root=".lora", case_file="case.yaml")
+            config = RunConfig(workspace_root=tmp, lara_root=".lara", case_file="case.yaml")
 
         self.assertTrue(Path(config.workspace_root).is_absolute())
-        self.assertTrue(Path(config.lora_root).is_absolute())
+        self.assertTrue(Path(config.lara_root).is_absolute())
         self.assertTrue(Path(config.case_file or "").is_absolute())
 
     def test_run_config_round_trip_keeps_safe_agent_metadata_only(self) -> None:
@@ -22,7 +22,7 @@ class SchemaTests(unittest.TestCase):
             mapping = native_mapping()
             config = RunConfig(
                 workspace_root=tmp,
-                lora_root=Path(tmp) / ".lora",
+                lara_root=Path(tmp) / ".lara",
                 agent_alias="dev",
                 resolved_agent=ResolvedAgentConfig(
                     alias="dev",

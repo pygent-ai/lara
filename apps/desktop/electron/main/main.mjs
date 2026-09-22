@@ -32,25 +32,25 @@ const ownsSingleInstance = registerSingleInstance({
 
 if (ownsSingleInstance) {
   process.on("message", (message) => {
-    if (message?.type === "lora:dev-shutdown") {
+    if (message?.type === "lara:dev-shutdown") {
       app.quit();
     }
   });
 }
 
 async function startBackend() {
-  const preferredPort = Number(process.env.LORA_API_PORT || DEFAULT_API_PORT);
+  const preferredPort = Number(process.env.LARA_API_PORT || DEFAULT_API_PORT);
   const port = await findAvailablePort(preferredPort);
   const baseUrl = apiBaseUrl(port);
   const instanceId = randomUUID();
-  process.env.LORA_API_BASE_URL = baseUrl;
+  process.env.LARA_API_BASE_URL = baseUrl;
 
   const launch = resolveBackendLaunch({
     appPath: app.getAppPath(),
     isPackaged: app.isPackaged,
     platform: process.platform,
     port,
-    repoRoot: process.env.LORA_REPO_ROOT,
+    repoRoot: process.env.LARA_REPO_ROOT,
     resourcesPath: process.resourcesPath,
     workspaceRoot: app.getPath("userData"),
   });
@@ -58,16 +58,16 @@ async function startBackend() {
   backendProcess = startBackendProcess(launch, {
     env: {
       ...process.env,
-      LORA_BACKEND_INSTANCE_ID: instanceId,
+      LARA_BACKEND_INSTANCE_ID: instanceId,
     },
-    logPath: path.join(app.getPath("userData"), "logs", "lora-api.log"),
+    logPath: path.join(app.getPath("userData"), "logs", "lara-api.log"),
   });
 
   backendProcess.once("exit", (code, signal) => {
     if (backendStatus.state !== "stopping") {
       backendStatus = {
         state: "exited",
-        error: `lora-api exited with code=${code ?? ""} signal=${signal ?? ""}`,
+        error: `lara-api exited with code=${code ?? ""} signal=${signal ?? ""}`,
       };
     }
   });
@@ -96,7 +96,7 @@ async function createWindow() {
     minHeight: 720,
     show: false,
     backgroundColor: "#f1f0ec",
-    title: "Lora Desktop",
+    title: "Lara Desktop",
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

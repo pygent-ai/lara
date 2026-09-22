@@ -1,12 +1,12 @@
 # API Key 管理
 
-Lora 只接受 Pygent 原生顶层 `connections.<key>.credential.env` 引用，不接受在配置文件中直接写入 API key。
+Lara 只接受 Pygent 原生顶层 `connections.<key>.credential.env` 引用，不接受在配置文件中直接写入 API key。
 
 ## 支持的凭证来源
 
 按优先级依次为：
 
-1. `~/.lora/credentials.env`
+1. `~/.lara/credentials.env`
 2. 进程环境变量
 3. OS 凭据库中的同名条目（安装 `keyring` 后可用）
 
@@ -14,7 +14,7 @@ Lora 只接受 Pygent 原生顶层 `connections.<key>.credential.env` 引用，�
 
 ## 用户模型配置
 
-Connection、模型和凭据引用统一写入 `~/.lora/config.yaml`：
+Connection、模型和凭据引用统一写入 `~/.lara/config.yaml`：
 
 ```yaml
 connections:
@@ -40,13 +40,13 @@ models:
 ## CLI 管理
 
 ```powershell
-uv run lora credentials set DEEPSEEK_API_KEY
-uv run lora credentials list
-uv run lora credentials validate
-uv run lora credentials delete DEEPSEEK_API_KEY
+uv run lara credentials set DEEPSEEK_API_KEY
+uv run lara credentials list
+uv run lara credentials validate
+uv run lara credentials delete DEEPSEEK_API_KEY
 ```
 
-`set` 默认写入唯一的用户凭据文件 `~/.lora/credentials.env`。
+`set` 默认写入唯一的用户凭据文件 `~/.lara/credentials.env`。
 
 ```dotenv
 DEEPSEEK_API_KEY=replace-with-real-key
@@ -56,14 +56,14 @@ DEEPSEEK_API_KEY=replace-with-real-key
 
 - 不要提交 `credentials.env`。
 - 不要在配置、日志、测试快照或错误消息中输出原始 key。
-- 测试应使用临时 `user_lora_root` 和伪造凭证。
-- 调试凭证时使用 `lora credentials validate`，不要打印解析后的 key。
+- 测试应使用临时 `user_lara_root` 和伪造凭证。
+- 调试凭证时使用 `lara credentials validate`，不要打印解析后的 key。
 
 ## 常见问题
 
 当凭据状态为 `missing` 时，依次检查：
 
 1. 当前 agent alias、模型组和子模型是否正确。
-2. `~/.lora/config.yaml` 中模型引用的 Connection 及其 `credential.env` 是否正确。
-3. `~/.lora/credentials.env`、进程环境或系统 keyring 是否提供该变量。
+2. `~/.lara/config.yaml` 中模型引用的 Connection 及其 `credential.env` 是否正确。
+3. `~/.lara/credentials.env`、进程环境或系统 keyring 是否提供该变量。
 4. 使用 OS 凭据库时，`keyring` 后端是否可用。

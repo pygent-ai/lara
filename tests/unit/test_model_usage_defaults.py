@@ -10,12 +10,12 @@ from pygent.llm._adapter_contracts import ModelProviderStreamPart
 from pygent.llm._stream_accumulator import ModelStreamAccumulator
 from pygent.llm.layer import _message_effect_value, _message_from_effect
 
-from lora.runtime.agent.core import LoraAgent
-from lora.runtime.agent.pipeline import checkpoint_conversation_message
-from lora.runtime.context import LoraContext
-from lora.runtime.service import LoraRuntimeService
-from lora.sessions import SessionManager
-from lora.schema import ResolvedAgentConfig, RunConfig
+from lara.runtime.agent.core import LaraAgent
+from lara.runtime.agent.pipeline import checkpoint_conversation_message
+from lara.runtime.context import LaraContext
+from lara.runtime.service import LaraRuntimeService
+from lara.sessions import SessionManager
+from lara.schema import ResolvedAgentConfig, RunConfig
 from tests.unit.test_model_configuration import native_mapping
 
 
@@ -24,13 +24,13 @@ def model_agent(tmp_path):
     mapping["connections"]["shared"]["credential"] = {"none": True}
     config = RunConfig(
         workspace_root=tmp_path,
-        lora_root=tmp_path / ".lora",
+        lara_root=tmp_path / ".lara",
         model_config_mapping=mapping,
         resolved_agent=ResolvedAgentConfig(
             alias="default", default_model_group="coding"
         ),
     )
-    return LoraAgent(config)
+    return LaraAgent(config)
 
 
 def test_all_model_entries_enable_streaming_and_leave_usage_to_client(tmp_path):
@@ -66,7 +66,7 @@ async def test_managed_binding_uses_same_usage_routes(tmp_path):
         model_resolver=SimpleNamespace(register=Mock(), resolver_id="test"),
         config=agent.config,
     )
-    await LoraRuntimeService.bind(service, agent, agent)
+    await LaraRuntimeService.bind(service, agent, agent)
     assert handle.ensure_profile.await_count == 2
     calls = handle.ensure_profile.await_args_list
     assert [call.kwargs["profile"] for call in calls] == [
@@ -88,14 +88,14 @@ async def test_start_turn_admits_persisted_session_preference(tmp_path):
     run = manager.start_case_run(session.session_id, "chat", run_config=config)
     agent = SimpleNamespace(llm=object())
     handle = SimpleNamespace(execution_id="execution-1")
-    service = LoraRuntimeService.__new__(LoraRuntimeService)
+    service = LaraRuntimeService.__new__(LaraRuntimeService)
     service.config = config
     service.initialize = AsyncMock()
     service.new_agent = Mock(return_value=agent)
     service._prepare_turn = AsyncMock(
         return_value=(
             UserMessage(content="hello"),
-            LoraContext(
+            LaraContext(
                 session_id=session.session_id,
                 case_id="chat",
                 case_run_id=run.case_run_id,
@@ -123,7 +123,7 @@ async def test_start_turn_admits_persisted_session_preference(tmp_path):
     options = service._start_agent_execution.await_args.kwargs["execution"]
     assert returned is handle
     assert options.model_calls.to_dict() == {
-        "lora:coding": {"profile": "preferred:backup"}
+        "lara:coding": {"profile": "preferred:backup"}
     }
 
 
@@ -133,7 +133,7 @@ async def test_usage_after_finish_survives_native_session_storage(tmp_path):
     manager = SessionManager(config)
     session = manager.create(case_id="chat", mode="agent")
     run = manager.start_case_run(session.session_id, "chat", run_config=config)
-    context = LoraContext(
+    context = LaraContext(
         session_id=run.session_id,
         case_id=run.case_id,
         case_run_id=run.case_run_id,
@@ -158,7 +158,7 @@ async def test_usage_after_finish_survives_native_session_storage(tmp_path):
         {"done": True},
     ]
     adapter = OpenAICompatibleAdapter()
-    entry = LoraAgent(config)._model_entries()[0]
+    entry = LaraAgent(config)._model_entries()[0]
     request = ModelProviderRequest(
         model_key=entry.key,
         model=entry.spec,
@@ -196,7 +196,7 @@ async def test_usage_after_finish_survives_native_session_storage(tmp_path):
         "reasoning_tokens": 14,
         "cached_input_tokens": 0,
     }
-    messages = list(Path(config.lora_root).glob("sessions/**/messages.jsonl"))
+    messages = list(Path(config.lara_root).glob("sessions/**/messages.jsonl"))
     assert messages
     for path in messages:
         rows = [

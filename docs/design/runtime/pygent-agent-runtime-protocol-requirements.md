@@ -2,15 +2,15 @@
 
 ## 背景
 
-Lora 当前有三种面向用户的对话入口：
+Lara 当前有三种面向用户的对话入口：
 
-- CLI: `lora session chat` 和 `lora session run --message "..."`
+- CLI: `lara session chat` 和 `lara session run --message "..."`
 - 本地 API: `POST /chat/stream`
 - 桌面端 Electron/React UI
 
-这三种入口的外层形态不同，但最终都会进入 Lora 的 `AgentRuntimeAdapter.run_turn(...)`。`AgentRuntimeAdapter` 再创建或接收一个 agent，并消费 agent 的流式输出。
+这三种入口的外层形态不同，但最终都会进入 Lara 的 `AgentRuntimeAdapter.run_turn(...)`。`AgentRuntimeAdapter` 再创建或接收一个 agent，并消费 agent 的流式输出。
 
-当前默认 agent 是 `LoraAgent`。`LoraAgent` 基于 pygent 的模型、消息和工具能力实现 ReAct 风格执行循环，包括：
+当前默认 agent 是 `LaraAgent`。`LaraAgent` 基于 pygent 的模型、消息和工具能力实现 ReAct 风格执行循环，包括：
 
 - 组合系统提示词。
 - 调用 `llm.stream_forward(...)`。
@@ -20,15 +20,15 @@ Lora 当前有三种面向用户的对话入口：
 - 将 tool result 追加回 pygent context。
 - 继续下一轮模型请求，直到没有 tool calls。
 
-`AgentRuntimeAdapter` 则把这个 agent 执行过程接入 Lora 自己的 session、case run 和 trace 体系。它的职责已经超过“调用 agent”本身，承担了大量运行时边界工作。
+`AgentRuntimeAdapter` 则把这个 agent 执行过程接入 Lara 自己的 session、case run 和 trace 体系。它的职责已经超过“调用 agent”本身，承担了大量运行时边界工作。
 
-因此，Lora 希望向 pygent 提出一个更稳定的 Agent Runtime Protocol 诉求：pygent 不需要接管 Lora 的 session/case/trace，但需要提供标准化的 agent 上下文、事件、工具生命周期和运行结果协议，减少 Lora 对 pygent 内部消息形态的适配代码。
+因此，Lara 希望向 pygent 提出一个更稳定的 Agent Runtime Protocol 诉求：pygent 不需要接管 Lara 的 session/case/trace，但需要提供标准化的 agent 上下文、事件、工具生命周期和运行结果协议，减少 Lara 对 pygent 内部消息形态的适配代码。
 
 ## 当前实现中的职责拆分
 
 ### `AgentRuntimeAdapter` 当前职责
 
-`AgentRuntimeAdapter` 位于 Lora 工程边界，主要承担这些职责：
+`AgentRuntimeAdapter` 位于 Lara 工程边界，主要承担这些职责：
 
 1. 创建 `RuntimeContext`，将 `AgentSession.history` 暴露给 agent。
 2. 生成或接收 `turn_id`。
@@ -46,13 +46,13 @@ Lora 当前有三种面向用户的对话入口：
 14. 更新并保存 session history 和 metadata。
 15. 写入 `model.response` 和 `context.checkpoint`。
 16. 返回统一结果：`session_id`、`case_id`、`case_run_id`、`turn_id`、`status`、`final_answer`、`error`、`message_count`。
-17. 支持 `run_turn(...)` 和 `run_case(...)` 两种 Lora 执行场景。
+17. 支持 `run_turn(...)` 和 `run_case(...)` 两种 Lara 执行场景。
 
-其中 1、2、4、5、6、10、11、12、13、14、15、16、17 都是 Lora 的 runtime 编排和证据链职责，不适合直接上提给 pygent。
+其中 1、2、4、5、6、10、11、12、13、14、15、16、17 都是 Lara 的 runtime 编排和证据链职责，不适合直接上提给 pygent。
 
-### `LoraAgent` 当前职责
+### `LaraAgent` 当前职责
 
-`LoraAgent` 更接近实际 agent 执行器，主要承担这些职责：
+`LaraAgent` 更接近实际 agent 执行器，主要承担这些职责：
 
 1. 持有 pygent LLM client 和 tool manager。
 2. 注册默认工具。
@@ -68,19 +68,19 @@ Lora 当前有三种面向用户的对话入口：
 
 其中 5、6、7、9、10、11 属于通用 agent runtime 协议能力，适合 pygent 标准化。
 
-8 比较特殊：Lora 需要 `ToolInterceptor` 记录 trace、文件影响、diff 和安全元数据。因此工具实际执行可以仍由 Lora 包装，但 pygent 应提供清晰的工具调用生命周期事件，使 Lora 可以插入自己的 interceptor。
+8 比较特殊：Lara 需要 `ToolInterceptor` 记录 trace、文件影响、diff 和安全元数据。因此工具实际执行可以仍由 Lara 包装，但 pygent 应提供清晰的工具调用生命周期事件，使 Lara 可以插入自己的 interceptor。
 
 ## 问题定义
 
-当前 Lora 与 pygent 的边界存在以下问题：
+当前 Lara 与 pygent 的边界存在以下问题：
 
 1. **消息形态不稳定**
 
-   Lora 需要兼容 dict、`RuntimeMessage`、pygent `BaseMessage`、assistant chunk、tool message 等多种输出形态。`AgentRuntimeAdapter._normalize_output(...)` 负责把这些对象转成 Lora 自己的 `RuntimeMessage`。
+   Lara 需要兼容 dict、`RuntimeMessage`、pygent `BaseMessage`、assistant chunk、tool message 等多种输出形态。`AgentRuntimeAdapter._normalize_output(...)` 负责把这些对象转成 Lara 自己的 `RuntimeMessage`。
 
 2. **delta 与最终消息语义不够明确**
 
-   当前模型流式输出产生 assistant delta，随后 pygent context 中会出现最终 assistant message。Lora 需要自己判断：
+   当前模型流式输出产生 assistant delta，随后 pygent context 中会出现最终 assistant message。Lara 需要自己判断：
 
    - delta 是否应该只回调给 UI。
    - delta 是否需要合并成最终 assistant message。
@@ -89,11 +89,11 @@ Lora 当前有三种面向用户的对话入口：
 
 3. **tool calls 生命周期需要上层自行推断**
 
-   Lora 需要从 assistant message 中提取 tool calls，然后调用工具，再构造 `ToolMessage` 追加到 pygent context。工具调用开始、工具调用完成、工具调用失败、tool_call_id 映射等事件没有统一的 agent runtime event 协议。
+   Lara 需要从 assistant message 中提取 tool calls，然后调用工具，再构造 `ToolMessage` 追加到 pygent context。工具调用开始、工具调用完成、工具调用失败、tool_call_id 映射等事件没有统一的 agent runtime event 协议。
 
 4. **工具执行扩展点不够明确**
 
-   Lora 希望保留 `ToolInterceptor`，用于记录 `tool.call`、`tool.result`、文件读写影响、snapshot 和 diff。但如果 pygent agent runtime 自己直接执行工具，上层难以插入完整观测和安全策略。
+   Lara 希望保留 `ToolInterceptor`，用于记录 `tool.call`、`tool.result`、文件读写影响、snapshot 和 diff。但如果 pygent agent runtime 自己直接执行工具，上层难以插入完整观测和安全策略。
 
 5. **运行结果缺少统一协议**
 
@@ -101,11 +101,11 @@ Lora 当前有三种面向用户的对话入口：
 
 6. **不同上层入口重复处理流式事件**
 
-   CLI、API 和 UI 都需要理解 assistant delta、runtime message、tool result 等事件。如果 pygent 的 agent runtime event 形态稳定，Lora 只需要做一次协议映射。
+   CLI、API 和 UI 都需要理解 assistant delta、runtime message、tool result 等事件。如果 pygent 的 agent runtime event 形态稳定，Lara 只需要做一次协议映射。
 
 ## 需求目标
 
-pygent 需要提供稳定的 Agent Runtime Protocol，使 Lora 这类上层框架可以：
+pygent 需要提供稳定的 Agent Runtime Protocol，使 Lara 这类上层框架可以：
 
 1. 用统一上下文对象启动一次 agent turn。
 2. 以统一事件流消费 agent 执行过程。
@@ -117,18 +117,18 @@ pygent 需要提供稳定的 Agent Runtime Protocol，使 Lora 这类上层框�
 
 最低目标：
 
-- pygent agent runtime 对外只暴露稳定事件对象，不要求 Lora 解析多种内部 message 形态。
+- pygent agent runtime 对外只暴露稳定事件对象，不要求 Lara 解析多种内部 message 形态。
 - 每个事件都有明确类型、run id、turn id、sequence、payload。
 - tool call 和 tool result 有稳定 ID，能够跨模型消息、工具执行和 trace 串联。
-- Lora 可以选择由 pygent 默认执行工具，也可以注入自定义 tool executor。
+- Lara 可以选择由 pygent 默认执行工具，也可以注入自定义 tool executor。
 
 ## 非目标
 
-- 不要求 pygent 管理 Lora 的 `.lora/sessions/...` 目录。
-- 不要求 pygent 写 Lora 的 `EventStore`。
-- 不要求 pygent 理解 Lora 的 case、regression、repair、diff 产物。
-- 不要求 pygent 接管 Lora 的 user message wrapper、initial reminder、prompt module、context checkpoint。
-- 不要求一次性重写 Lora 的 `AgentRuntimeAdapter`。
+- 不要求 pygent 管理 Lara 的 `.lara/sessions/...` 目录。
+- 不要求 pygent 写 Lara 的 `EventStore`。
+- 不要求 pygent 理解 Lara 的 case、regression、repair、diff 产物。
+- 不要求 pygent 接管 Lara 的 user message wrapper、initial reminder、prompt module、context checkpoint。
+- 不要求一次性重写 Lara 的 `AgentRuntimeAdapter`。
 - 不要求改变 pygent 现有 `BaseAgent`、`BaseMessage` 的内部实现，只要求提供稳定的外部 protocol。
 
 ## 推荐协议设计
@@ -190,7 +190,7 @@ class AgentMessage:
 
 - `messages` 是模型上下文的稳定表示。
 - pygent 可以内部转换成自己的 `BaseContext` 和 `BaseMessage`，但上层不需要知道内部结构。
-- `metadata` 可携带 Lora 的 `case_id`、`case_run_id`、`workspace_root`、`request_type` 等信息。
+- `metadata` 可携带 Lara 的 `case_id`、`case_run_id`、`workspace_root`、`request_type` 等信息。
 - `system_prompt` 可以为 `None`，由 agent 自行生成；也可以由上层完全指定。
 - 如果 pygent 需要写回上下文，应通过 event 表达，而不是直接要求上层读取内部 context。
 
@@ -211,7 +211,7 @@ class AgentRunOptions:
 
 - `max_steps=-1` 表示无限循环，直到模型不再请求工具。
 - `max_steps <= 0` 且不是 `-1` 应抛出结构化参数错误。
-- `request_type` 只是运行语义标记，pygent 不必理解 Lora case，但应透传到 metadata 或 request hooks。
+- `request_type` 只是运行语义标记，pygent 不必理解 Lara case，但应透传到 metadata 或 request hooks。
 
 ### 4. Agent runtime event
 
@@ -264,7 +264,7 @@ class AgentRuntimeEvent:
 
 ### 5. Tool executor 协议
 
-Lora 需要保留 `ToolInterceptor`，因此 pygent 应支持上层注入工具执行器。
+Lara 需要保留 `ToolInterceptor`，因此 pygent 应支持上层注入工具执行器。
 
 ```python
 class ToolExecutor(Protocol):
@@ -368,7 +368,7 @@ async def run_turn(...) -> AgentRunResult:
     ...
 ```
 
-这个 helper 可以内部消费 `stream_turn(...)`。Lora 的 API/桌面端仍可以直接使用事件流；CLI 单轮或测试可以使用 `run_turn(...)`。
+这个 helper 可以内部消费 `stream_turn(...)`。Lara 的 API/桌面端仍可以直接使用事件流；CLI 单轮或测试可以使用 `run_turn(...)`。
 
 ### 8. Message normalization helper
 
@@ -390,9 +390,9 @@ def to_agent_event(value: Any) -> AgentRuntimeEvent:
 - OpenAI compatible message dict
 - OpenAI compatible stream chunk
 
-Lora 的目标是逐步删除或收缩自己的 `_normalize_output(...)`，只保留 Lora 事件映射。
+Lara 的目标是逐步删除或收缩自己的 `_normalize_output(...)`，只保留 Lara 事件映射。
 
-## Lora 侧期望迁移方案
+## Lara 侧期望迁移方案
 
 ### 阶段 1：pygent 增加协议对象，不改变现有 agent 行为
 
@@ -426,21 +426,21 @@ pygent 提供一个默认 ReAct runtime，实现：
 11. 追加 tool message。
 12. 继续下一步，直到没有 tool calls 或达到 `max_steps`。
 
-### 阶段 3：LoraAgent 收缩为 Lora 特化配置层
+### 阶段 3：LaraAgent 收缩为 Lara 特化配置层
 
-Lora 保留：
+Lara 保留：
 
 - prompt composition
 - context compression 策略
 - tool registry 白名单
 - `ToolInterceptor`
-- Lora-specific reminders
+- Lara-specific reminders
 - EventStore 映射
 - session/case/run 持久化
 
-LoraAgent 可以把通用 ReAct 循环委托给 pygent runtime，只保留 Lora 需要注入的 hooks。
+LaraAgent 可以把通用 ReAct 循环委托给 pygent runtime，只保留 Lara 需要注入的 hooks。
 
-### 阶段 4：AgentRuntimeAdapter 只做 Lora 边界编排
+### 阶段 4：AgentRuntimeAdapter 只做 Lara 边界编排
 
 `AgentRuntimeAdapter.run_turn(...)` 迁移后大致变成：
 
@@ -448,7 +448,7 @@ LoraAgent 可以把通用 ReAct 循环委托给 pygent runtime，只保留 Lora 
 async def run_turn(...):
     store = EventStore(case_run_ref)
     context = build_pygent_runtime_context(session, user_input, turn_id)
-    tool_executor = LoraToolExecutor(interceptor=ToolInterceptor(...))
+    tool_executor = LaraToolExecutor(interceptor=ToolInterceptor(...))
 
     final = AgentRunAccumulator()
     async for event in agent_runtime.stream_turn(
@@ -456,14 +456,14 @@ async def run_turn(...):
         options=AgentRunOptions(max_steps=config.max_steps),
         tool_executor=tool_executor,
     ):
-        lora_event = map_pygent_event_to_lora_event(event)
+        lara_event = map_pygent_event_to_lara_event(event)
         store.append(...)
         update_session_history_if_persistable(event, session)
         emit_cli_or_api_callbacks(event)
         final.apply(event)
 
     session_manager.save(session)
-    return final.to_lora_result()
+    return final.to_lara_result()
 ```
 
 迁移目标：
@@ -471,11 +471,11 @@ async def run_turn(...):
 - `AgentRuntimeAdapter` 不再识别 pygent chunk 内部结构。
 - `AgentRuntimeAdapter` 不再自己推断 tool calls。
 - `AgentRuntimeAdapter` 不再自己构造 tool message。
-- `AgentRuntimeAdapter` 仍负责写 Lora trace 和保存 session。
+- `AgentRuntimeAdapter` 仍负责写 Lara trace 和保存 session。
 
-## Lora 侧事件映射建议
+## Lara 侧事件映射建议
 
-| pygent event | Lora event |
+| pygent event | Lara event |
 | --- | --- |
 | `run.started` | `model.request` 前置元数据或新的 `runtime.started` |
 | `model.request` | `model.request` |
@@ -491,13 +491,13 @@ async def run_turn(...):
 
 注意：
 
-- Lora 可以继续选择不把 token delta 写入 `messages.jsonl`。
-- Lora 应只把 `assistant.message` 和 `tool.result` 对应的模型可见消息写入 session history。
+- Lara 可以继续选择不把 token delta 写入 `messages.jsonl`。
+- Lara 应只把 `assistant.message` 和 `tool.result` 对应的模型可见消息写入 session history。
 - `assistant.reasoning_delta` 默认不进入 session history，除非配置要求保留。
 
 ## 与现有 `AgentRuntimeAdapter` 的边界
 
-迁移后，以下逻辑仍留在 Lora：
+迁移后，以下逻辑仍留在 Lara：
 
 1. `wrap_user_message(...)`
 2. `_render_initial_user_reminder(...)`
@@ -507,7 +507,7 @@ async def run_turn(...):
 6. `CaseRunResult` 生成
 7. `Evaluator` 和 `FailureAnalyzer`
 8. `ToolInterceptor` 的文件影响记录
-9. `.lora/sessions/...` 目录结构
+9. `.lara/sessions/...` 目录结构
 10. API SSE resume 和桌面端消息渲染
 
 以下逻辑希望沉到 pygent：
@@ -548,7 +548,7 @@ class AgentEventEmitter:
 要求：
 
 - 同一个 `stream_turn(...)` 调用内 sequence 只能由一个 emitter 生成。
-- resume 不是 pygent 的必需能力；Lora API 可以基于自己收到的 sequence 实现 SSE resume。
+- resume 不是 pygent 的必需能力；Lara API 可以基于自己收到的 sequence 实现 SSE resume。
 
 ### 2. Assistant delta 处理
 
@@ -746,7 +746,7 @@ class LegacyAgentRuntimeAdapter:
             raise InvalidAgentError(...)
 ```
 
-这能让 Lora 分阶段迁移，不必一次性修改所有测试 agent。
+这能让 Lara 分阶段迁移，不必一次性修改所有测试 agent。
 
 ## 验收用例
 
@@ -821,7 +821,7 @@ assistant message 包含：
     {
       "id": "call_1",
       "name": "read",
-      "arguments": {"file_path": "E:\\Projects\\lora\\README.md"}
+      "arguments": {"file_path": "E:\\Projects\\lara\\README.md"}
     }
   ]
 }
@@ -855,7 +855,7 @@ AgentToolResult(
 - 发出 `tool.result(status="error")`。
 - tool result 的 `status="error"` 与 `error_type` 结构化可见（`ToolResult` 字段与 `tool.result` 事件），不依赖正文文本。
 - agent runtime 可以继续请求模型，让模型看到工具失败。
-- Lora 不需要通过字符串匹配判断错误。
+- Lara 不需要通过字符串匹配判断错误。
 
 ### 6. 未知工具
 
@@ -885,19 +885,19 @@ AgentRunOptions(max_steps=1)
 - 发出 `run.error(error_type="MaxStepsExceeded")`。
 - `partial_final_answer` 包含截至当前可用 assistant 文本。
 
-### 8. Lora 注入 ToolInterceptor
+### 8. Lara 注入 ToolInterceptor
 
-Lora 传入自定义 `ToolExecutor`，内部调用 `ToolInterceptor.call_tool(...)`。
+Lara 传入自定义 `ToolExecutor`，内部调用 `ToolInterceptor.call_tool(...)`。
 
 验收：
 
 - pygent 不绕过该 executor。
-- Lora 能记录 `tool.call`、`tool.result`、`file_events`、`diffs`。
+- Lara 能记录 `tool.call`、`tool.result`、`file_events`、`diffs`。
 - pygent 仍负责把 `AgentToolResult` 转成 tool message 继续 agent loop。
 
 ### 9. API/UI SSE 映射
 
-Lora 收到 pygent events 后映射为现有 SSE：
+Lara 收到 pygent events 后映射为现有 SSE：
 
 | pygent | API |
 | --- | --- |
@@ -911,7 +911,7 @@ Lora 收到 pygent events 后映射为现有 SSE：
 验收：
 
 - 桌面端无需理解 pygent 内部 message。
-- 断线恢复仍由 Lora API 的 event sequence 实现。
+- 断线恢复仍由 Lara API 的 event sequence 实现。
 
 ## 测试建议
 
@@ -928,7 +928,7 @@ Lora 收到 pygent events 后映射为现有 SSE：
 9. `max_steps` 超限生成 `run.error(MaxStepsExceeded)`。
 10. usage 在 step 和 run 层聚合。
 
-### Lora 集成测试
+### Lara 集成测试
 
 1. `AgentRuntimeAdapter.run_turn(...)` 使用 pygent runtime event 流后，仍写入现有 `conversation.user_message`、`conversation.assistant_message`、`tool.result`、`model.request`、`model.response`、`context.checkpoint`。
 2. CLI 单轮仍返回原有 JSON 字段。
@@ -937,7 +937,7 @@ Lora 收到 pygent events 后映射为现有 SSE：
 5. 桌面端现有消息渲染不需要迁移。
 6. `run_case(...)` 的 evaluator 输入不变。
 7. agent 异常时 partial assistant output 仍被保存。
-8. tool result 的文件影响和 diff 仍由 Lora 记录。
+8. tool result 的文件影响和 diff 仍由 Lara 记录。
 
 ## 推荐实现顺序
 
@@ -948,25 +948,25 @@ Lora 收到 pygent events 后映射为现有 SSE：
 5. 实现默认 ReAct `stream_turn(...)`，先覆盖无工具和单工具成功路径。
 6. 增加工具失败、未知工具、max steps、usage 的测试。
 7. 提供 legacy adapter，兼容现有 `agent.stream(...)` 和 `agent.run(...)`。
-8. Lora 新增实验性 pygent runtime adapter，不替换默认路径。
-9. 用 Lora 的 `AgentRuntimeAdapter` 测试集验证行为一致。
-10. 再逐步将 `LoraAgent.stream(...)` 中的通用 ReAct loop 委托给 pygent。
+8. Lara 新增实验性 pygent runtime adapter，不替换默认路径。
+9. 用 Lara 的 `AgentRuntimeAdapter` 测试集验证行为一致。
+10. 再逐步将 `LaraAgent.stream(...)` 中的通用 ReAct loop 委托给 pygent。
 
 ## 成功标准
 
-完成后，Lora 与 pygent 的边界应变成：
+完成后，Lara 与 pygent 的边界应变成：
 
 - pygent 负责稳定的 agent runtime protocol。
 - pygent 负责模型流、assistant message、tool call、tool result、ReAct loop 的通用语义。
-- Lora 负责 session、case run、trace、evaluation、repair、文件影响和 UI/API 映射。
+- Lara 负责 session、case run、trace、evaluation、repair、文件影响和 UI/API 映射。
 
 具体可观察结果：
 
-1. Lora 不再需要解析 pygent 内部 chunk/message 的多种形态。
-2. Lora 不再需要自己从 assistant message 中提取 tool calls。
-3. Lora 不再需要自己构造 pygent `ToolMessage`。
+1. Lara 不再需要解析 pygent 内部 chunk/message 的多种形态。
+2. Lara 不再需要自己从 assistant message 中提取 tool calls。
+3. Lara 不再需要自己构造 pygent `ToolMessage`。
 4. 工具调用成功/失败在 event 层结构化可见。
-5. CLI、API、桌面端继续复用同一条 Lora runtime 边界。
-6. `AgentRuntimeAdapter` 从“协议补丁 + Lora 编排”收缩为“Lora 编排 + 事件映射”。
+5. CLI、API、桌面端继续复用同一条 Lara runtime 边界。
+6. `AgentRuntimeAdapter` 从“协议补丁 + Lara 编排”收缩为“Lara 编排 + 事件映射”。
 
-最终目标不是把 Lora 的工程证据链上提给 pygent，而是让 pygent 提供足够稳定的 agent runtime event protocol，使 Lora 可以专注于本地 agent 运行证据、评测和自优化闭环。
+最终目标不是把 Lara 的工程证据链上提给 pygent，而是让 pygent 提供足够稳定的 agent runtime event protocol，使 Lara 可以专注于本地 agent 运行证据、评测和自优化闭环。

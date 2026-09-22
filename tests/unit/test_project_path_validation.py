@@ -4,8 +4,8 @@ from unittest.mock import Mock
 import pytest
 from fastapi import HTTPException
 
-from lora_api.models.requests import UpdateSettingsRequest
-from lora_api.routers.settings import update_settings
+from lara_api.models.requests import UpdateSettingsRequest
+from lara_api.routers.settings import update_settings
 
 
 @pytest.mark.parametrize("kind", ["missing", "file"])

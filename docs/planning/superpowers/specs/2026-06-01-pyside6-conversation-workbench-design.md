@@ -4,15 +4,15 @@ Date: 2026-06-01
 
 ## Goal
 
-Build Lora into a usable PySide6 desktop application where users can chat with Lora, configure the active agent/runtime, and manage prior sessions from one place.
+Build Lara into a usable PySide6 desktop application where users can chat with Lara, configure the active agent/runtime, and manage prior sessions from one place.
 
 The first version focuses on the Conversation Workbench: a three-pane desktop shell that makes the core loop obvious and useful immediately:
 
 - choose or create a chat session,
-- send messages to Lora,
+- send messages to Lara,
 - stream assistant output,
 - inspect tool calls, file effects, trace events, and run status while the turn executes,
-- preserve sessions and run artifacts through the existing `.lora` storage model.
+- preserve sessions and run artifacts through the existing `.lara` storage model.
 
 ## Product Direction
 
@@ -23,27 +23,27 @@ The app should feel like a calm engineering workbench, not a marketing page or a
 - right-side inspector with dense cards, tabs, and status colors,
 - restrained accent colors for active run state, tool calls, file effects, and errors.
 
-The first memorable quality should be observability: users are not only chatting with Lora, they can see what Lora is doing.
+The first memorable quality should be observability: users are not only chatting with Lara, they can see what Lara is doing.
 
 ## First-Version Scope
 
 In scope:
 
-- PySide6 desktop app package under `gui`, kept as a sibling of the core `lora` package.
-- A GUI script entry point such as `lora-gui`.
+- PySide6 desktop app package under `gui`, kept as a sibling of the core `lara` package.
+- A GUI script entry point such as `lara-gui`.
 - Main window with session sidebar, chat pane, and trace inspector.
 - New chat session creation.
-- Resume existing chat sessions from `.lora/sessions`.
+- Resume existing chat sessions from `.lara/sessions`.
 - Send one user message at a time.
 - Stream assistant text into the current assistant message.
 - Display runtime messages for assistant tool calls and tool results.
 - Display current turn status, session id, case run id, and errors.
 - Basic runtime settings dialog for workspace root, config path, agent alias, model override, and max steps.
-- Reuse existing Lora APIs instead of shelling out to the CLI.
+- Reuse existing Lara APIs instead of shelling out to the CLI.
 
 Out of scope for the first version:
 
-- Full `lora.yaml` profile CRUD.
+- Full `lara.yaml` profile CRUD.
 - Case authoring UI.
 - Regression suite dashboards.
 - Repair workflow UI.
@@ -54,7 +54,7 @@ These can be added later without changing the main shell.
 
 ## Architecture
 
-Add a GUI package next to the core `lora` package:
+Add a GUI package next to the core `lara` package:
 
 ```text
 src/gui/
@@ -71,24 +71,24 @@ src/gui/
     settings.py
 ```
 
-This keeps `lora` focused on agent/runtime behavior and makes `gui` the application layer. `gui` may import from `lora`, but `lora` must not import from `gui`.
+This keeps `lara` focused on agent/runtime behavior and makes `gui` the application layer. `gui` may import from `lara`, but `lara` must not import from `gui`.
 
 `app.py` owns Qt application startup and applies the stylesheet.
 
 `main_window.py` composes the three main panes and coordinates user actions.
 
-`workers.py` contains Qt worker objects that run async Lora turns in a background thread. Workers call `AgentRuntimeAdapter.run_turn()` and emit Qt signals for assistant deltas, runtime messages, errors, and completion.
+`workers.py` contains Qt worker objects that run async Lara turns in a background thread. Workers call `AgentRuntimeAdapter.run_turn()` and emit Qt signals for assistant deltas, runtime messages, errors, and completion.
 
-`session_model.py` adapts `SessionManager` and `.lora/sessions` into view-friendly records. It should be responsible for listing, loading, and creating chat sessions.
+`session_model.py` adapts `SessionManager` and `.lara/sessions` into view-friendly records. It should be responsible for listing, loading, and creating chat sessions.
 
-The GUI reuses existing core APIs from `lora`:
+The GUI reuses existing core APIs from `lara`:
 
 - `load_run_config()` for runtime configuration.
 - `SessionManager` for session lifecycle.
 - `AgentRuntimeAdapter.run_turn()` for chat execution.
 - `EventStore` and run artifact files for inspector data.
 
-The GUI must not duplicate session persistence logic. Packaging should include both `src/lora` and `src/gui`, while the existing `lora` CLI remains owned by the core package.
+The GUI must not duplicate session persistence logic. Packaging should include both `src/lara` and `src/gui`, while the existing `lara` CLI remains owned by the core package.
 
 ## Main UI
 
@@ -141,7 +141,7 @@ The settings dialog supports temporary runtime configuration:
 - model override,
 - max steps.
 
-Applying settings reloads `RunConfig` and recreates the `SessionManager`. Persisting these values back to `lora.yaml` is explicitly deferred.
+Applying settings reloads `RunConfig` and recreates the `SessionManager`. Persisting these values back to `lara.yaml` is explicitly deferred.
 
 ## Data Flow
 
@@ -163,7 +163,7 @@ Runtime exceptions are surfaced in the chat pane and inspector. The worker shoul
 
 Configuration errors should appear before a run starts, with enough detail for the user to fix workspace, config path, agent alias, or missing API key state.
 
-Missing API keys are not treated as GUI failures because current Lora behavior can return a deterministic fallback response.
+Missing API keys are not treated as GUI failures because current Lara behavior can return a deterministic fallback response.
 
 ## Testing
 
@@ -179,7 +179,7 @@ Manual verification:
 - launch the app,
 - create a new chat,
 - send a message without a real API key and verify fallback behavior,
-- confirm session persistence under `.lora/sessions`,
+- confirm session persistence under `.lara/sessions`,
 - confirm right inspector shows status and runtime messages.
 
 ## Implementation Notes
@@ -190,17 +190,17 @@ Implementation should update packaging metadata so both packages are included:
 
 ```toml
 [tool.hatch.build.targets.wheel]
-packages = ["src/lora", "src/gui"]
+packages = ["src/lara", "src/gui"]
 ```
 
 It should also add a desktop app command:
 
 ```toml
 [project.scripts]
-lora = "lora.cli:main"
-lora-gui = "gui.__main__:main"
+lara = "lara.cli:main"
+lara-gui = "gui.__main__:main"
 ```
 
-Qt styling should be local to the GUI package. Core Lora modules should remain UI-agnostic.
+Qt styling should be local to the GUI package. Core Lara modules should remain UI-agnostic.
 
 The implementation should keep the first version narrow. A polished chat workbench is more valuable than a broad but shallow dashboard.

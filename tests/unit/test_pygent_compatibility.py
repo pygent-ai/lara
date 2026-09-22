@@ -9,8 +9,8 @@ from pygent import Context, UserMessage
 from pygent.llm import ModelConfig, OpenAICompatibleClient
 
 import examples.react_agent_demo as react_agent_demo
-from lora.runtime.agent import core
-from lora.runtime import model_configuration
+from lara.runtime.agent import core
+from lara.runtime import model_configuration
 from tests.unit.test_model_configuration import native_runtime_config
 
 
@@ -56,7 +56,7 @@ async def test_native_invoker_preserves_configured_retry_and_fallback(
         config.resolved_agent.retry.max_attempts_per_model = attempts
         config.resolved_agent.retry.backoff_initial = 0
         config.resolved_agent.retry.backoff_maximum = 0
-        agent = core.LoraAgent(config)
+        agent = core.LaraAgent(config)
         try:
             layer = agent.new_model_layer()
             answer, _ = await layer.invoke(

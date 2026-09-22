@@ -16,7 +16,7 @@ export function resolveBackendLaunch({
   workspaceRoot,
 }) {
   if (isPackaged) {
-    const command = path.join(resourcesPath, "backend", "lora-api", backendExecutableName(platform));
+    const command = path.join(resourcesPath, "backend", "lara-api", backendExecutableName(platform));
     return {
       command,
       args: backendArgs({ port, workspaceRoot }),
@@ -33,7 +33,7 @@ export function resolveBackendLaunch({
 }
 
 export function backendExecutableName(platform = process.platform) {
-  return platform === "win32" ? "lora-api.exe" : "lora-api";
+  return platform === "win32" ? "lara-api.exe" : "lara-api";
 }
 
 function developmentBackendPath(repoRoot, platform) {
@@ -47,7 +47,7 @@ export function apiBaseUrl(port = DEFAULT_API_PORT) {
 }
 
 export function resolveUserDataPath(homePath) {
-  return path.resolve(homePath, ".lora", "desktop");
+  return path.resolve(homePath, ".lara", "desktop");
 }
 
 export async function findAvailablePort(
@@ -108,8 +108,8 @@ export async function waitForBackend({
     ? new Promise((_, reject) => {
         exitListener = (code, signal) => reject(backendExitError(code, signal));
         errorListener = (cause) => {
-          const error = new Error(`Unable to start lora-api: ${cause.message}`);
-          error.code = "LORA_BACKEND_EXITED";
+          const error = new Error(`Unable to start lara-api: ${cause.message}`);
+          error.code = "LARA_BACKEND_EXITED";
           reject(error);
         };
         child.once("error", errorListener);
@@ -128,12 +128,12 @@ export async function waitForBackend({
           signal: AbortSignal.timeout(Math.max(1, Math.min(1000, deadline - Date.now()))),
         }), childExit);
         if (response.ok) {
-          const actualInstanceId = response.headers?.get?.("x-lora-backend-instance") || "";
+          const actualInstanceId = response.headers?.get?.("x-lara-backend-instance") || "";
           if (!expectedInstanceId || actualInstanceId === expectedInstanceId) {
             return true;
           }
           lastError = new Error(
-            `Health check reached another lora-api instance at ${baseUrl}`,
+            `Health check reached another lara-api instance at ${baseUrl}`,
           );
         } else {
           lastError = new Error(`Health check failed with ${response.status}`);
@@ -153,7 +153,7 @@ export async function waitForBackend({
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error("Timed out waiting for lora-api");
+  throw lastError instanceof Error ? lastError : new Error("Timed out waiting for lara-api");
 }
 
 export function stopBackendProcess(
@@ -210,12 +210,12 @@ function raceChildExit(operation, childExit) {
 
 function backendExitError(code, signal) {
   const error = new Error(
-    `lora-api exited before becoming ready (code=${code ?? ""} signal=${signal ?? ""})`,
+    `lara-api exited before becoming ready (code=${code ?? ""} signal=${signal ?? ""})`,
   );
-  error.code = "LORA_BACKEND_EXITED";
+  error.code = "LARA_BACKEND_EXITED";
   return error;
 }
 
 function isBackendExitError(error) {
-  return error?.code === "LORA_BACKEND_EXITED";
+  return error?.code === "LARA_BACKEND_EXITED";
 }

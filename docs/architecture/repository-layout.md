@@ -2,13 +2,13 @@
 
 This repository is moving toward a local desktop architecture with three main layers:
 
-- `src/lora`: Python core domain logic. It should not import desktop, React, Electron, or FastAPI code.
-- `src/lora_api`: local FastAPI service layer. It adapts core Lora capabilities to HTTP and event streams.
-- `apps/desktop`: Electron and React desktop shell. It talks to `lora_api` through typed contracts.
+- `src/lara`: Python core domain logic. It should not import desktop, React, Electron, or FastAPI code.
+- `src/lara_api`: local FastAPI service layer. It adapts core Lara capabilities to HTTP and event streams.
+- `apps/desktop`: Electron and React desktop shell. It talks to `lara_api` through typed contracts.
 
 ## Python feature domains
 
-`src/lora` is organized by capability rather than by technical file type:
+`src/lara` is organized by capability rather than by technical file type:
 
 - `core` and `schema`: dependency-light primitives and shared contracts.
 - `credentials` and `config`: external configuration inputs.
@@ -24,7 +24,7 @@ This repository is moving toward a local desktop architecture with three main la
 Dependencies should generally point in this direction:
 
 ```text
-cli / lora_api
+cli / lara_api
         |
 workflows / repair / orchestration
         |
@@ -41,7 +41,7 @@ Cross-feature imports should use a package's exported API where practical. A fea
 
 The agent is a package because it contains several independently changing concerns:
 
-- `runtime/agent/core.py`: reusable `LoraAgent` definition and graph assembly.
+- `runtime/agent/core.py`: reusable `LaraAgent` definition and graph assembly.
 - `runtime/agent/pipeline.py`: model and tool middleware.
 - `runtime/agent/prompt_models.py`: prompt contracts and render context.
 - `runtime/agent/prompts.py`: prompt composition, injection policy, and cache.
@@ -67,9 +67,9 @@ the owning module directly instead of relying on re-export facades.
   while `orchestration/execution_host.py` composes and closes short-lived CLI
   execution resources.
 - `runtime/context.py` is the execution-state boundary: portable run identity,
-  turn state, history, and pending side effects travel through `LoraContext`;
+  turn state, history, and pending side effects travel through `LaraContext`;
   reusable Agent/Module definitions do not retain per-run mutable state.
-- `lora_api/container.py` is the API composition root. `dependencies.py` only adapts it to FastAPI, while API services depend on the container instead of FastAPI wiring.
+- `lara_api/container.py` is the API composition root. `dependencies.py` only adapts it to FastAPI, while API services depend on the container instead of FastAPI wiring.
 - Package `__init__.py` files expose intentional public symbols. Compatibility modules preserve established import paths without reintroducing dependency cycles.
 
 Project-level documentation is organized under `docs/`:

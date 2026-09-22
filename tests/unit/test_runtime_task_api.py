@@ -8,8 +8,8 @@ from fastapi import HTTPException
 from pygent import ToolResult, freeze_json
 from pygent.tool import ToolTask, ToolTaskState
 
-from lora_api.dependencies import ApiContext
-from lora_api.routers.runtime import cancel_task, get_task
+from lara_api.dependencies import ApiContext
+from lara_api.routers.runtime import cancel_task, get_task
 
 
 class TaskContext:

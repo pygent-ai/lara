@@ -2,7 +2,7 @@
 
 ## Goal
 
-Add a first-class `diff` tool that lets the model inspect file changes recorded by Lora, using data persisted under the current session directory.
+Add a first-class `diff` tool that lets the model inspect file changes recorded by Lara, using data persisted under the current session directory.
 
 The tool must answer questions like:
 
@@ -10,7 +10,7 @@ The tool must answer questions like:
 - What unified patch was produced by a recorded write/edit/delete?
 - Can the same diff be recovered after restarting the chat session?
 
-The important constraint is that `diff` must use Lora's persisted evidence chain, not transient model context and not only live `git diff` output. A restarted session should still be able to inspect file changes that were recorded earlier.
+The important constraint is that `diff` must use Lara's persisted evidence chain, not transient model context and not only live `git diff` output. A restarted session should still be able to inspect file changes that were recorded earlier.
 
 ## Existing Architecture Fit
 
@@ -19,8 +19,8 @@ The current code already records most of the facts this feature needs:
 - `ToolInterceptor.call_tool()` wraps every model-triggered tool call.
 - `FileEffectTracker` snapshots the workspace before and after tool execution.
 - `file.read`, `file.write`, `file.edit`, and `file.delete` events are written to each run's `file_events.jsonl`.
-- `EventStore._append_session_log()` also projects file events to `.lora/sessions/{session_id}/logs/file_events.jsonl`.
-- `LoraAgent._register_default_tools()` registers the model-visible tool set through `ToolManager`.
+- `EventStore._append_session_log()` also projects file events to `.lara/sessions/{session_id}/logs/file_events.jsonl`.
+- `LaraAgent._register_default_tools()` registers the model-visible tool set through `ToolManager`.
 
 The new design should extend this path rather than adding a separate diff mechanism. `file_events.jsonl` remains the durable fact log; the new diff artifacts are derived evidence that make file changes easier to inspect and replay.
 
@@ -28,7 +28,7 @@ The new design should extend this path rather than adding a separate diff mechan
 
 Use persisted before/after snapshots plus generated patch artifacts.
 
-For every observed write, edit, or delete, Lora should store enough content under the run directory to reconstruct the textual diff later. The `diff` tool reads those persisted artifacts and can return either a summary, structured JSON, or a unified patch.
+For every observed write, edit, or delete, Lara should store enough content under the run directory to reconstruct the textual diff later. The `diff` tool reads those persisted artifacts and can return either a summary, structured JSON, or a unified patch.
 
 This is preferred over:
 
@@ -40,7 +40,7 @@ This is preferred over:
 Each run gets a `diffs` directory:
 
 ```text
-.lora/sessions/{session_id}/cases/{case_id}/runs/{case_run_id}/
+.lara/sessions/{session_id}/cases/{case_id}/runs/{case_run_id}/
   file_events.jsonl
   diffs/
     snapshots/
@@ -55,14 +55,14 @@ Each run gets a `diffs` directory:
 Each session also gets a cross-run index:
 
 ```text
-.lora/sessions/{session_id}/logs/diff_events.jsonl
+.lara/sessions/{session_id}/logs/diff_events.jsonl
 ```
 
 The run-local files are the source of recoverable patch content. The session-level file is an append-only index that lets later turns discover historical diffs without scanning every run directory first.
 
 ## Event Types
 
-Add `diff.created` to `LORA_EVENT_TYPES`.
+Add `diff.created` to `LARA_EVENT_TYPES`.
 
 `diff.created` is emitted after a write/edit/delete file event has enough data to create a patch artifact. It is written to:
 
@@ -82,15 +82,15 @@ Recommended projection row:
   "turn_id": "turn-0001",
   "tool_call_id": "evt_tool",
   "tool_name": "edit",
-  "path": "E:\\Projects\\lora\\src\\lora\\agent.py",
-  "relative_path": "src/lora/agent.py",
+  "path": "E:\\Projects\\lara\\src\\lara\\agent.py",
+  "relative_path": "src/lara/agent.py",
   "change_type": "edit",
   "before_exists": true,
   "after_exists": true,
   "before_hash": "...",
   "after_hash": "...",
-  "snapshot_before_path": "...\\diffs\\snapshots\\evt_tool\\before\\src\\lora\\agent.py",
-  "snapshot_after_path": "...\\diffs\\snapshots\\evt_tool\\after\\src\\lora\\agent.py",
+  "snapshot_before_path": "...\\diffs\\snapshots\\evt_tool\\before\\src\\lara\\agent.py",
+  "snapshot_after_path": "...\\diffs\\snapshots\\evt_tool\\after\\src\\lara\\agent.py",
   "patch_path": "...\\diffs\\patches\\diff_....patch",
   "patch_char_count": 1234,
   "patch_line_count": 42,
@@ -125,8 +125,8 @@ Benefits:
 Patch headers should use stable workspace-relative names:
 
 ```text
---- a/src/lora/agent.py
-+++ b/src/lora/agent.py
+--- a/src/lara/agent.py
++++ b/src/lara/agent.py
 ```
 
 For new files:
@@ -150,7 +150,7 @@ Register a model-visible tool named `diff`.
 ```json
 {
   "name": "diff",
-  "description": "Show persisted file diffs for the current Lora session or run. Uses recorded file effects and stored snapshots, so results survive chat restarts.",
+  "description": "Show persisted file diffs for the current Lara session or run. Uses recorded file effects and stored snapshots, so results survive chat restarts.",
   "parameters": {
     "type": "object",
     "properties": {
@@ -202,7 +202,7 @@ limit = 20
     {
       "diff_id": "diff_...",
       "change_type": "edit",
-      "path": "src/lora/agent.py",
+      "path": "src/lara/agent.py",
       "tool_name": "edit",
       "tool_call_id": "evt_tool",
       "patch_path": "..."
@@ -219,7 +219,7 @@ Filters:
 
 - `scope="turn"` reads current run diff records matching `turn_id`.
 - `scope="run"` reads current run diff records.
-- `scope="session"` reads `.lora/sessions/{session_id}/logs/diff_events.jsonl`.
+- `scope="session"` reads `.lara/sessions/{session_id}/logs/diff_events.jsonl`.
 - `path` filters by normalized absolute path or workspace-relative path.
 - `tool_call_id` filters by the recorded tool call.
 
@@ -234,7 +234,7 @@ Add the custom `DiffTool` to the same registration flow as pygent tools:
 Update the available-tools prompt guidance with one sentence:
 
 ```text
-Use diff to inspect persisted Lora file changes. Use bash git diff only for live repository state.
+Use diff to inspect persisted Lara file changes. Use bash git diff only for live repository state.
 ```
 
 This tells the model that `diff` is for recorded session evidence, while shell diff commands are for current workspace state.

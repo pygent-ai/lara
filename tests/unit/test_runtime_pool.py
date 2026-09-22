@@ -4,8 +4,8 @@ import asyncio
 
 import pytest
 
-from lora.orchestration import RuntimeScopeKey, WorkspaceRuntimePool
-from lora.schema import ResolvedAgentConfig, RunConfig
+from lara.orchestration import RuntimeScopeKey, WorkspaceRuntimePool
+from lara.schema import ResolvedAgentConfig, RunConfig
 from tests.unit.test_model_configuration import native_mapping
 
 
@@ -26,7 +26,7 @@ class _Runtime:
 def _config(tmp_path, *, max_steps: int = -1) -> RunConfig:
     return RunConfig(
         workspace_root=tmp_path,
-        lora_root=tmp_path / ".lora",
+        lara_root=tmp_path / ".lara",
         max_steps=max_steps,
     )
 

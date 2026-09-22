@@ -94,7 +94,7 @@ export function ScheduledPage({ api, projects, activeSession, settings, onOpenSe
 
   return <section className="scheduled-page" aria-label="定时任务">
     <header className="scheduled-header">
-      <div><span className="scheduled-eyebrow">AUTOMATIONS</span><h2>定时任务</h2><p>让 Lora 在后台按计划执行项目任务。</p></div>
+      <div><span className="scheduled-eyebrow">AUTOMATIONS</span><h2>定时任务</h2><p>让 Lara 在后台按计划执行项目任务。</p></div>
       <button className="send scheduled-create" type="button" onClick={startCreate}><Plus size={16} />新建</button>
     </header>
     <div className="scheduled-filters">
@@ -104,7 +104,7 @@ export function ScheduledPage({ api, projects, activeSession, settings, onOpenSe
     </div>
     {error && <div className="scheduled-error" role="alert">{error}</div>}
     <div className="scheduled-list">
-      {!items.length && <div className="scheduled-empty"><CalendarClock size={32} /><strong>还没有定时任务</strong><span>新建一个任务，或在对话中让 Lora 使用 automation CLI 创建。</span></div>}
+      {!items.length && <div className="scheduled-empty"><CalendarClock size={32} /><strong>还没有定时任务</strong><span>新建一个任务，或在对话中让 Lara 使用 automation CLI 创建。</span></div>}
       {items.map((item) => <article className="automation-card" key={item.automation_id}>
         <div className="automation-card-main" onClick={() => startEdit(item)}>
           <div className="automation-icon"><CalendarClock size={17} /></div>

@@ -12,7 +12,7 @@ export class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, info) {
-    console.error("[lora] renderer failed", error, info?.componentStack);
+    console.error("[lara] renderer failed", error, info?.componentStack);
   }
 
   render() {
@@ -22,7 +22,7 @@ export class ErrorBoundary extends React.Component {
     }
     return (
       <main className="startup" role="alert">
-        <h1>Lora</h1>
+        <h1>Lara</h1>
         <p>界面出错，已停止渲染：{error.message || String(error)}</p>
         <button type="button" onClick={() => globalThis.location?.reload()}>
           重新加载

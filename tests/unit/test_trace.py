@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lora.schema import CaseRunRef, ContextEvent
-from lora.tracing import EventStore
+from lara.schema import CaseRunRef, ContextEvent
+from lara.tracing import EventStore
 
 
 class EventStoreTests(unittest.TestCase):
@@ -149,7 +149,7 @@ class EventStoreTests(unittest.TestCase):
 
     def test_session_level_context_artifacts_are_written_when_available(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            session_dir = Path(tmp) / ".lora" / "sessions" / "s1"
+            session_dir = Path(tmp) / ".lara" / "sessions" / "s1"
             run_dir = session_dir / "cases" / "c1" / "runs" / "r1"
             session_dir.mkdir(parents=True)
             (session_dir / "session.json").write_text("{}", encoding="utf-8")

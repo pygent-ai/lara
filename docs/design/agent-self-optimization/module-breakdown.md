@@ -74,20 +74,20 @@ flowchart TB
 ### 需要支持的命令
 
 ```bash
-lora session create --case <case_id>
-lora session show <session_id>
-lora case run <case_file>
-lora case run <case_file> --session <session_id>
-lora case analyze <session_id> <case_run_id>
-lora case replay <session_id> <case_run_id>
-lora regression run
-lora optimize <case_file>
+lara session create --case <case_id>
+lara session show <session_id>
+lara case run <case_file>
+lara case run <case_file> --session <session_id>
+lara case analyze <session_id> <case_run_id>
+lara case replay <session_id> <case_run_id>
+lara regression run
+lara optimize <case_file>
 ```
 
 ### 输入
 
 - CLI 参数
-- `lora.yaml`
+- `lara.yaml`
 - 环境变量
 
 ### 输出
@@ -100,7 +100,7 @@ lora optimize <case_file>
 ```python
 class RunConfig:
     workspace_root: str
-    lora_root: str
+    lara_root: str
     session_id: str | None
     case_file: str | None
     model: str | None
@@ -127,7 +127,7 @@ class RunConfig:
 - 创建 case run。
 - 记录 session metadata。
 - 兼容 pygent `Session.load/save`。
-- 提供 `.lora/sessions/{session_id}` 结构。
+- 提供 `.lara/sessions/{session_id}` 结构。
 
 ### 输入
 
@@ -156,9 +156,9 @@ class SessionManager:
 ### 数据产物
 
 ```text
-.lora/sessions/{session_id}/metadata.json
-.lora/sessions/{session_id}/session.json
-.lora/sessions/{session_id}/cases/{case_id}/runs/{case_run_id}/run_config.json
+.lara/sessions/{session_id}/metadata.json
+.lara/sessions/{session_id}/session.json
+.lara/sessions/{session_id}/cases/{case_id}/runs/{case_run_id}/run_config.json
 ```
 
 ### 验收标准
@@ -640,7 +640,7 @@ class CaseDefinition:
     metrics: dict
 ```
 
-建议由平台组维护 `src/lora/schema/`，所有模块只依赖这些公共模型。
+建议由平台组维护 `src/lara/schema/`，所有模块只依赖这些公共模型。
 
 ## 17. MVP 模块边界
 

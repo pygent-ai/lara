@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lora.evaluation.regression import RegressionManifest, _combined_status
+from lara.evaluation.regression import RegressionManifest, _combined_status
 
 
 class RegressionManifestTests(unittest.TestCase):

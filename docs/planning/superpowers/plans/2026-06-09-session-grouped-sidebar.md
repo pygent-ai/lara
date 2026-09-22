@@ -365,7 +365,7 @@ def _scope(scope_id: str, label: str, tooltip: str | None = None) -> SessionScop
         label=label,
         tooltip=tooltip or label,
         workspace_root=None if scope_id == "conversation" else tooltip or label,
-        lora_root=f"/tmp/{label}/.lora",
+        lara_root=f"/tmp/{label}/.lara",
         runtime_workspace_root=f"/tmp/{label}",
     )
 
@@ -387,7 +387,7 @@ def _groups() -> list[SessionGroupRecord]:
     return [
         SessionGroupRecord(scope=_scope("conversation", "对话"), records=[_record("chat-one", "Chat one")]),
         SessionGroupRecord(
-            scope=_scope("project:E:/Projects/lora", "lora", "E:/Projects/lora"),
+            scope=_scope("project:E:/Projects/lara", "lara", "E:/Projects/lara"),
             records=[_record("chat-two", "Chat two")],
         ),
     ]
@@ -448,8 +448,8 @@ Replace `test_sidebar_shows_scope_tabs_and_emits_selected_scope` with:
         assert second_header is not None
         self.assertIsNotNone(first_header.findChild(QLabel, "SessionGroupTitle"))
         self.assertEqual(first_header.findChild(QLabel, "SessionGroupTitle").text(), "对话")
-        self.assertEqual(second_header.findChild(QLabel, "SessionGroupTitle").text(), "lora")
-        self.assertEqual(sidebar.session_tree.topLevelItem(1).toolTip(0), "E:/Projects/lora")
+        self.assertEqual(second_header.findChild(QLabel, "SessionGroupTitle").text(), "lara")
+        self.assertEqual(sidebar.session_tree.topLevelItem(1).toolTip(0), "E:/Projects/lara")
         self.assertEqual(sidebar.session_tree.topLevelItem(0).childCount(), 1)
         self.assertEqual(sidebar.session_tree.topLevelItem(1).childCount(), 1)
 
@@ -470,7 +470,7 @@ Replace `test_sidebar_shows_scope_tabs_and_emits_selected_scope` with:
         child = sidebar.session_tree.topLevelItem(1).child(0)
         sidebar._emit_selected(child, 0)
 
-        self.assertEqual(emitted, [("project:E:/Projects/lora", "chat-two")])
+        self.assertEqual(emitted, [("project:E:/Projects/lara", "chat-two")])
 ```
 
 - [ ] **Step 4: Run sidebar tests to verify they fail**
@@ -713,7 +713,7 @@ Append these tests to `GuiSessionSidebarTests`:
         sidebar.session_tree.insertTopLevelItem(0, moved)
         sidebar._emit_group_order_changed()
 
-        self.assertEqual(emitted, [["project:E:/Projects/lora", "conversation"]])
+        self.assertEqual(emitted, [["project:E:/Projects/lara", "conversation"]])
 
     def test_session_items_are_not_drag_enabled(self) -> None:
         sidebar = SessionSidebar()
@@ -1050,7 +1050,7 @@ Delete the `self.sidebar.set_scopes(...)` call. Keep workspace, agent, theme, an
             {
                 "workspace": self.config.workspace_root,
                 "scope": self.current_scope.label,
-                "lora_root": self.config.lora_root,
+                "lara_root": self.config.lara_root,
                 "agent": self.config.agent_alias,
                 "model": self.config.model_name,
                 "api_key_source": self.config.api_key_source,
@@ -1222,7 +1222,7 @@ Expected: PASS.
 Run:
 
 ```bash
-lora-gui
+lara-gui
 ```
 
 Expected:

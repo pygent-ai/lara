@@ -1,13 +1,13 @@
 # 给 Pygent 0.2.2 的工程化建议
 
-以下建议来自 Lora 将 FastAPI 多会话 Agent、模型流、工具审计和文件副作用迁移到
+以下建议来自 Lara 将 FastAPI 多会话 Agent、模型流、工具审计和文件副作用迁移到
 Pygent 0.2.2 的实际过程。每项都包含遇到的场景、影响和建议方向。
 
 ## P0：让 Tool executor 获得请求级 portable Context
 
 ### 场景
 
-Lora 的工具 executor 需要当前 `session_id`、`case_run_id`、`turn_id`、workspace 和权限事实，
+Lara 的工具 executor 需要当前 `session_id`、`case_run_id`、`turn_id`、workspace 和权限事实，
 用于 trace、文件效果和授权。`ToolCallLayer` 的授权 Module 可以读取 Agent `Context`，但
 `ToolExecutor.execute(spec, call, ToolExecutionContext)` 的 `ToolExecutionContext` 只有 deadline
 和事件回调，拿不到调用它的 portable `Context`。
@@ -62,7 +62,7 @@ Module 内调用 child 的标准方式是 `await child(message, context)`。它�
 
 ### 影响
 
-Lora 必须在 root 的外部订阅整个 execution journal，再按 `module_path` 过滤主模型与压缩模型
+Lara 必须在 root 的外部订阅整个 execution journal，再按 `module_path` 过滤主模型与压缩模型
 事件。Agent 本身无法自然地把 child delta 转换为自己的领域事件，CLI/API 需要重复桥接逻辑。
 
 ### 建议
@@ -129,7 +129,7 @@ snapshot = runtime.binding_snapshot(binding)
 
 ### 场景
 
-Lora 工具的 Python 调用成功，但可能返回 `{status: "error", error: ...}` 领域结果。
+Lara 工具的 Python 调用成功，但可能返回 `{status: "error", error: ...}` 领域结果。
 `LocalToolExecutor` 会把这个对象视为成功的 ToolTask output；若抛 `ToolExecutionError`，又难以保留
 应用内部的 trace tool_call_id 和结构化详情。
 
@@ -161,7 +161,7 @@ live resource 又会引入并发安全问题。
 
 ## P2：同步发布 PyPI 版本与 Git tag
 
-Lora 升级时 Git 已有 `v0.2.2`，但 PyPI 尚无法解析 `pygent-ai==0.2.2`，只能在 uv sources 中锁定
+Lara 升级时 Git 已有 `v0.2.2`，但 PyPI 尚无法解析 `pygent-ai==0.2.2`，只能在 uv sources 中锁定
 Git tag/commit。建议 release pipeline 在 tag 后自动发布并验证 PyPI artifact，使版本声明与锁文件
 不需要双重来源。
 

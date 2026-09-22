@@ -4,10 +4,10 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $distPath = Join-Path $repoRoot "build\package"
 $workPath = Join-Path $repoRoot "build\pyinstaller"
 $specPath = Join-Path $repoRoot "build\pyinstaller"
-$apiEntryPoint = Join-Path $PSScriptRoot "lora_api_entry.py"
-$cliEntryPoint = Join-Path $PSScriptRoot "lora_entry.py"
+$apiEntryPoint = Join-Path $PSScriptRoot "lara_api_entry.py"
+$cliEntryPoint = Join-Path $PSScriptRoot "lara_entry.py"
 $wheelPath = Join-Path $workPath "wheel"
-$loraWheel = $null
+$laraWheel = $null
 
 function Invoke-PyInstaller {
     param(
@@ -24,7 +24,7 @@ function Invoke-PyInstaller {
         "--with",
         "pyinstaller",
         "--with",
-        $loraWheel,
+        $laraWheel,
         "pyinstaller",
         "--noconfirm",
         "--clean",
@@ -34,9 +34,9 @@ function Invoke-PyInstaller {
         "--paths",
         "src",
         "--collect-submodules",
-        "lora",
+        "lara",
         "--collect-submodules",
-        "lora_api",
+        "lara_api",
         "--collect-submodules",
         "pygent",
         "--collect-submodules",
@@ -44,7 +44,7 @@ function Invoke-PyInstaller {
         "--collect-submodules",
         "uvicorn",
         "--copy-metadata",
-        "lora",
+        "lara",
         "--distpath",
         $distPath,
         "--workpath",
@@ -73,28 +73,28 @@ try {
 
     & uv build --wheel --out-dir $wheelPath
     if ($LASTEXITCODE -ne 0) {
-        throw "Failed to build the isolated Lora package wheel"
+        throw "Failed to build the isolated Lara package wheel"
     }
 
-    $builtWheels = @(Get-ChildItem -LiteralPath $wheelPath -Filter "lora-*.whl" -File)
+    $builtWheels = @(Get-ChildItem -LiteralPath $wheelPath -Filter "lara-*.whl" -File)
     if ($builtWheels.Count -ne 1) {
-        throw "Expected exactly one Lora wheel, found $($builtWheels.Count)"
+        throw "Expected exactly one Lara wheel, found $($builtWheels.Count)"
     }
-    $loraWheel = $builtWheels[0].FullName
+    $laraWheel = $builtWheels[0].FullName
 
     Invoke-PyInstaller `
-        -Name "lora-api" `
+        -Name "lara-api" `
         -EntryPoint $apiEntryPoint `
-        -HiddenImports @("lora_api.main")
+        -HiddenImports @("lara_api.main")
 
     Invoke-PyInstaller `
-        -Name "lora" `
+        -Name "lara" `
         -EntryPoint $cliEntryPoint `
-        -HiddenImports @("lora.cli.main")
+        -HiddenImports @("lara.cli.main")
 
     Copy-Item `
-        -LiteralPath (Join-Path $distPath "lora\lora.exe") `
-        -Destination (Join-Path $distPath "lora-api\lora.exe") `
+        -LiteralPath (Join-Path $distPath "lara\lara.exe") `
+        -Destination (Join-Path $distPath "lara-api\lara.exe") `
         -Force
 
 }

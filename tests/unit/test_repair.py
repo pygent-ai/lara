@@ -6,10 +6,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lora.repair import RepairWorkflow, _gate_status
-from lora.schema import RunConfig
-from lora.sessions import SessionManager
-from lora.tracing import EventStore
+from lara.repair import RepairWorkflow, _gate_status
+from lara.schema import RunConfig
+from lara.sessions import SessionManager
+from lara.tracing import EventStore
 
 
 class RepairWorkflowTests(unittest.TestCase):
@@ -36,7 +36,7 @@ class RepairWorkflowTests(unittest.TestCase):
 
     def test_plan_skips_passed_run(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            config = RunConfig(workspace_root=tmp, lora_root=Path(tmp) / ".lora")
+            config = RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
             manager = SessionManager(config)
             session = manager.create("passing-case")
             run = manager.start_case_run(session.session_id, "passing-case", run_config=config)
@@ -54,8 +54,8 @@ class RepairWorkflowTests(unittest.TestCase):
     def test_apply_captures_patch_and_gate_runs_configured_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / ".lora").mkdir()
-            (root / ".lora" / "repair.json").write_text(
+            (root / ".lara").mkdir()
+            (root / ".lara" / "repair.json").write_text(
                 json.dumps({"commands": [[sys.executable, "-c", "print('repair gate ok')"]]}),
                 encoding="utf-8",
             )
@@ -88,7 +88,7 @@ class RepairGateStatusTests(unittest.TestCase):
 
 
 def _failed_run(tmp: str):
-    config = RunConfig(workspace_root=tmp, lora_root=Path(tmp) / ".lora")
+    config = RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
     manager = SessionManager(config)
     session = manager.create("failing-case")
     run = manager.start_case_run(session.session_id, "failing-case", run_config=config)

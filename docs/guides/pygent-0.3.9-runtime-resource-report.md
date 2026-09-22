@@ -25,7 +25,7 @@ Pygent 0.3.9 的直接调用和无持久化 Runtime 路径没有发现异常磁�
 1. **604.42 MiB 写入是有效的 Pygent durable rejected-tool 流程数据**，足以证明写放大问题；
 2. 原跨框架排名不能再称为“等价工具执行对比”，Pygent 排名应暂停使用；
 3. 真正成功执行工具会增加授权、执行和 effect 事件，当前写入值很可能是目标工作负载的下界，准确数值需修复适配器后重测；
-4. 漏配授权属于 Lora benchmark 适配器问题，不是 Pygent 的执行错误；Pygent 可改善配置校验与开发体验，帮助应用更早发现这种误用。
+4. 漏配授权属于 Lara benchmark 适配器问题，不是 Pygent 的执行错误；Pygent 可改善配置校验与开发体验，帮助应用更早发现这种误用。
 
 ## 测试环境与方法
 
@@ -75,7 +75,7 @@ direct 与 Runtime 并非完全相同的控制路径，这组比值用于度量 
 | PYG-RUNTIME-003 | P1 | 单 SQLite writer、多个状态/effect 事务与 WAL FULL 组合造成事务压力 | Pygent，部分为源码推断，需 trace 验证占比 |
 | PYG-RUNTIME-004 | P2 | 缺少面向 durability 成本的一等指标，应用难以定位写放大 | Pygent |
 | PYG-RUNTIME-005 | P2 | 工具有定义但未配置授权时缺少 admission 期诊断 | Pygent 开发体验建议，不是执行正确性缺陷 |
-| BENCH-001 | P0 | benchmark 将被拒绝的工具调用误判为成功工具流程 | Lora benchmark，非 Pygent |
+| BENCH-001 | P0 | benchmark 将被拒绝的工具调用误判为成功工具流程 | Lara benchmark，非 Pygent |
 
 ## PYG-RUNTIME-001：SQLite durable history 写放大
 
@@ -192,7 +192,7 @@ Pygent 已把事件批处理到单 writer，这有利于正确性和避免 SQLit
 
 ## 修复 benchmark 后的重测要求
 
-Lora benchmark 需要先完成以下修正，再恢复跨框架排名：
+Lara benchmark 需要先完成以下修正，再恢复跨框架排名：
 
 1. 给 Pygent `ToolCallLayer` 配置只允许本测试纯函数工具的显式授权器；
 2. 工具 executor 增加独立成功计数，断言每次请求恰好执行 3 次；
@@ -208,7 +208,7 @@ Lora benchmark 需要先完成以下修正，再恢复跨框架排名：
 - Pygent 仓库：[pygent-ai/pygent](https://github.com/pygent-ai/pygent)
 - Execution contract：[docs/EXECUTION.md](https://github.com/pygent-ai/pygent/blob/main/docs/EXECUTION.md)
 - Runtime SDK：[docs/runtime/SDK.md](https://github.com/pygent-ai/pygent/blob/main/docs/runtime/SDK.md)
-- Lora benchmark 说明：[agent-framework-resource-benchmark.md](./agent-framework-resource-benchmark.md)
+- Lara benchmark 说明：[agent-framework-resource-benchmark.md](./agent-framework-resource-benchmark.md)
 - benchmark 适配器：`.tmp/framework-bench/python_adapter.py`
 - 诊断结果：`.tmp/framework-bench/results/preferred-1000-write-probe-20260908/run-1/result.json`
 - 保留数据库：`.tmp/framework-bench/probes/preferred-1000-20260908-1/executions.sqlite3`
@@ -246,4 +246,4 @@ answer, context = await handle.result()
 2. **Durable journal repeats full model requests/tool schemas and emits 64 events for a small execution**
 3. **Warn at admission when ToolCallLayer exposes tools without an authorization provider**
 
-前两个是资源与持久化设计问题；第三个是防误用的开发体验改进。`BENCH-001` 应在 Lora 仓库内部修复，不应作为 Pygent bug 提交。
+前两个是资源与持久化设计问题；第三个是防误用的开发体验改进。`BENCH-001` 应在 Lara 仓库内部修复，不应作为 Pygent bug 提交。

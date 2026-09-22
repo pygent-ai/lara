@@ -1,0 +1,27 @@
+runtime:
+  durability:
+    mode: preferred
+    history_path: runtime/executions-v1.sqlite3
+  capacity:
+    scope: runtime_instance
+    coordinator_path: runtime/capacity-v1.sqlite3
+  approvals:
+    enabled: true
+    timeout_seconds: 300
+    preauthorized_tools: []
+
+mcp:
+  servers: []
+
+delegation:
+  allowed_agents: []
+  max_depth: 4
+  max_parallel: 4
+  background_enabled: true
+
+eternal_conversation:
+  enabled: false
+  extractor_agent_alias: dev
+  builder_agent_alias: fast-check
+  # Point to the installed dynamic-memory-cli skill script when enabling.
+  dynamic_memory_cli_path: ~/.lara/skills/dynamic-memory-cli/scripts/dynamic_memory_cli.py

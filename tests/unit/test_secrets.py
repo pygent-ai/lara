@@ -6,8 +6,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from lora.config import load_run_config
-from lora.credentials import (
+from lara.config import load_run_config
+from lara.credentials import (
     credential_is_configured,
     delete_user_credential,
     list_user_credential_names,
@@ -31,7 +31,7 @@ class SecretsTests(unittest.TestCase):
             )
             os.environ["DEEPSEEK_API_KEY"] = "process-key"
             try:
-                load_credentials(user_lora_root=user_root)
+                load_credentials(user_lara_root=user_root)
                 value, source = lookup_credential("DEEPSEEK_API_KEY")
             finally:
                 os.environ.pop("DEEPSEEK_API_KEY", None)
@@ -51,7 +51,7 @@ class SecretsTests(unittest.TestCase):
                 "OPENAI_API_KEY=project-key\n", encoding="utf-8"
             )
             os.environ.pop("OPENAI_API_KEY", None)
-            sources = load_credentials(user_lora_root=user_root)
+            sources = load_credentials(user_lara_root=user_root)
             self.assertIn("file:" + str(user_root / "credentials.env"), sources)
             self.assertNotIn("file:" + str(root / ".env.local"), sources)
 
@@ -69,12 +69,12 @@ class SecretsTests(unittest.TestCase):
             self.assertEqual(read_env_entries(path)["DEV_API_KEY"], "secret-value")
             self.assertEqual(list_user_credential_names(user_root), ["DEV_API_KEY"])
             self.assertTrue(
-                credential_is_configured("DEV_API_KEY", user_lora_root=user_root)
+                credential_is_configured("DEV_API_KEY", user_lara_root=user_root)
             )
             self.assertTrue(delete_user_credential(user_root, "DEV_API_KEY"))
             self.assertEqual(list_user_credential_names(user_root), [])
             self.assertFalse(
-                credential_is_configured("DEV_API_KEY", user_lora_root=user_root)
+                credential_is_configured("DEV_API_KEY", user_lara_root=user_root)
             )
 
     def test_write_env_entries_preserves_other_keys(self) -> None:
@@ -89,13 +89,13 @@ class SecretsTests(unittest.TestCase):
     def test_load_run_config_reads_user_credentials_file(self) -> None:
         with (
             tempfile.TemporaryDirectory() as tmp,
-            patch("lora.config.loader.Path.home", return_value=Path(tmp)),
+            patch("lara.config.loader.Path.home", return_value=Path(tmp)),
         ):
             root = Path(tmp) / "workspace"
-            user_root = Path(tmp) / ".lora"
+            user_root = Path(tmp) / ".lara"
             root.mkdir()
             user_root.mkdir()
-            from lora.config import replace_user_model_config
+            from lara.config import replace_user_model_config
             from tests.unit.test_model_configuration import native_mapping
 
             mapping = native_mapping()
@@ -126,10 +126,10 @@ class SecretsTests(unittest.TestCase):
     def test_legacy_routes_do_not_create_a_default_credential(self) -> None:
         with (
             tempfile.TemporaryDirectory() as tmp,
-            patch("lora.config.loader.Path.home", return_value=Path(tmp)),
+            patch("lara.config.loader.Path.home", return_value=Path(tmp)),
         ):
             root = Path(tmp)
-            user_root = root / ".lora"
+            user_root = root / ".lara"
             user_root.mkdir()
             (user_root / "config.yaml").write_text(
                 "agents:\n  - alias: dev\n    model_request:\n      routes:\n        - id: primary\n          provider: openai\n          model_name: m\n          base_url: https://example.test/v1\n          api_key_env: DEEPSEEK_API_KEY\n",
@@ -144,10 +144,10 @@ class SecretsTests(unittest.TestCase):
     def test_user_credentials_file_wins_over_process_environment(self) -> None:
         with (
             tempfile.TemporaryDirectory() as tmp,
-            patch("lora.config.loader.Path.home", return_value=Path(tmp)),
+            patch("lara.config.loader.Path.home", return_value=Path(tmp)),
         ):
             root = Path(tmp) / "workspace"
-            user_root = Path(tmp) / ".lora"
+            user_root = Path(tmp) / ".lara"
             root.mkdir()
             user_root.mkdir()
             (user_root / "credentials.env").write_text(
@@ -156,7 +156,7 @@ class SecretsTests(unittest.TestCase):
             os.environ["DEV_API_KEY"] = "stale-process-key"
             try:
                 value, source = lookup_credential(
-                    "DEV_API_KEY", user_lora_root=user_root
+                    "DEV_API_KEY", user_lara_root=user_root
                 )
             finally:
                 os.environ.pop("DEV_API_KEY", None)

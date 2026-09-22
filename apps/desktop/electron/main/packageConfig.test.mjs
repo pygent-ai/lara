@@ -18,14 +18,14 @@ test("desktop package exposes Windows exe packaging scripts", () => {
   assert.match(packageJson.scripts["package:win"], /build-desktop\.ps1 -Target nsis/);
   assert.match(packageJson.scripts["package:portable"], /build-desktop\.ps1 -Target portable/);
   assert.match(packageJson.scripts["package:dir"], /build-desktop\.ps1 -Target dir/);
-  assert.equal(packageJson.build.portable.artifactName, "Lora-Desktop-${version}-portable.${ext}");
+  assert.equal(packageJson.build.portable.artifactName, "Lara-Desktop-${version}-portable.${ext}");
 });
 
 test("workspace development command launches the full Electron stack", () => {
   assert.equal(rootPackageJson.scripts.dev, "npm --prefix apps/desktop run dev");
   assert.equal(packageJson.scripts.dev, "node scripts/dev.mjs");
   assert.equal(packageJson.scripts["dev:renderer"], "vite --host 127.0.0.1");
-  assert.match(electronMain, /lora:dev-shutdown/);
+  assert.match(electronMain, /lara:dev-shutdown/);
 });
 
 test("Choose Project uses the native directory picker", () => {
@@ -43,35 +43,35 @@ test("production assets use file-compatible relative URLs", () => {
   assert.equal(viteConfig.base, "./");
 });
 
-test("electron-builder bundles the PyInstaller lora-api output", () => {
+test("electron-builder bundles the PyInstaller lara-api output", () => {
   const extraResources = packageJson.build.extraResources;
 
   assert.deepEqual(extraResources, [
     {
-      from: "../../build/package/lora-api",
-      to: "backend/lora-api",
+      from: "../../build/package/lara-api",
+      to: "backend/lara-api",
     },
   ]);
 });
 
-test("Python packaging builds both local API and lora chat CLI executables", () => {
-  assert.match(pythonBuildScript, /lora_api_entry\.py/);
-  assert.match(pythonBuildScript, /lora_entry\.py/);
-  assert.match(pythonBuildScript, /-Name "lora-api"/);
-  assert.match(pythonBuildScript, /-Name "lora"/);
+test("Python packaging builds both local API and lara chat CLI executables", () => {
+  assert.match(pythonBuildScript, /lara_api_entry\.py/);
+  assert.match(pythonBuildScript, /lara_entry\.py/);
+  assert.match(pythonBuildScript, /-Name "lara-api"/);
+  assert.match(pythonBuildScript, /-Name "lara"/);
   assert.match(pythonBuildScript, /uv build --wheel/);
   assert.match(pythonBuildScript, /"--no-project"/);
-  assert.match(pythonBuildScript, /"--with",\s*\$loraWheel/);
-  assert.match(pythonBuildScript, /"--copy-metadata",\s*"lora"/);
-  assert.doesNotMatch(pythonBuildScript, /lora\\_internal/);
+  assert.match(pythonBuildScript, /"--with",\s*\$laraWheel/);
+  assert.match(pythonBuildScript, /"--copy-metadata",\s*"lara"/);
+  assert.doesNotMatch(pythonBuildScript, /lara\\_internal/);
 });
 
-test("installer adds the bundled lora CLI directory to user PATH", () => {
+test("installer adds the bundled lara CLI directory to user PATH", () => {
   assert.equal(packageJson.build.nsis.include, "installer/cli-path.nsh");
   assert.match(cliPathInstallerScript, /customInstall/);
   assert.match(cliPathInstallerScript, /customUnInstall/);
-  assert.match(cliPathInstallerScript, /backend\\lora-api/);
-  assert.match(cliPathInstallerScript, /lora\.exe/);
+  assert.match(cliPathInstallerScript, /backend\\lara-api/);
+  assert.match(cliPathInstallerScript, /lara\.exe/);
   assert.match(cliPathInstallerScript, /Environment/);
 });
 

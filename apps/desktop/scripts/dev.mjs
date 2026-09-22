@@ -6,7 +6,7 @@ import electronExecutable from "electron";
 import { createServer } from "vite";
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const shutdownMessage = { type: "lora:dev-shutdown" };
+const shutdownMessage = { type: "lara:dev-shutdown" };
 
 export async function runDesktopDev({
   createViteServer = createServer,
@@ -80,7 +80,7 @@ export async function runDesktopDev({
       throw new Error("Vite did not expose a local development server URL");
     }
 
-    logger.log(`[lora] Starting Electron with ${viteUrl}`);
+    logger.log(`[lara] Starting Electron with ${viteUrl}`);
     electronProcess = spawnProcess(electronPath, [root], {
       cwd: root,
       env: {
@@ -97,7 +97,7 @@ export async function runDesktopDev({
       electronProcess.once("error", reject);
       electronProcess.once("exit", (code, signal) => {
         if (signal && !shuttingDown) {
-          logger.error(`[lora] Electron exited from signal ${signal}`);
+          logger.error(`[lara] Electron exited from signal ${signal}`);
         }
         resolve(code ?? (shuttingDown ? 0 : 1));
       });

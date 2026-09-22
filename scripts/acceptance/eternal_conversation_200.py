@@ -20,19 +20,19 @@ from typing import Any
 
 from pygent import thaw_json
 
-from lora.config import load_run_config
-from lora.core.io import (
+from lara.config import load_run_config
+from lara.core.io import (
     append_jsonl,
     read_json,
     read_jsonl_snapshot,
     write_json,
     write_json_atomic,
 )
-from lora.runtime.agent.common import DEFAULT_REACT_MAX_STEPS
-from lora.runtime.eternal_conversation import load_projection
-from lora.runtime.service import LoraRuntimeService
-from lora.schema import SessionRef
-from lora.sessions import SessionManager
+from lara.runtime.agent.common import DEFAULT_REACT_MAX_STEPS
+from lara.runtime.eternal_conversation import load_projection
+from lara.runtime.service import LaraRuntimeService
+from lara.schema import SessionRef
+from lara.sessions import SessionManager
 
 
 @dataclass(frozen=True)
@@ -307,7 +307,7 @@ CHANGE_REQUEST_REPORTS = {
     ),
 }
 
-IGNORED_PROJECT_PARTS = {".git", ".lora", ".pytest_cache", ".venv", "__pycache__"}
+IGNORED_PROJECT_PARTS = {".git", ".lara", ".pytest_cache", ".venv", "__pycache__"}
 TRACKED_PROJECT_SUFFIXES = {".json", ".md", ".py", ".toml", ".yaml", ".yml"}
 VERIFICATION_COMMAND = re.compile(
     r"(?:^|\s)(?:python(?:\.exe)?\s+-m\s+)?pytest(?:\s|$)", re.IGNORECASE
@@ -654,7 +654,7 @@ def mark_run_crashed(run_root: Path, error: BaseException) -> None:
 
 
 async def recover_memory_backlog(
-    runtime: LoraRuntimeService,
+    runtime: LaraRuntimeService,
     manager: SessionManager,
     session_ref: SessionRef,
     *,
@@ -895,7 +895,7 @@ async def run(args: argparse.Namespace) -> int:
     else:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         run_root = (
-            Path(config.lora_root) / "acceptance-runs" / f"eternal-blind-200-{stamp}"
+            Path(config.lara_root) / "acceptance-runs" / f"eternal-blind-200-{stamp}"
         )
         project_root = workspace / "workspace" / f"eternal-blind-acceptance-200-{stamp}"
         project_root.mkdir(parents=True, exist_ok=False)
@@ -904,16 +904,16 @@ async def run(args: argparse.Namespace) -> int:
             encoding="utf-8",
         )
         initialize_project(project_root)
-        # Foreground and background Agents resolve the same user-level Lora
+        # Foreground and background Agents resolve the same user-level Lara
         # configuration independently for this disposable workspace. Never copy
         # user configuration or credentials into the acceptance project.
     # Keep the fresh Session inside the disposable project so the foreground can
     # follow the advertised Raw History path without gaining read access to the
     # real repository or any older acceptance Session.
     config.workspace_root = str(project_root)
-    config.lora_root = str(project_root / ".lora")
+    config.lara_root = str(project_root / ".lara")
     config.allow_read_outside_workspace = False
-    runtime_root = project_root / ".lora" / "runtime"
+    runtime_root = project_root / ".lara" / "runtime"
     config.runtime_durability.history_path = str(runtime_root / "executions.sqlite3")
     config.runtime_capacity.coordinator_path = str(runtime_root / "capacity.sqlite3")
     tasks = build_tasks(project_root)[: args.limit]
@@ -955,7 +955,7 @@ async def run(args: argparse.Namespace) -> int:
             raise RuntimeError(
                 f"blind acceptance session was not empty: {fresh_history}"
             )
-    runtime = LoraRuntimeService(config)
+    runtime = LaraRuntimeService(config)
     await runtime.initialize()
     if args.resume_run:
         run_meta = read_json(run_root / "run.json")

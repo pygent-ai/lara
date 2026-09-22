@@ -138,12 +138,12 @@ CaseRun  1 ── 0..N RepairAttempt
 
 ## 4. 本地目录结构
 
-建议将正式系统的数据目录从普通 `sessions/` 扩展为 `.lora/sessions/`。如果需要兼容 pygent 的 `Session`，可以在 MVP 阶段继续保存到 `{workspace_root}/sessions/{session_id}/session.json`，同时将结构化 trace 保存到 `.lora/sessions/{session_id}`。
+建议将正式系统的数据目录从普通 `sessions/` 扩展为 `.lara/sessions/`。如果需要兼容 pygent 的 `Session`，可以在 MVP 阶段继续保存到 `{workspace_root}/sessions/{session_id}/session.json`，同时将结构化 trace 保存到 `.lara/sessions/{session_id}`。
 
 推荐结构：
 
 ```text
-.lora/
+.lara/
   sessions/
     {session_id}/
       session.json
@@ -204,7 +204,7 @@ CaseRun  1 ── 0..N RepairAttempt
 {
   "version": "1.0",
   "session_id": "e2e-read-file-basic-20260527-172312-a18f3c",
-  "workspace_root": "E:/Projects/lora",
+  "workspace_root": "E:/Projects/lara",
   "created_at": "2026-05-27T17:23:12",
   "updated_at": "2026-05-27T17:25:41",
   "system_prompt": "You are a coding agent...",
@@ -252,7 +252,7 @@ session:
   carry_context: false
 
 workspace:
-  root: "E:/Projects/lora"
+  root: "E:/Projects/lara"
   setup:
     - type: copy_fixture
       from: "fixtures/read-file-basic"
@@ -355,7 +355,7 @@ class AgentRunner:
 每个 turn 完成后生成 checkpoint：
 
 ```text
-.lora/sessions/{session_id}/context/checkpoints/{turn_id}.json
+.lara/sessions/{session_id}/context/checkpoints/{turn_id}.json
 ```
 
 内容：
@@ -384,7 +384,7 @@ checkpoint 用于：
 投影结果写入：
 
 ```text
-.lora/sessions/{session_id}/context/projections/{projection_id}.json
+.lara/sessions/{session_id}/context/projections/{projection_id}.json
 ```
 
 `session.json` 可以保存当前压缩后的可执行上下文；原始 `history.jsonl` 和 `events.jsonl` 始终保留。
@@ -556,24 +556,24 @@ Regression Gate 顺序：
 建议 CLI：
 
 ```bash
-lora session create --case read-file-basic
-lora session list
-lora session show <session_id>
-lora session show <session_id>
+lara session create --case read-file-basic
+lara session list
+lara session show <session_id>
+lara session show <session_id>
 
-lora case run cases/read-file-basic.yaml
-lora case run cases/read-file-basic.yaml --session <session_id>
-lora case analyze <session_id> <case_run_id>
-lora case replay <session_id> <case_run_id>
+lara case run cases/read-file-basic.yaml
+lara case run cases/read-file-basic.yaml --session <session_id>
+lara case analyze <session_id> <case_run_id>
+lara case replay <session_id> <case_run_id>
 
-lora repair plan <session_id> <case_run_id>
-lora repair apply <session_id> <case_run_id>
-lora regression run --session <session_id>
+lara repair plan <session_id> <case_run_id>
+lara repair apply <session_id> <case_run_id>
+lara regression run --session <session_id>
 
-lora optimize cases/read-file-basic.yaml
+lara optimize cases/read-file-basic.yaml
 ```
 
-`lora optimize` 是组合命令：
+`lara optimize` 是组合命令：
 
 ```text
 run case -> evaluate -> analyze if failed -> generate tests -> repair -> regression gate

@@ -27,36 +27,36 @@ from pygent.llm import (
     OpenAICompatibleAdapter,
 )
 
-from lora.runtime.agent.common import DEFAULT_REACT_MAX_STEPS
-from lora.runtime.agent.compressor import LoraCompressorModule
-from lora.runtime.agent.core import (
+from lara.runtime.agent.common import DEFAULT_REACT_MAX_STEPS
+from lara.runtime.agent.compressor import LaraCompressorModule
+from lara.runtime.agent.core import (
     MODEL_RETRYABLE_ERROR_KINDS,
-    LoraAgent,
+    LaraAgent,
     _actual_model_key,
     _error_trace_payload,
     _model_trace_payload,
 )
-from lora.runtime.agent.pipeline import (
+from lara.runtime.agent.pipeline import (
     MAX_IDENTICAL_FOREGROUND_TOOL_CALLS,
     RepeatedToolCallGuardModule,
 )
-from lora.runtime.agent.prompt_models import PromptRenderContext
-from lora.runtime.context import LoraContext
+from lara.runtime.agent.prompt_models import PromptRenderContext
+from lara.runtime.context import LaraContext
 from tests.unit.test_model_usage_defaults import model_agent
 
 
 def test_agent_runtime_is_split_by_responsibility() -> None:
-    assert LoraAgent.__module__ == "lora.runtime.agent.core"
-    assert PromptRenderContext.__module__ == "lora.runtime.agent.prompt_models"
+    assert LaraAgent.__module__ == "lara.runtime.agent.core"
+    assert PromptRenderContext.__module__ == "lara.runtime.agent.prompt_models"
 
 
 def test_runtime_packages_do_not_reexport_implementation_symbols() -> None:
-    import lora.runtime as runtime_package
-    import lora.runtime.agent as agent_package
+    import lara.runtime as runtime_package
+    import lara.runtime.agent as agent_package
 
     assert not hasattr(runtime_package, "ToolObserver")
-    assert not hasattr(runtime_package, "LoraAgent")
-    assert not hasattr(agent_package, "LoraAgent")
+    assert not hasattr(runtime_package, "LaraAgent")
+    assert not hasattr(agent_package, "LaraAgent")
     assert not hasattr(agent_package, "PromptRenderContext")
 
 
@@ -78,7 +78,7 @@ async def test_foreground_identical_tool_call_guard_is_scoped_to_turn() -> None:
             ),
         )
     )
-    first_turn = LoraContext(turn_id="turn-1")
+    first_turn = LaraContext(turn_id="turn-1")
 
     for _ in range(MAX_IDENTICAL_FOREGROUND_TOOL_CALLS - 1):
         await guard.invoke(message, first_turn)
@@ -87,18 +87,18 @@ async def test_foreground_identical_tool_call_guard_is_scoped_to_turn() -> None:
     ):
         await guard.invoke(message, first_turn)
 
-    await guard.invoke(message, LoraContext(turn_id="turn-2"))
+    await guard.invoke(message, LaraContext(turn_id="turn-2"))
 
 
-def test_lora_foreground_uses_pygent_030_native_agent_and_compressor(
+def test_lara_foreground_uses_pygent_030_native_agent_and_compressor(
     tmp_path: Path,
 ) -> None:
     agent = model_agent(tmp_path)
 
-    assert issubclass(LoraContext, PygentAgentContext)
+    assert issubclass(LaraContext, PygentAgentContext)
     assert isinstance(agent.foreground, PygentAgent)
     assert isinstance(
-        agent.foreground.react.model.compressor, LoraCompressorModule
+        agent.foreground.react.model.compressor, LaraCompressorModule
     )
     assert agent.foreground.react.max_steps == DEFAULT_REACT_MAX_STEPS == 500
     assert agent.foreground.react.max_model_calls == DEFAULT_REACT_MAX_STEPS

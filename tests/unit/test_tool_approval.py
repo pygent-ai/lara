@@ -14,20 +14,20 @@ from pygent import (
 )
 from pygent.tool import ToolSideEffect
 
-from lora.config import load_run_config
-from lora.runtime.agent.pipeline import LoraToolAuthorization
-from lora.runtime.service import LoraRuntimeService
+from lara.config import load_run_config
+from lara.runtime.agent.pipeline import LaraToolAuthorization
+from lara.runtime.service import LaraRuntimeService
 
 
 @pytest.mark.asyncio
 async def test_approval_waiter_exists_when_request_event_is_published(
     tmp_path: Path,
 ) -> None:
-    with patch("lora.config.loader.Path.home", return_value=tmp_path / "home"):
-        service = LoraRuntimeService(load_run_config(workspace_root=tmp_path))
+    with patch("lara.config.loader.Path.home", return_value=tmp_path / "home"):
+        service = LaraRuntimeService(load_run_config(workspace_root=tmp_path))
     await service.initialize()
     try:
-        authorization = LoraToolAuthorization(
+        authorization = LaraToolAuthorization(
             enabled=True,
             timeout_seconds=5,
             preauthorized_tools=(),
@@ -54,7 +54,7 @@ async def test_approval_waiter_exists_when_request_event_is_published(
 
         async with handle.subscribe() as events:
             async for event in events:
-                if event.kind == "lora.approval.requested":
+                if event.kind == "lara.approval.requested":
                     approval_id = str(thaw_json(event.data)["approval_id"])
                     assert await service.deliver_approval(
                         approval_id,

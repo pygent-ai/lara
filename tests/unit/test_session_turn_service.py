@@ -5,8 +5,8 @@ from typing import Any, cast
 
 import pytest
 
-from lora.orchestration import LocalExecutionHost, SessionTurnService
-from lora.schema import RunConfig
+from lara.orchestration import LocalExecutionHost, SessionTurnService
+from lara.schema import RunConfig
 
 
 class _Lease:
@@ -30,7 +30,7 @@ async def test_submit_creates_session_prewarms_titles_and_transfers_lease(
 
     class Manager:
         config = RunConfig(
-            workspace_root=str(tmp_path), lora_root=str(tmp_path / ".lora")
+            workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara")
         )
 
         def create(self, case_id, *, mode, model_group_name=None):
@@ -71,7 +71,7 @@ async def test_submit_creates_session_prewarms_titles_and_transfers_lease(
 @pytest.mark.asyncio
 async def test_submit_releases_lease_when_admission_fails(tmp_path) -> None:
     lease = _Lease()
-    config = RunConfig(workspace_root=str(tmp_path), lora_root=str(tmp_path / ".lora"))
+    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
     manager = SimpleNamespace(
         create=lambda *_args, **_kwargs: SimpleNamespace(session_id="session-1"),
         save_title_from_user_input=lambda *_args: None,

@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from lora.schema import ResolvedAgentConfig, RunConfig, SessionSpec
-from lora.sessions import SessionManager
+from lara.schema import ResolvedAgentConfig, RunConfig, SessionSpec
+from lara.sessions import SessionManager
 from tests.unit.test_model_configuration import native_mapping
 
 
@@ -16,7 +16,7 @@ def native_run_config(root: str | Path) -> RunConfig:
     mapping = native_mapping(group=("main", "backup"))
     return RunConfig(
         workspace_root=str(root),
-        lora_root=str(Path(root) / ".lora"),
+        lara_root=str(Path(root) / ".lara"),
         model_config_mapping=mapping,
         resolved_agent=ResolvedAgentConfig(
             alias="default", default_model_group="coding"
@@ -28,7 +28,7 @@ class SessionManagerTests(unittest.TestCase):
     def test_list_sessions_filters_mode_and_orders_latest_first(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             manager = SessionManager(
-                RunConfig(workspace_root=tmp, lora_root=str(Path(tmp) / ".lora"))
+                RunConfig(workspace_root=tmp, lara_root=str(Path(tmp) / ".lara"))
             )
             chat = manager.create("chat", mode="chat")
             agent = manager.create("collaboration", mode="agent")
@@ -50,7 +50,7 @@ class SessionManagerTests(unittest.TestCase):
     def test_create_and_load_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             manager = SessionManager(
-                RunConfig(workspace_root=tmp, lora_root=Path(tmp) / ".lora")
+                RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
             )
             ref = manager.create("read-file-basic")
             loaded = manager.load(ref.session_id)
@@ -61,7 +61,7 @@ class SessionManagerTests(unittest.TestCase):
 
     def test_multiple_runs_do_not_overwrite(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            config = RunConfig(workspace_root=tmp, lora_root=Path(tmp) / ".lora")
+            config = RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
             manager = SessionManager(config)
             session = manager.create("case-a")
             first = manager.start_case_run(session.session_id, "case-a")
@@ -101,7 +101,7 @@ class SessionManagerTests(unittest.TestCase):
     def test_finish_case_run_updates_metadata_and_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             manager = SessionManager(
-                RunConfig(workspace_root=tmp, lora_root=Path(tmp) / ".lora")
+                RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
             )
             session = manager.create("case-a")
             run = manager.start_case_run(session.session_id, "case-a")
@@ -124,7 +124,7 @@ class SessionManagerTests(unittest.TestCase):
     def test_find_case_run_returns_ref_from_run_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             manager = SessionManager(
-                RunConfig(workspace_root=tmp, lora_root=Path(tmp) / ".lora")
+                RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
             )
             session = manager.create("case-a")
             run = manager.start_case_run(session.session_id, "case-a")
@@ -136,7 +136,7 @@ class SessionManagerTests(unittest.TestCase):
     def test_save_redacts_secrets_from_model_visible_history(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             manager = SessionManager(
-                RunConfig(workspace_root=tmp, lora_root=Path(tmp) / ".lora")
+                RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
             )
             ref = manager.create("case-a")
             session = manager.load(ref.session_id)
@@ -155,17 +155,17 @@ class SessionManagerTests(unittest.TestCase):
 
             manager.save(session)
 
-            lora_session_text = (Path(ref.session_dir) / "session.json").read_text(
+            lara_session_text = (Path(ref.session_dir) / "session.json").read_text(
                 encoding="utf-8"
             )
-            self.assertNotIn(secret, lora_session_text)
-            self.assertIn("DEEPSEEK_API_KEY=[REDACTED]", lora_session_text)
+            self.assertNotIn(secret, lara_session_text)
+            self.assertIn("DEEPSEEK_API_KEY=[REDACTED]", lara_session_text)
             self.assertFalse((Path(tmp) / "sessions").exists())
 
     def test_load_or_create_resume_requires_session_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             manager = SessionManager(
-                RunConfig(workspace_root=tmp, lora_root=Path(tmp) / ".lora")
+                RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
             )
             with self.assertRaises(ValueError):
                 manager.load_or_create(SessionSpec(case_id="case-a", mode="resume"))
@@ -173,7 +173,7 @@ class SessionManagerTests(unittest.TestCase):
     def test_fork_copies_session_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             manager = SessionManager(
-                RunConfig(workspace_root=tmp, lora_root=Path(tmp) / ".lora")
+                RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
             )
             source = manager.create("case-a")
             source_dir = Path(source.session_dir)
@@ -208,11 +208,11 @@ if __name__ == "__main__":
 
 
 def test_running_session_exposes_current_run_and_recovery_checkpoint(tmp_path):
-    from lora.core.io import read_json, write_json
-    from lora_api.services.session_service import SessionService
+    from lara.core.io import read_json, write_json
+    from lara_api.services.session_service import SessionService
 
     manager = SessionManager(
-        RunConfig(workspace_root=str(tmp_path), lora_root=str(tmp_path / "data"))
+        RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / "data"))
     )
     session = manager.create("chat", mode="chat")
     previous = manager.start_case_run(session.session_id, "chat")
@@ -247,7 +247,7 @@ def test_running_session_exposes_current_run_and_recovery_checkpoint(tmp_path):
 
 
 def test_session_detail_can_limit_large_history_windows(tmp_path: Path) -> None:
-    from lora_api.services.session_service import SessionService
+    from lara_api.services.session_service import SessionService
 
     manager = SessionManager(native_run_config(tmp_path))
     session = manager.create("chat", mode="chat")

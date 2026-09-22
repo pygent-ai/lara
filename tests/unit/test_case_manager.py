@@ -5,8 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lora.evaluation import CaseManager
-from lora.schema import CaseDefinition, CaseRunRef
+from lara.evaluation import CaseManager
+from lara.schema import CaseDefinition, CaseRunRef
 
 
 class CaseManagerTests(unittest.TestCase):

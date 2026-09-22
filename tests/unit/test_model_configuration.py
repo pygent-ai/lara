@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from pygent.llm import ConnectionConfig, ModelConfig, ModelInfo
 
-from lora.schema import ResolvedAgentConfig, RunConfig
-from lora.runtime.model_configuration import (
+from lara.schema import ResolvedAgentConfig, RunConfig
+from lara.runtime.model_configuration import (
     CLIENT_FACTORIES,
     CredentialEnvironment,
     build_model_invoker,
@@ -61,7 +61,7 @@ def native_runtime_config(root, *, group: tuple[str, ...] = ("main", "backup")):
     mapping["connections"]["shared"]["credential"] = {"none": True}
     config = RunConfig(
         workspace_root=str(root),
-        lora_root=str(root / ".lora"),
+        lara_root=str(root / ".lara"),
         model_config_mapping=mapping,
         resolved_agent=ResolvedAgentConfig(
             alias="default", default_model_group="coding"
@@ -103,8 +103,8 @@ def test_build_model_invoker_uses_each_native_protocol(protocol: str) -> None:
 
 def test_credential_environment_checks_transient_before_store(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(
-        "lora.runtime.model_configuration.lookup_credential",
-        lambda name, user_lora_root: ("stored", f"keyring:{name}"),
+        "lara.runtime.model_configuration.lookup_credential",
+        lambda name, user_lara_root: ("stored", f"keyring:{name}"),
     )
     environ = CredentialEnvironment(tmp_path, transient={"TEST_KEY": "draft"})
     assert environ["TEST_KEY"] == "draft"
@@ -216,7 +216,7 @@ def test_proxy_http_client_is_owned_by_invoker(monkeypatch) -> None:
     native_client = SimpleNamespace(aclose=AsyncMock())
     factory = Mock(return_value=http_client)
     monkeypatch.setattr(
-        "lora.runtime.model_configuration.httpx.AsyncClient",
+        "lara.runtime.model_configuration.httpx.AsyncClient",
         lambda **kwargs: factory(**kwargs),
     )
     monkeypatch.setitem(

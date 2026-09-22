@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from lora.orchestration import SessionExecutionCoordinator, TurnCommand, TurnState
-from lora.schema import CaseRunRef
+from lara.orchestration import SessionExecutionCoordinator, TurnCommand, TurnState
+from lara.schema import CaseRunRef
 
 
 class _Lease:

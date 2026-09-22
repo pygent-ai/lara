@@ -4,17 +4,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lora.evaluation import CaseManager
-from lora.evaluation.regression import RegressionRunner
-from lora.schema import RunConfig
-from lora.sessions import SessionManager
-from lora.tracing import DESIGN_EVENT_TYPES, EventStore
+from lara.evaluation import CaseManager
+from lara.evaluation.regression import RegressionRunner
+from lara.schema import RunConfig
+from lara.sessions import SessionManager
+from lara.tracing import DESIGN_EVENT_TYPES, EventStore
 
 
 class TraceEventStoreScenarioTests(unittest.TestCase):
     def test_case_run_trace_is_append_only_and_replayable_in_order(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            config = RunConfig(workspace_root=tmp, lora_root=Path(tmp) / ".lora")
+            config = RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
             manager = SessionManager(config)
             session = manager.create("trace-case")
             run = manager.start_case_run(session.session_id, "trace-case")
@@ -101,10 +101,10 @@ class TraceEventStoreScenarioTests(unittest.TestCase):
     def test_regression_run_records_started_and_finished_events(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / ".lora").mkdir()
-            manifest = root / ".lora" / "regression.json"
+            (root / ".lara").mkdir()
+            manifest = root / ".lara" / "regression.json"
             manifest.write_text('{"version": "1.0", "cases": []}', encoding="utf-8")
-            config = RunConfig(workspace_root=root, lora_root=root / ".lora")
+            config = RunConfig(workspace_root=root, lara_root=root / ".lara")
 
             result = RegressionRunner(
                 config=config,
@@ -142,7 +142,7 @@ def _payload_for(event_type: str) -> dict[str, object]:
     if event_type == "conversation.automation_trigger":
         return {
             "role": "user",
-            "kind": "lora.automation.trigger",
+            "kind": "lara.automation.trigger",
             "content": "run the scheduled check",
             "origin": "automation",
         }

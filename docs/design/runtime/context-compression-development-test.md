@@ -1,10 +1,10 @@
 # 上下文压缩功能开发与测试文档
 
-> 历史设计说明：本文记录的是 Lora 自有压缩运行时方案，已由 Pygent 0.3.0
+> 历史设计说明：本文记录的是 Lara 自有压缩运行时方案，已由 Pygent 0.3.0
 > 原生 ReAct 压缩替代，不再是当前实现契约。当前实现由 `PygentAgent` 管理触发、
-> snapshot、投影 revision、压缩计数与 execution recovery；Lora 的 compressor Module
+> snapshot、投影 revision、压缩计数与 execution recovery；Lara 的 compressor Module
 > 只生成摘要并补充最近文件读取证据。跨轮恢复直接使用 Pygent codec 序列化的
-> `LoraContext`，存放在现有 `session.json` 的 `metadata.agent_context` 中；不再创建
+> `LaraContext`，存放在现有 `session.json` 的 `metadata.agent_context` 中；不再创建
 > `model_context.json`、`compactions.jsonl` 或 `transcript.jsonl`，也不再使用
 > `compression_failed` session 状态。下文仅供理解旧方案和迁移背景。
 

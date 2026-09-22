@@ -48,7 +48,7 @@ The history layer should read as navigation infrastructure, not as the primary c
 - Background should be weaker than the workbench: lower contrast, softer border, and less visual weight.
 - Expanded mode shows the full existing `SessionSidebar`.
 - Collapsed mode shows a slim rail with essential actions:
-  - Lora identity,
+  - Lara identity,
   - expand/collapse control,
   - new chat,
   - active session affordance,

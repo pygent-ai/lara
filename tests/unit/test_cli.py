@@ -12,13 +12,13 @@ from unittest.mock import patch
 
 import pytest
 
-from lora.cli import build_parser, main
-from lora.cli.sessions import (
+from lara.cli import build_parser, main
+from lara.cli.sessions import (
     _interactive_session_chat,
     _spawn_collaboration_worker,
     _turn_result_payload,
 )
-from lora.schema import CaseRunRef, RunConfig, default_cli_bash_presets
+from lara.schema import CaseRunRef, RunConfig, default_cli_bash_presets
 
 
 def test_main_prints_json_without_escaping_non_ascii() -> None:
@@ -26,7 +26,7 @@ def test_main_prints_json_without_escaping_non_ascii() -> None:
     parser.set_defaults(handler=lambda args: {"final_answer": "开发指南"})
     stdout = io.StringIO()
     with (
-        patch("lora.cli.main.build_parser", return_value=parser),
+        patch("lara.cli.main.build_parser", return_value=parser),
         patch("sys.stdout", stdout),
     ):
         assert main([]) == 0
@@ -53,15 +53,15 @@ def test_session_run_is_the_only_noninteractive_chat_entry() -> None:
 def test_default_cli_context_exposes_only_current_session_commands() -> None:
     presets = {preset.name: preset for preset in default_cli_bash_presets()}
 
-    assert presets["lora-session"].command == "uv run lora session --help"
-    assert presets["lora-automation"].command == "uv run lora automation --help"
+    assert presets["lara-session"].command == "uv run lara session --help"
+    assert presets["lara-automation"].command == "uv run lara automation --help"
     assert "create|list|show|update|pause|resume|delete|run|runs" in presets[
-        "lora-automation"
+        "lara-automation"
     ].description
-    assert "--session" in presets["lora-automation"].description
-    assert "--standalone" in presets["lora-automation"].description
-    assert "lora-chat" not in presets
-    assert all("lora chat" not in preset.command for preset in presets.values())
+    assert "--session" in presets["lara-automation"].description
+    assert "--standalone" in presets["lara-automation"].description
+    assert "lara-chat" not in presets
+    assert all("lara chat" not in preset.command for preset in presets.values())
 
 
 def test_session_collaboration_commands_are_registered() -> None:
@@ -87,11 +87,11 @@ def test_collaboration_worker_is_detached_with_explicit_runtime_context(
     args = argparse.Namespace(workspace_root=None, max_steps=7)
     config = RunConfig(
         workspace_root=str(tmp_path),
-        lora_root=str(tmp_path / ".lora"),
+        lara_root=str(tmp_path / ".lara"),
         agent_alias="dev",
     )
 
-    with patch("lora.cli.sessions.subprocess.Popen") as popen:
+    with patch("lara.cli.sessions.subprocess.Popen") as popen:
         _spawn_collaboration_worker(args, "op-1", config)
 
     command = popen.call_args.args[0]
@@ -99,7 +99,7 @@ def test_collaboration_worker_is_detached_with_explicit_runtime_context(
     assert command == [
         sys.executable,
         "-m",
-        "lora.cli.collaboration_worker",
+        "lara.cli.collaboration_worker",
         "--workspace-root",
         str(tmp_path.resolve()),
         "--agent",
@@ -188,7 +188,7 @@ def test_interactive_session_chat_submits_one_managed_turn_per_input(
         async def __aexit__(self, *_args):
             return None
 
-    config = RunConfig(workspace_root=str(tmp_path), lora_root=str(tmp_path / ".lora"))
+    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
     args = argparse.Namespace(
         workspace_root=str(tmp_path),
         session_id=None,
@@ -198,8 +198,8 @@ def test_interactive_session_chat_submits_one_managed_turn_per_input(
     )
 
     with (
-        patch("lora.cli.sessions.load_run_config", return_value=config),
-        patch("lora.cli.sessions.LocalExecutionHost", return_value=Host()),
+        patch("lara.cli.sessions.load_run_config", return_value=config),
+        patch("lara.cli.sessions.LocalExecutionHost", return_value=Host()),
         patch("builtins.input", side_effect=["first", "second", "/exit"]),
     ):
         assert asyncio.run(_interactive_session_chat(args)) is None

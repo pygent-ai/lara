@@ -8,7 +8,7 @@ from threading import Thread
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from lora_api.app import create_app
+from lara_api.app import create_app
 from tests.native_config_support import native_model_config_yaml
 
 
@@ -40,10 +40,10 @@ async def test_api_stream_persists_usage_reasoning_and_timing_across_restart(tmp
     home = tmp_path / 'home'
     workspace = tmp_path / 'workspace'
     workspace.mkdir()
-    user_root = home / '.lora'
+    user_root = home / '.lara'
     user_root.mkdir(parents=True)
     monkeypatch.setattr(Path, 'home', lambda: home)
-    monkeypatch.setenv('LORA_LOCAL_STREAM_TEST_KEY', 'local-test-only')
+    monkeypatch.setenv('LARA_LOCAL_STREAM_TEST_KEY', 'local-test-only')
     provider = ThreadingHTTPServer(('127.0.0.1', 0), Provider)
     thread = Thread(target=provider.serve_forever, daemon=True)
     thread.start()
@@ -52,14 +52,14 @@ async def test_api_stream_persists_usage_reasoning_and_timing_across_restart(tmp
             alias='test',
             model_id='local-test',
             base_url=f'http://127.0.0.1:{provider.server_port}/v1',
-            credential_env='LORA_LOCAL_STREAM_TEST_KEY',
+            credential_env='LARA_LOCAL_STREAM_TEST_KEY',
         ),
         encoding='utf-8',
     )
     try:
         app = create_app(workspace_root=str(workspace))
         async with app.router.lifespan_context(app):
-            async with AsyncClient(transport=ASGITransport(app), base_url='http://lora') as client:
+            async with AsyncClient(transport=ASGITransport(app), base_url='http://lara') as client:
                 assert (await client.get('/health')).json()['status'] == 'ok'
                 created = await client.post('/sessions', json={})
                 assert created.status_code == 200
@@ -74,7 +74,7 @@ async def test_api_stream_persists_usage_reasoning_and_timing_across_restart(tmp
                 assert any(event['kind'] == 'model.text.delta' for event in events)
         reopened = create_app(workspace_root=str(workspace))
         async with reopened.router.lifespan_context(reopened):
-            async with AsyncClient(transport=ASGITransport(reopened), base_url='http://lora') as client:
+            async with AsyncClient(transport=ASGITransport(reopened), base_url='http://lara') as client:
                 detail = (await client.get(f"/sessions/{session['session_id']}")).json()
                 answer = detail['history'][-1]
                 assert answer['content'] == 'Ready.'
@@ -82,7 +82,7 @@ async def test_api_stream_persists_usage_reasoning_and_timing_across_restart(tmp
                 assert answer['usage']['total_tokens'] == 25
                 assert answer['run_timing'] == timing
         assert requests and all(request['stream_options'] == {'include_usage': True} for request in requests)
-        assert not (workspace / '.lora').exists()
+        assert not (workspace / '.lara').exists()
     finally:
         provider.shutdown()
         provider.server_close()

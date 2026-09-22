@@ -1,5 +1,5 @@
 {
-  "name": "lora-workspace",
+  "name": "lara-workspace",
   "private": true,
   "scripts": {
     "dev": "npm --prefix apps/desktop run dev",
