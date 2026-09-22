@@ -35,7 +35,7 @@ try {
     }
     $laraWheel = $builtWheels[0].FullName
 
-    & uv run --no-project `
+    & uv run --no-project --reinstall-package lara `
         --with pyinstaller `
         --with $laraWheel `
         pyinstaller `
