@@ -944,7 +944,7 @@ Add this Qt override to `MainWindow`:
         result = QMessageBox.question(
             self,
             "Runs in progress",
-            "There are running chat sessions. Closing now will stop them. Keep Lora open?",
+            "There are running chat sessions. Closing now will stop them. Keep Lara open?",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes,
         )
@@ -1003,7 +1003,7 @@ Expected: PASS.
 Run:
 
 ```powershell
-uv run lora-gui
+uv run lara-gui
 ```
 
 Manual checks:

@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lora.core.paths import project_lora_root
+from lara.core.paths import project_lara_root
 from tests.native_config_support import native_model_config_yaml
 
 
@@ -40,23 +40,23 @@ class GeneratedTestFlowScenarioTests(unittest.TestCase):
                 "USERPROFILE": str(root / "home"),
             }
 
-            run = _lora(root, env, "case", "run", str(case_file))
+            run = _lara(root, env, "case", "run", str(case_file))
             self.assertEqual(run["status"], "failed")
 
-            generated = _lora(root, env, "test", "generate", run["session_id"], run["case_run_id"])
+            generated = _lara(root, env, "test", "generate", run["session_id"], run["case_run_id"])
             generated_path = Path(generated["generated_path"])
             metadata_path = Path(generated["metadata_path"])
             self.assertEqual(generated["status"], "generated")
             self.assertTrue(generated_path.exists())
             self.assertTrue(metadata_path.exists())
 
-            generated_run = _lora(root, env, "case", "run", str(generated_path))
+            generated_run = _lara(root, env, "case", "run", str(generated_path))
             self.assertEqual(generated_run["status"], "failed")
             self.assertEqual(generated_run["case_id"], "generated-flow-generated")
 
-            first_register = _lora(root, env, "test", "register", str(generated_path))
-            second_register = _lora(root, env, "test", "register", str(generated_path))
-            manifest_path = project_lora_root(root, root / "home" / ".lora") / "regression.json"
+            first_register = _lara(root, env, "test", "register", str(generated_path))
+            second_register = _lara(root, env, "test", "register", str(generated_path))
+            manifest_path = project_lara_root(root, root / "home" / ".lara") / "regression.json"
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
             self.assertEqual(first_register["status"], "registered")
@@ -72,9 +72,9 @@ class GeneratedTestFlowScenarioTests(unittest.TestCase):
             self.assertEqual(generated_events[0]["payload"]["generated_path"], str(generated_path))
 
 
-def _lora(root: Path, env: dict[str, str], *args: str) -> dict[str, object]:
+def _lara(root: Path, env: dict[str, str], *args: str) -> dict[str, object]:
     result = subprocess.run(
-        [sys.executable, "-m", "lora", "--workspace-root", str(root), *args],
+        [sys.executable, "-m", "lara", "--workspace-root", str(root), *args],
         check=True,
         capture_output=True,
         text=True,
@@ -85,13 +85,13 @@ def _lora(root: Path, env: dict[str, str], *args: str) -> dict[str, object]:
 
 
 def _write_no_api_config(root: Path) -> None:
-    config_path = root / "home" / ".lora" / "config.yaml"
+    config_path = root / "home" / ".lara" / "config.yaml"
     config_path.parent.mkdir(parents=True)
     config_path.write_text(
         native_model_config_yaml(
             alias="test",
             base_url="https://example.invalid/v1",
-            credential_env="LORA_SCENARIO_NO_API_KEY",
+            credential_env="LARA_SCENARIO_NO_API_KEY",
         ),
         encoding="utf-8",
     )

@@ -82,7 +82,7 @@ def test_cli_message_reaches_running_agent_after_tool_result(tmp_path: Path) -> 
     workspace.mkdir()
     (workspace / "seed.txt").write_text("seed", encoding="utf-8")
     user_home = tmp_path / "home"
-    user_root = user_home / ".lora"
+    user_root = user_home / ".lara"
     user_root.mkdir(parents=True)
     provider = ThreadingHTTPServer(("127.0.0.1", 0), Provider)
     provider_thread = Thread(target=provider.serve_forever, daemon=True)
@@ -92,7 +92,7 @@ def test_cli_message_reaches_running_agent_after_tool_result(tmp_path: Path) -> 
             alias="test",
             model_id="local-test",
             base_url=f"http://127.0.0.1:{provider.server_port}/v1",
-            credential_env="LORA_SESSION_MESSAGE_TEST_KEY",
+            credential_env="LARA_SESSION_MESSAGE_TEST_KEY",
         ),
         encoding="utf-8",
     )
@@ -103,12 +103,12 @@ def test_cli_message_reaches_running_agent_after_tool_result(tmp_path: Path) -> 
         "HOME": str(user_home),
         "PYTHONUTF8": "1",
         "PYTHONIOENCODING": "utf-8",
-        "LORA_SESSION_MESSAGE_TEST_KEY": "local-test-only",
+        "LARA_SESSION_MESSAGE_TEST_KEY": "local-test-only",
     }
     base = [
         sys.executable,
         "-m",
-        "lora",
+        "lara",
         "--workspace-root",
         str(workspace),
         "--agent",

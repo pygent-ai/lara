@@ -11,12 +11,12 @@ import pytest
 from pygent import AIMessage, ToolCall, ToolMessage, UserMessage
 from pygent.llm import ModelExecution, ModelProviderResponse
 
-from lora.config import load_run_config
+from lara.config import load_run_config
 from tests.unit.test_model_configuration import native_runtime_config
-from lora.runtime.service import LoraRuntimeService
-from lora.schema import BashCliPreset
-from lora.sessions import AgentMessageState, SessionCollaborationStore, SessionManager
-from lora.tracing import EventStore
+from lara.runtime.service import LaraRuntimeService
+from lara.schema import BashCliPreset
+from lara.sessions import AgentMessageState, SessionCollaborationStore, SessionManager
+from lara.tracing import EventStore
 
 
 class _CapabilityInvoker:
@@ -120,7 +120,7 @@ async def test_agent_message_is_appended_after_tool_result_without_starting_a_tu
         "agent-message-target",
         run_config=config,
     )
-    store = SessionCollaborationStore(config.lora_root)
+    store = SessionCollaborationStore(config.lara_root)
 
     class Invoker(_ProjectionInvoker):
         def execute(
@@ -155,7 +155,7 @@ async def test_agent_message_is_appended_after_tool_result_without_starting_a_tu
             return ModelExecution(invoke)
 
     invoker = Invoker()
-    service = LoraRuntimeService(config)
+    service = LaraRuntimeService(config)
     service._model_invokers[config.resolved_agent.alias] = invoker
     for agent in service._agent_definitions.values():
         agent.llm = invoker
@@ -250,7 +250,7 @@ async def test_authorized_external_file_tools_complete_with_audit(
         session.session_id, "external-tools", run_config=config
     )
     invoker = Invoker()
-    service = LoraRuntimeService(config)
+    service = LaraRuntimeService(config)
     service._model_invokers[config.resolved_agent.alias] = invoker
     for agent in service._agent_definitions.values():
         agent.llm = invoker
@@ -285,7 +285,7 @@ async def test_native_react_preserves_skill_cli_and_file_detection(
 ) -> None:
     (tmp_path / "seed.txt").write_text("seed content", encoding="utf-8")
     config = native_runtime_config(tmp_path)
-    existing_skill = Path(config.lora_root) / "skills" / "existing-skill" / "SKILL.md"
+    existing_skill = Path(config.lara_root) / "skills" / "existing-skill" / "SKILL.md"
     existing_skill.parent.mkdir(parents=True)
     existing_skill.write_text(
         "---\nname: existing-skill\ndescription: Available before the turn.\n---\n",
@@ -312,7 +312,7 @@ async def test_native_react_preserves_skill_cli_and_file_detection(
             return None
         return real_which(name)
 
-    monkeypatch.setattr("lora.runtime.reminders.cli_context.shutil.which", staged_which)
+    monkeypatch.setattr("lara.runtime.reminders.cli_context.shutil.which", staged_which)
     assert config.resolved_agent is not None
 
     manager = SessionManager(config)
@@ -323,9 +323,9 @@ async def test_native_react_preserves_skill_cli_and_file_detection(
         run_config=config,
     )
     invoker = _CapabilityInvoker(
-        Path(config.lora_root) / "skills" / "native-created" / "SKILL.md"
+        Path(config.lara_root) / "skills" / "native-created" / "SKILL.md"
     )
-    service = LoraRuntimeService(config)
+    service = LaraRuntimeService(config)
     service._model_invokers[config.resolved_agent.alias] = invoker
     for agent in service._agent_definitions.values():
         agent.llm = invoker
@@ -446,7 +446,7 @@ async def test_eternal_memory_replaces_projection_before_first_model_call(
         run_config=config,
     )
     invoker = _ProjectionInvoker()
-    service = LoraRuntimeService(config)
+    service = LaraRuntimeService(config)
     service._model_invokers[config.resolved_agent.alias] = invoker
     for agent in service._agent_definitions.values():
         agent.llm = invoker
@@ -520,7 +520,7 @@ async def test_eternal_memory_replaces_projection_before_first_model_call(
     assert current.data["raw_content"] == "current request"
     offset = 1 if snapshot_ready else 0
     assert [item.kind for item in model_context.messages] == (
-        ["lora.memory.snapshot", None, None] if snapshot_ready else [None, None]
+        ["lara.memory.snapshot", None, None] if snapshot_ready else [None, None]
     )
     assert [item.content for item in model_context.messages[offset:]] == [
         "previous request",

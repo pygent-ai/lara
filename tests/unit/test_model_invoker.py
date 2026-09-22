@@ -6,7 +6,7 @@ import pytest
 from pygent import AIMessage, ModelContinuation, freeze_json_object
 from pygent.llm import DefaultModelInvoker, ModelExecution, ModelProviderResponse
 
-from lora.runtime.agent.model_invoker import LoraModelInvoker
+from lara.runtime.agent.model_invoker import LaraModelInvoker
 
 
 @pytest.mark.asyncio
@@ -38,7 +38,7 @@ async def test_reasoning_is_scoped_to_each_call_and_reset_on_retry(monkeypatch):
         return ModelExecution(invoke)
 
     monkeypatch.setattr(DefaultModelInvoker, 'execute', execute)
-    invoker = LoraModelInvoker(adapters={}, clients={})
+    invoker = LaraModelInvoker(adapters={}, clients={})
     try:
         responses = await asyncio.gather(*(invoker.execute(label=label).result() for label in ('first', 'second')))
         assert [dict(response.message.metadata) for response in responses] == [
@@ -86,7 +86,7 @@ async def test_cancel_waits_for_native_model_and_event_relay_cleanup(monkeypatch
         return ModelExecution(invoke)
 
     monkeypatch.setattr(DefaultModelInvoker, 'execute', execute)
-    invoker = LoraModelInvoker(adapters={}, clients={})
+    invoker = LaraModelInvoker(adapters={}, clients={})
     try:
         execution = invoker.execute()
         await started.wait()
@@ -94,6 +94,6 @@ async def test_cancel_waits_for_native_model_and_event_relay_cleanup(monkeypatch
         with pytest.raises(asyncio.CancelledError):
             await execution.result()
         assert cleaned.is_set()
-        assert not any(task.get_name() == 'lora-model-display-events' and not task.done() for task in asyncio.all_tasks())
+        assert not any(task.get_name() == 'lara-model-display-events' and not task.done() for task in asyncio.all_tasks())
     finally:
         await invoker.aclose()

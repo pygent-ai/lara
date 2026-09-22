@@ -4,10 +4,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lora.evaluation import CaseManager, Evaluator
-from lora.schema import CaseDefinition, RunConfig
-from lora.sessions import SessionManager
-from lora.tracing import EventStore
+from lara.evaluation import CaseManager, Evaluator
+from lara.schema import CaseDefinition, RunConfig
+from lara.sessions import SessionManager
+from lara.tracing import EventStore
 
 
 class EvaluatorTests(unittest.TestCase):
@@ -15,7 +15,7 @@ class EvaluatorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "README.md").write_text("stable", encoding="utf-8")
-            config = RunConfig(workspace_root=root, lora_root=root / ".lora")
+            config = RunConfig(workspace_root=root, lara_root=root / ".lara")
             manager = SessionManager(config)
             session = manager.create("case-a")
             run = manager.start_case_run(
@@ -56,7 +56,7 @@ class EvaluatorTests(unittest.TestCase):
 
     def test_fails_missing_answer_and_required_tool(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            config = RunConfig(workspace_root=tmp, lora_root=Path(tmp) / ".lora")
+            config = RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
             manager = SessionManager(config)
             session = manager.create("case-a")
             run = manager.start_case_run(session.session_id, "case-a")

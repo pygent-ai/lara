@@ -7,9 +7,9 @@ from typing import Any, cast
 
 import pytest
 
-from lora.orchestration import SessionCollaborationService
-from lora.schema import CaseRunRef, RunConfig
-from lora.sessions import (
+from lara.orchestration import SessionCollaborationService
+from lara.schema import CaseRunRef, RunConfig
+from lara.sessions import (
     AgentMessageState,
     CollaborationOperation,
     CollaborationState,
@@ -67,7 +67,7 @@ class _Turns:
 
 
 def _setup(tmp_path):
-    config = RunConfig(workspace_root=str(tmp_path), lora_root=str(tmp_path / ".lora"))
+    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
     manager = SessionManager(config)
     source = manager.create("chat", mode="chat").session_id
     target = manager.create("chat", mode="chat").session_id
@@ -75,7 +75,7 @@ def _setup(tmp_path):
 
 
 def test_store_binds_idempotency_key_to_request_fingerprint(tmp_path) -> None:
-    store = SessionCollaborationStore(tmp_path / ".lora")
+    store = SessionCollaborationStore(tmp_path / ".lara")
     values = {
         "submission_id": "submission-1",
         "fingerprint": "same",
@@ -95,7 +95,7 @@ def test_store_binds_idempotency_key_to_request_fingerprint(tmp_path) -> None:
 
 
 def test_store_recognizes_only_persisted_parent_child_relationships(tmp_path) -> None:
-    store = SessionCollaborationStore(tmp_path / ".lora")
+    store = SessionCollaborationStore(tmp_path / ".lara")
     store.reserve(
         submission_id="relationship",
         fingerprint="relationship",
@@ -112,7 +112,7 @@ def test_store_recognizes_only_persisted_parent_child_relationships(tmp_path) ->
 
 
 def test_store_lists_only_operations_related_to_the_session(tmp_path) -> None:
-    store = SessionCollaborationStore(tmp_path / ".lora")
+    store = SessionCollaborationStore(tmp_path / ".lara")
     first = store.reserve(
         submission_id="first",
         fingerprint="first",
@@ -200,7 +200,7 @@ async def test_agent_messages_are_claimed_fifo_and_acknowledged(tmp_path) -> Non
         message="second",
         submission_id="submission-second",
     )
-    store = SessionCollaborationStore(config.lora_root)
+    store = SessionCollaborationStore(config.lara_root)
     claimed = store.claim_messages(target, claim_id="delivery-1", lease_seconds=30)
     assert [item.message_id for item in claimed] == [
         first.message_id,
@@ -251,7 +251,7 @@ async def test_start_creates_exactly_one_target_for_repeated_submission(
     assert completed.state is CollaborationState.PASSED
     assert len(turns.submissions) == 1
 
-    store = SessionCollaborationStore(config.lora_root)
+    store = SessionCollaborationStore(config.lara_root)
     callback = store.claim_messages(
         source,
         claim_id="parent-turn",
@@ -292,7 +292,7 @@ async def test_start_without_source_does_not_queue_completion_message(tmp_path) 
     )
 
     assert completed.target_session_id is not None
-    store = SessionCollaborationStore(config.lora_root)
+    store = SessionCollaborationStore(config.lara_root)
     assert (
         store.claim_messages(
             completed.target_session_id,
@@ -317,7 +317,7 @@ async def test_two_services_serialize_same_target_in_fifo_order(tmp_path) -> Non
         turns=cast(Any, second_turns), poll_interval=0.01
     )
 
-    store = SessionCollaborationStore(config.lora_root)
+    store = SessionCollaborationStore(config.lara_root)
     first = store.reserve(
         submission_id="operation-first",
         fingerprint="operation-first",

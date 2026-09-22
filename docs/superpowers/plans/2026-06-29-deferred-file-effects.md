@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Move Lora workspace file-effect tracking out of the synchronous tool-call path so bash results and the next chat turn are not blocked by full workspace snapshots.
+**Goal:** Move Lara workspace file-effect tracking out of the synchronous tool-call path so bash results and the next chat turn are not blocked by full workspace snapshots.
 
-**Architecture:** Add a `src/lora/runtime/file_effects.py` module that owns deferred jobs, pending state, baseline persistence, and a session/workspace scoped background worker. Keep `FileEffectTracker` in `src/lora/runtime/tools.py`, but teach `ToolInterceptor` to collect deferred jobs when requested. Wire `LoraAgent.stream()` to enqueue those jobs after the final assistant output, and make `DiffTool` report pending deferred work.
+**Architecture:** Add a `src/lara/runtime/file_effects.py` module that owns deferred jobs, pending state, baseline persistence, and a session/workspace scoped background worker. Keep `FileEffectTracker` in `src/lara/runtime/tools.py`, but teach `ToolInterceptor` to collect deferred jobs when requested. Wire `LaraAgent.stream()` to enqueue those jobs after the final assistant output, and make `DiffTool` report pending deferred work.
 
 **Tech Stack:** Python 3.13, asyncio, unittest `IsolatedAsyncioTestCase`, existing `EventStore`, existing `FileEffectTracker`, existing `DiffTool`.
 
@@ -12,20 +12,20 @@
 
 ## File Structure
 
-- Create `src/lora/runtime/file_effects.py`
+- Create `src/lara/runtime/file_effects.py`
   - Owns `DeferredFileEffectJob`, `DeferredFileEffectBatch`, `FileEffectPendingStore`, `FileEffectBaselineStore`, `FileEffectBackgroundWorker`, worker registry helpers, and pending wait/query helpers.
   - Avoids top-level import of `FileEffectTracker` to prevent circular imports. Worker methods import `FileEffectTracker` inside processing methods.
-- Modify `src/lora/runtime/tools.py`
+- Modify `src/lara/runtime/tools.py`
   - Imports `DeferredFileEffectJob`.
   - Adds `defer_file_effects` option to `ToolInterceptor`.
   - Keeps current synchronous behavior when `defer_file_effects=False`.
   - Collects deferred jobs and exposes `drain_file_effect_jobs()`.
-- Modify `src/lora/runtime/agent.py`
+- Modify `src/lara/runtime/agent.py`
   - Imports `DeferredFileEffectBatch` and `get_file_effect_worker`.
   - Passes `defer_file_effects=True` to `ToolInterceptor`.
   - Enqueues drained jobs before returning from final assistant output.
-- Modify `src/lora/tracing/diffing.py`
-  - Lazily imports pending helpers inside `DiffTool.forward()` to avoid an import cycle through `lora.runtime.__init__`.
+- Modify `src/lara/tracing/diffing.py`
+  - Lazily imports pending helpers inside `DiffTool.forward()` to avoid an import cycle through `lara.runtime.__init__`.
   - Adds `pending_wait_seconds` constructor argument.
   - Adds `pending` metadata to summary, patch, and json responses when pending work remains.
 - Add `tests/unit/test_file_effects.py`
@@ -33,7 +33,7 @@
 - Modify `tests/unit/test_tools.py`
   - Unit coverage for deferred `ToolInterceptor` behavior.
 - Modify `tests/unit/test_runtime_adapter.py`
-  - Unit coverage that `LoraAgent.stream()` enqueues after final output without waiting.
+  - Unit coverage that `LaraAgent.stream()` enqueues after final output without waiting.
 - Modify `tests/scenario/test_file_effect_tracking_flow.py`
   - Keep existing synchronous scenario coverage, and add a deferred worker scenario.
 
@@ -50,7 +50,7 @@
 ### Task 1: Add Deferred State Types And Stores
 
 **Files:**
-- Create: `src/lora/runtime/file_effects.py`
+- Create: `src/lara/runtime/file_effects.py`
 - Test: `tests/unit/test_file_effects.py`
 
 - [ ] **Step 1: Write failing tests for pending state and baseline persistence**
@@ -64,21 +64,21 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lora.runtime.file_effects import (
+from lara.runtime.file_effects import (
     DeferredFileEffectBatch,
     DeferredFileEffectJob,
     FileEffectBaselineStore,
     FileEffectPendingStore,
     pending_file_effect_batches,
 )
-from lora.runtime.tools import FileSnapshot
-from lora.schema import CaseRunRef
+from lara.runtime.tools import FileSnapshot
+from lara.schema import CaseRunRef
 
 
 class FileEffectStateTests(unittest.IsolatedAsyncioTestCase):
     def test_pending_store_tracks_batch_lifecycle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            session_dir = Path(tmp) / ".lora" / "sessions" / "s1"
+            session_dir = Path(tmp) / ".lara" / "sessions" / "s1"
             run_dir = session_dir / "cases" / "chat" / "runs" / "r1"
             session_dir.mkdir(parents=True)
             (session_dir / "session.json").write_text("{}", encoding="utf-8")
@@ -102,7 +102,7 @@ class FileEffectStateTests(unittest.IsolatedAsyncioTestCase):
 
     def test_pending_query_filters_run_session_and_turn(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            session_dir = Path(tmp) / ".lora" / "sessions" / "s1"
+            session_dir = Path(tmp) / ".lara" / "sessions" / "s1"
             first_run_dir = session_dir / "cases" / "chat" / "runs" / "r1"
             second_run_dir = session_dir / "cases" / "chat" / "runs" / "r2"
             session_dir.mkdir(parents=True)
@@ -128,7 +128,7 @@ class FileEffectStateTests(unittest.IsolatedAsyncioTestCase):
 
     def test_baseline_store_round_trips_file_snapshots(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            session_dir = Path(tmp) / ".lora" / "sessions" / "s1"
+            session_dir = Path(tmp) / ".lara" / "sessions" / "s1"
             store = FileEffectBaselineStore(session_dir)
             snapshot = FileSnapshot(
                 path=str((Path(tmp) / "workspace" / "demo.txt").resolve()),
@@ -178,11 +178,11 @@ Run:
 uv run python -m pytest tests/unit/test_file_effects.py -q
 ```
 
-Expected: FAIL with `ModuleNotFoundError: No module named 'lora.runtime.file_effects'`.
+Expected: FAIL with `ModuleNotFoundError: No module named 'lara.runtime.file_effects'`.
 
 - [ ] **Step 3: Add the state module**
 
-Create `src/lora/runtime/file_effects.py` with:
+Create `src/lara/runtime/file_effects.py` with:
 
 ```python
 from __future__ import annotations
@@ -193,9 +193,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from lora.core.io import read_json, utc_now, write_json
-from lora.schema import CaseRunRef
-from lora.tracing.events import EventStore
+from lara.core.io import read_json, utc_now, write_json
+from lara.schema import CaseRunRef
+from lara.tracing.events import EventStore
 
 PENDING_FILE_EFFECT_STATUSES = frozenset({"queued", "running"})
 DEFAULT_DIFF_PENDING_WAIT_SECONDS = 0.5
@@ -382,7 +382,7 @@ Expected: `4 passed`.
 - [ ] **Step 5: Commit Task 1**
 
 ```powershell
-git add -- src/lora/runtime/file_effects.py tests/unit/test_file_effects.py
+git add -- src/lara/runtime/file_effects.py tests/unit/test_file_effects.py
 git commit -m "Add deferred file effect state stores"
 ```
 
@@ -391,7 +391,7 @@ git commit -m "Add deferred file effect state stores"
 ### Task 2: Add Background Worker Processing
 
 **Files:**
-- Modify: `src/lora/runtime/file_effects.py`
+- Modify: `src/lara/runtime/file_effects.py`
 - Test: `tests/unit/test_file_effects.py`
 
 - [ ] **Step 1: Add failing worker tests**
@@ -401,7 +401,7 @@ Append these tests to `FileEffectStateTests` in `tests/unit/test_file_effects.py
 ```python
     async def test_worker_processes_batch_and_records_diff(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            session_dir = Path(tmp) / ".lora" / "sessions" / "s1"
+            session_dir = Path(tmp) / ".lara" / "sessions" / "s1"
             run_dir = session_dir / "cases" / "chat" / "runs" / "r1"
             workspace = Path(tmp) / "workspace"
             session_dir.mkdir(parents=True)
@@ -411,9 +411,9 @@ Append these tests to `FileEffectStateTests` in `tests/unit/test_file_effects.py
             path.write_text("old\n", encoding="utf-8")
             run = CaseRunRef(session_id="s1", case_id="chat", case_run_id="r1", run_dir=run_dir)
 
-            from lora.runtime.file_effects import FileEffectBackgroundWorker
-            from lora.runtime.tools import FileEffectTracker
-            from lora.tracing import EventStore
+            from lara.runtime.file_effects import FileEffectBackgroundWorker
+            from lara.runtime.tools import FileEffectTracker
+            from lara.tracing import EventStore
 
             tracker = FileEffectTracker(workspace_root=workspace, store=EventStore(run))
             FileEffectBaselineStore(session_dir).save(tracker.snapshot_workspace())
@@ -439,7 +439,7 @@ Append these tests to `FileEffectStateTests` in `tests/unit/test_file_effects.py
 
     async def test_worker_marks_failure_without_raising_to_caller(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            session_dir = Path(tmp) / ".lora" / "sessions" / "s1"
+            session_dir = Path(tmp) / ".lara" / "sessions" / "s1"
             run_dir = session_dir / "cases" / "chat" / "runs" / "r1"
             workspace = Path(tmp) / "workspace"
             session_dir.mkdir(parents=True)
@@ -447,7 +447,7 @@ Append these tests to `FileEffectStateTests` in `tests/unit/test_file_effects.py
             workspace.mkdir()
             run = CaseRunRef(session_id="s1", case_id="chat", case_run_id="r1", run_dir=run_dir)
 
-            from lora.runtime.file_effects import FileEffectBackgroundWorker
+            from lara.runtime.file_effects import FileEffectBackgroundWorker
 
             worker = FileEffectBackgroundWorker(session_dir=session_dir, workspace_root=workspace, snapshot_timeout_seconds=0.001)
             worker._snapshot_workspace = _raise_snapshot_failure
@@ -487,7 +487,7 @@ Expected: FAIL with `ImportError` or `AttributeError` for `FileEffectBackgroundW
 
 - [ ] **Step 3: Implement worker and registry**
 
-Append this code to `src/lora/runtime/file_effects.py`:
+Append this code to `src/lara/runtime/file_effects.py`:
 
 ```python
 class FileEffectBackgroundWorker:
@@ -606,7 +606,7 @@ Expected: `6 passed`.
 - [ ] **Step 5: Commit Task 2**
 
 ```powershell
-git add -- src/lora/runtime/file_effects.py tests/unit/test_file_effects.py
+git add -- src/lara/runtime/file_effects.py tests/unit/test_file_effects.py
 git commit -m "Add deferred file effect background worker"
 ```
 
@@ -615,7 +615,7 @@ git commit -m "Add deferred file effect background worker"
 ### Task 3: Add Deferred Mode To ToolInterceptor
 
 **Files:**
-- Modify: `src/lora/runtime/tools.py`
+- Modify: `src/lara/runtime/tools.py`
 - Test: `tests/unit/test_tools.py`
 
 - [ ] **Step 1: Add failing tests for deferred interception**
@@ -637,7 +637,7 @@ Add these tests to `ToolTests` in `tests/unit/test_tools.py`:
             ctx = ToolContext(case_run_ref=run, turn_id="turn-0001")
 
             with unittest.mock.patch(
-                "lora.runtime.tools.FileEffectTracker.snapshot_workspace",
+                "lara.runtime.tools.FileEffectTracker.snapshot_workspace",
                 side_effect=AssertionError("snapshot should be deferred"),
             ):
                 result = await interceptor.call_tool("bash", {"command": "echo hi"}, ctx, lambda command: "ok")
@@ -690,7 +690,7 @@ Expected: FAIL with `TypeError: ToolInterceptor.__init__() got an unexpected key
 
 - [ ] **Step 3: Implement deferred interception**
 
-Modify imports in `src/lora/runtime/tools.py`:
+Modify imports in `src/lara/runtime/tools.py`:
 
 ```python
 from .file_effects import DeferredFileEffectJob
@@ -823,16 +823,16 @@ Expected: all tests pass. Existing scenario tests should keep passing because th
 - [ ] **Step 6: Commit Task 3**
 
 ```powershell
-git add -- src/lora/runtime/tools.py tests/unit/test_tools.py
+git add -- src/lara/runtime/tools.py tests/unit/test_tools.py
 git commit -m "Add deferred file effect jobs to tool interceptor"
 ```
 
 ---
 
-### Task 4: Enqueue Deferred Jobs After LoraAgent Final Output
+### Task 4: Enqueue Deferred Jobs After LaraAgent Final Output
 
 **Files:**
-- Modify: `src/lora/runtime/agent.py`
+- Modify: `src/lara/runtime/agent.py`
 - Test: `tests/unit/test_runtime_adapter.py`
 
 - [ ] **Step 1: Add failing agent test**
@@ -840,19 +840,19 @@ git commit -m "Add deferred file effect jobs to tool interceptor"
 Add this test to `AgentRuntimeAdapterTests` in `tests/unit/test_runtime_adapter.py`:
 
 ```python
-    def test_lora_agent_enqueues_file_effect_jobs_after_final_output(self) -> None:
+    def test_lara_agent_enqueues_file_effect_jobs_after_final_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
-            config = RunConfig(workspace_root=workspace, lora_root=workspace / ".lora", max_steps=3)
+            config = RunConfig(workspace_root=workspace, lara_root=workspace / ".lara", max_steps=3)
             manager = SessionManager(config)
             ref = manager.create("chat", mode="chat")
             run = manager.start_case_run(ref.session_id, "chat")
             session = manager.load(ref.session_id)
-            agent = FakeBashLoraAgent(config)
+            agent = FakeBashLaraAgent(config)
             agent.llm = BashThenAnswerLLM()
             recording_worker = _RecordingFileEffectWorker()
 
-            with patch("lora.runtime.agent.get_file_effect_worker", return_value=recording_worker):
+            with patch("lara.runtime.agent.get_file_effect_worker", return_value=recording_worker):
                 result = asyncio.run(
                     AgentRuntimeAdapter(agent=agent, config=config, session_manager=manager).run_turn(
                         session=session,
@@ -884,20 +884,20 @@ class _RecordingFileEffectWorker:
 Run:
 
 ```powershell
-uv run python -m pytest tests/unit/test_runtime_adapter.py::AgentRuntimeAdapterTests::test_lora_agent_enqueues_file_effect_jobs_after_final_output -q
+uv run python -m pytest tests/unit/test_runtime_adapter.py::AgentRuntimeAdapterTests::test_lara_agent_enqueues_file_effect_jobs_after_final_output -q
 ```
 
-Expected: FAIL with `AttributeError` from patching missing `get_file_effect_worker` in `lora.runtime.agent`, or assertion that no batch was enqueued.
+Expected: FAIL with `AttributeError` from patching missing `get_file_effect_worker` in `lara.runtime.agent`, or assertion that no batch was enqueued.
 
 - [ ] **Step 3: Wire agent to deferred worker**
 
-Modify imports in `src/lora/runtime/agent.py`:
+Modify imports in `src/lara/runtime/agent.py`:
 
 ```python
 from .file_effects import DeferredFileEffectBatch, get_file_effect_worker
 ```
 
-In `LoraAgent.stream()`, pass deferred mode:
+In `LaraAgent.stream()`, pass deferred mode:
 
 ```python
             track_file_effects=True,
@@ -912,7 +912,7 @@ Replace the final no-tool return block:
                 return
 ```
 
-Add this method to `LoraAgent` near `_call_context_compression_model()`:
+Add this method to `LaraAgent` near `_call_context_compression_model()`:
 
 ```python
     def _enqueue_deferred_file_effects(self, interceptor: ToolInterceptor) -> None:
@@ -944,7 +944,7 @@ Also handle the `max_steps` exhausted path by enqueuing before raising:
 Run:
 
 ```powershell
-uv run python -m pytest tests/unit/test_runtime_adapter.py::AgentRuntimeAdapterTests::test_lora_agent_enqueues_file_effect_jobs_after_final_output -q
+uv run python -m pytest tests/unit/test_runtime_adapter.py::AgentRuntimeAdapterTests::test_lara_agent_enqueues_file_effect_jobs_after_final_output -q
 ```
 
 Expected: `1 passed`.
@@ -962,7 +962,7 @@ Expected: all tests pass.
 - [ ] **Step 6: Commit Task 4**
 
 ```powershell
-git add -- src/lora/runtime/agent.py tests/unit/test_runtime_adapter.py
+git add -- src/lara/runtime/agent.py tests/unit/test_runtime_adapter.py
 git commit -m "Enqueue deferred file effects after agent output"
 ```
 
@@ -971,7 +971,7 @@ git commit -m "Enqueue deferred file effects after agent output"
 ### Task 5: Make DiffTool Pending-Aware
 
 **Files:**
-- Modify: `src/lora/tracing/diffing.py`
+- Modify: `src/lara/tracing/diffing.py`
 - Test: `tests/unit/test_file_effects.py`
 
 - [ ] **Step 1: Add failing pending diff test**
@@ -981,7 +981,7 @@ Append this test to `FileEffectStateTests` in `tests/unit/test_file_effects.py`:
 ```python
     async def test_diff_tool_reports_pending_file_effects(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            session_dir = Path(tmp) / ".lora" / "sessions" / "s1"
+            session_dir = Path(tmp) / ".lara" / "sessions" / "s1"
             run_dir = session_dir / "cases" / "chat" / "runs" / "r1"
             workspace = Path(tmp) / "workspace"
             session_dir.mkdir(parents=True)
@@ -995,7 +995,7 @@ Append this test to `FileEffectStateTests` in `tests/unit/test_file_effects.py`:
                 tool_call_ids=["tool-1"],
             )
 
-            from lora.tracing import DiffTool
+            from lara.tracing import DiffTool
 
             result = await DiffTool(
                 case_run_ref=run,
@@ -1035,7 +1035,7 @@ Set:
 At the start of `DiffTool.forward()`:
 
 ```python
-        from lora.runtime.file_effects import wait_for_pending_file_effects
+        from lara.runtime.file_effects import wait_for_pending_file_effects
 
         pending_batches = await wait_for_pending_file_effects(
             self.case_run_ref,
@@ -1111,7 +1111,7 @@ Expected: `2 passed`.
 - [ ] **Step 5: Commit Task 5**
 
 ```powershell
-git add -- src/lora/tracing/diffing.py tests/unit/test_file_effects.py
+git add -- src/lara/tracing/diffing.py tests/unit/test_file_effects.py
 git commit -m "Report pending file effects from diff tool"
 ```
 
@@ -1130,7 +1130,7 @@ Append this test to `FileEffectTrackingScenarioTests` in `tests/scenario/test_fi
 ```python
     async def test_deferred_worker_records_effects_after_tool_result(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            session_dir = Path(tmp) / ".lora" / "sessions" / "s1"
+            session_dir = Path(tmp) / ".lara" / "sessions" / "s1"
             run_dir = session_dir / "cases" / "c1" / "runs" / "r1"
             workspace = Path(tmp) / "workspace"
             session_dir.mkdir(parents=True)
@@ -1140,8 +1140,8 @@ Append this test to `FileEffectTrackingScenarioTests` in `tests/scenario/test_fi
             edited.write_text("old\n", encoding="utf-8")
             run = CaseRunRef(session_id="s1", case_id="c1", case_run_id="r1", run_dir=run_dir)
 
-            from lora.runtime.file_effects import DeferredFileEffectBatch, FileEffectBackgroundWorker, FileEffectBaselineStore
-            from lora.runtime.tools import FileEffectTracker
+            from lara.runtime.file_effects import DeferredFileEffectBatch, FileEffectBackgroundWorker, FileEffectBaselineStore
+            from lara.runtime.tools import FileEffectTracker
 
             store = EventStore(run)
             tracker = FileEffectTracker(workspace_root=workspace, store=store)
@@ -1199,7 +1199,7 @@ Expected: all tests pass.
 Run:
 
 ```powershell
-git diff -- src/lora/runtime/file_effects.py src/lora/runtime/tools.py src/lora/runtime/agent.py src/lora/tracing/diffing.py tests/unit/test_file_effects.py tests/unit/test_tools.py tests/unit/test_runtime_adapter.py tests/scenario/test_file_effect_tracking_flow.py
+git diff -- src/lara/runtime/file_effects.py src/lara/runtime/tools.py src/lara/runtime/agent.py src/lara/tracing/diffing.py tests/unit/test_file_effects.py tests/unit/test_tools.py tests/unit/test_runtime_adapter.py tests/scenario/test_file_effect_tracking_flow.py
 ```
 
 Expected: diff only contains deferred file-effect implementation and tests.
@@ -1207,7 +1207,7 @@ Expected: diff only contains deferred file-effect implementation and tests.
 - [ ] **Step 5: Commit Task 6**
 
 ```powershell
-git add -- src/lora/runtime/file_effects.py src/lora/runtime/tools.py src/lora/runtime/agent.py src/lora/tracing/diffing.py tests/unit/test_file_effects.py tests/unit/test_tools.py tests/unit/test_runtime_adapter.py tests/scenario/test_file_effect_tracking_flow.py
+git add -- src/lara/runtime/file_effects.py src/lara/runtime/tools.py src/lara/runtime/agent.py src/lara/tracing/diffing.py tests/unit/test_file_effects.py tests/unit/test_tools.py tests/unit/test_runtime_adapter.py tests/scenario/test_file_effect_tracking_flow.py
 git commit -m "Verify deferred file effect tracking flow"
 ```
 
@@ -1242,9 +1242,9 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from lora.runtime import ToolContext, ToolInterceptor
-from lora.schema import CaseRunRef
-from lora.tracing import EventStore
+from lara.runtime import ToolContext, ToolInterceptor
+from lara.schema import CaseRunRef
+from lara.tracing import EventStore
 
 async def main():
     with tempfile.TemporaryDirectory() as tmp:
@@ -1253,7 +1253,7 @@ async def main():
         run = CaseRunRef(session_id="s1", case_id="chat", case_run_id="r1", run_dir=Path(tmp) / "run")
         interceptor = ToolInterceptor(EventStore(run), workspace_root=workspace, track_file_effects=True, defer_file_effects=True)
         ctx = ToolContext(case_run_ref=run, turn_id="turn-0001")
-        with patch("lora.runtime.tools.FileEffectTracker.snapshot_workspace", side_effect=AssertionError("sync snapshot")):
+        with patch("lara.runtime.tools.FileEffectTracker.snapshot_workspace", side_effect=AssertionError("sync snapshot")):
             result = await interceptor.call_tool("bash", {"command": "echo hi"}, ctx, lambda command: "ok")
         print(result.status)
         print(len(interceptor.drain_file_effect_jobs()))

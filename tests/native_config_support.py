@@ -7,7 +7,7 @@ def native_model_config_yaml(
     model_key: str = "primary",
     model_id: str = "test-model",
     base_url: str = "https://example.test/v1",
-    credential_env: str = "LORA_TEST_API_KEY",
+    credential_env: str = "LARA_TEST_API_KEY",
     eternal_conversation: bool = False,
 ) -> str:
     enabled = "true" if eternal_conversation else "false"

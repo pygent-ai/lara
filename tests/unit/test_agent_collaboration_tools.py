@@ -8,12 +8,12 @@ import pytest
 from pygent import AIMessage, ToolCall, ToolMessage, UserMessage
 from pygent.llm import ModelExecution, ModelProviderResponse
 
-from lora.config import load_run_config
-from lora.core.io import plain_data
+from lara.config import load_run_config
+from lara.core.io import plain_data
 from tests.unit.test_model_configuration import native_runtime_config
-from lora.runtime.agent_collaboration import AGENT_WAIT_TOOL_SPEC
-from lora.runtime.service import LoraRuntimeService
-from lora.sessions import (
+from lara.runtime.agent_collaboration import AGENT_WAIT_TOOL_SPEC
+from lara.runtime.service import LaraRuntimeService
+from lara.sessions import (
     AgentMessage,
     AgentMessageState,
     CollaborationOperation,
@@ -235,7 +235,7 @@ async def test_model_tools_share_the_injected_session_collaboration_service(
     run = manager.start_case_run(parent.session_id, "parent", run_config=config)
     collaboration = _Collaboration(parent.session_id, agent_alias)
     invoker = _Invoker(agent_alias)
-    service = LoraRuntimeService(config, collaboration=cast(Any, collaboration))
+    service = LaraRuntimeService(config, collaboration=cast(Any, collaboration))
     service._model_invokers[config.resolved_agent.alias] = invoker
     for agent in service._agent_definitions.values():
         agent.llm = invoker
@@ -288,7 +288,7 @@ async def test_wait_any_checks_every_id_before_resuming_work(tmp_path: Path) -> 
     config.delegation.allowed_agents = (agent_alias,)
     parent = SessionManager(config).create("parent", mode="agent")
     collaboration = _Collaboration(parent.session_id, agent_alias)
-    service = LoraRuntimeService(config, collaboration=cast(Any, collaboration))
+    service = LaraRuntimeService(config, collaboration=cast(Any, collaboration))
     try:
         with pytest.raises(PermissionError, match="outside this collaboration"):
             await service._wait_for_agent_collaborations(

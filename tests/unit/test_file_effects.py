@@ -4,22 +4,22 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lora.runtime.file_effect_models import FileEffect
-from lora.runtime.file_effects import (
+from lara.runtime.file_effect_models import FileEffect
+from lara.runtime.file_effects import (
     DeferredFileEffectBatch,
     DeferredFileEffectJob,
     FileEffectBaselineStore,
     process_file_effect_batch,
 )
-from lora.runtime.tools import FileEffectTracker, FileSnapshot
-from lora.schema import CaseRunRef
-from lora.tracing import EventStore
+from lara.runtime.tools import FileEffectTracker, FileSnapshot
+from lara.schema import CaseRunRef
+from lara.tracing import EventStore
 
 
 class FileEffectStateTests(unittest.IsolatedAsyncioTestCase):
     def test_baseline_store_round_trips_file_snapshots(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            session_dir = Path(tmp) / ".lora" / "sessions" / "s1"
+            session_dir = Path(tmp) / ".lara" / "sessions" / "s1"
             store = FileEffectBaselineStore(session_dir)
             snapshot = FileSnapshot(
                 path=str((Path(tmp) / "workspace" / "demo.txt").resolve()),
@@ -65,7 +65,7 @@ class FileEffectStateTests(unittest.IsolatedAsyncioTestCase):
 
     def test_process_declared_only_batch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            session_dir = Path(tmp) / ".lora" / "sessions" / "s1"
+            session_dir = Path(tmp) / ".lara" / "sessions" / "s1"
             run_dir = session_dir / "cases" / "chat" / "runs" / "r1"
             workspace = Path(tmp) / "workspace"
             session_dir.mkdir(parents=True)
@@ -75,7 +75,7 @@ class FileEffectStateTests(unittest.IsolatedAsyncioTestCase):
                 session_id="s1", case_id="chat", case_run_id="r1", run_dir=run_dir
             )
 
-            from lora.runtime.file_effects import process_file_effect_batch
+            from lara.runtime.file_effects import process_file_effect_batch
 
             job = DeferredFileEffectJob(
                 tool_call_id="tool-read",
@@ -93,7 +93,7 @@ class FileEffectStateTests(unittest.IsolatedAsyncioTestCase):
 
     def test_first_declared_write_is_recorded_as_new_and_seeds_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            session_dir = Path(tmp) / ".lora" / "sessions" / "s1"
+            session_dir = Path(tmp) / ".lara" / "sessions" / "s1"
             run_dir = session_dir / "cases" / "chat" / "runs" / "r1"
             workspace = Path(tmp) / "workspace"
             session_dir.mkdir(parents=True)
@@ -144,7 +144,7 @@ class FileEffectStateTests(unittest.IsolatedAsyncioTestCase):
 
     def test_multi_tool_batch_preserves_declared_tool_ownership(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            session_dir = Path(tmp) / ".lora" / "sessions" / "s1"
+            session_dir = Path(tmp) / ".lara" / "sessions" / "s1"
             run_dir = session_dir / "cases" / "chat" / "runs" / "r1"
             workspace = Path(tmp) / "workspace"
             session_dir.mkdir(parents=True)

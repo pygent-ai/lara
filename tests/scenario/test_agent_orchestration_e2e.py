@@ -8,12 +8,12 @@ import pytest
 from pygent import AIMessage, ToolCall, ToolMessage, UserMessage
 from pygent.llm import ModelExecution, ModelProviderResponse
 
-from lora.config import load_run_config
+from lara.config import load_run_config
 from tests.unit.test_model_configuration import native_runtime_config
-from lora.core.io import plain_data
-from lora.orchestration import LocalExecutionHost, WorkspaceRuntimePool
-from lora.runtime.service import LoraRuntimeService
-from lora.sessions import (
+from lara.core.io import plain_data
+from lara.orchestration import LocalExecutionHost, WorkspaceRuntimePool
+from lara.runtime.service import LaraRuntimeService
+from lara.sessions import (
     AgentMessageState,
     CollaborationState,
     SessionCollaborationStore,
@@ -268,9 +268,9 @@ async def test_parent_agent_fanout_send_wait_any_and_callbacks_persist(
 
     invoker = _OrchestrationInvoker(agent_alias)
 
-    def runtime_factory(run_config: Any, **kwargs: Any) -> LoraRuntimeService:
+    def runtime_factory(run_config: Any, **kwargs: Any) -> LaraRuntimeService:
         assert run_config.resolved_agent is not None
-        service = LoraRuntimeService(run_config, **kwargs)
+        service = LaraRuntimeService(run_config, **kwargs)
         service._model_invokers[run_config.resolved_agent.alias] = invoker
         for agent in service._agent_definitions.values():
             agent.llm = invoker
@@ -298,7 +298,7 @@ async def test_parent_agent_fanout_send_wait_any_and_callbacks_persist(
     assert invoker.slow_callback_seen
     assert invoker.slow_message_seen
 
-    reopened = SessionCollaborationStore(config.lora_root)
+    reopened = SessionCollaborationStore(config.lara_root)
     operations = reopened.list_operations(parent.session_id)
     assert {item.operation_id for item in operations} == {
         invoker.fast_operation_id,

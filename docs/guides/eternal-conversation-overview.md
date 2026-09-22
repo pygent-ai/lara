@@ -353,11 +353,11 @@ Pending UT、Snapshot 和 cursor 必须一起成功或一起失败。任何一�
 
 ## 当前项目中的实现落点
 
-当前 Lora 初版把上述通用架构映射为：
+当前 Lara 初版把上述通用架构映射为：
 
-- Harness 与后台调度：[eternal_conversation.py](../../src/lora/runtime/eternal_conversation.py)
-- 前台上下文接入：[core.py](../../src/lora/runtime/agent/core.py)
-- 后台模型独立配置与调用：[service.py](../../src/lora/runtime/service.py)
+- Harness 与后台调度：[eternal_conversation.py](../../src/lara/runtime/eternal_conversation.py)
+- 前台上下文接入：[core.py](../../src/lara/runtime/agent/core.py)
+- 后台模型独立配置与调用：[service.py](../../src/lara/runtime/service.py)
 - 动态 memory-cli skill：`skills/dynamic-memory-cli`（由配置或安装路径挂载）
 - 三份规范性文档：[docs/principles](../principles/README.md)
 

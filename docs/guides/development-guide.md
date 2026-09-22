@@ -1,19 +1,19 @@
-# Lora 开发指南
+# Lara 开发指南
 
 ## 运行边界
 
 ```text
 API / CLI / case runner
-        -> LoraRuntimeService
+        -> LaraRuntimeService
         -> Pygent LocalRuntime + Binding
-        -> LoraAgent(Module)
+        -> LaraAgent(Module)
 ```
 
-`LoraRuntimeService` 是 workspace 级 Runtime、SQLite history、model deployments、capacity、tool registry、MCP 和 durable task manager 的唯一所有者。`LoraAgent` 是原生 Pygent Module，不存在旧 Agent adapter。
+`LaraRuntimeService` 是 workspace 级 Runtime、SQLite history、model deployments、capacity、tool registry、MCP 和 durable task manager 的唯一所有者。`LaraAgent` 是原生 Pygent Module，不存在旧 Agent adapter。
 
 ## 配置
 
-模型配置只有一种形式，并统一位于用户级 `~/.lora/config.yaml`。顶层
+模型配置只有一种形式，并统一位于用户级 `~/.lara/config.yaml`。顶层
 `models` 和 `model_groups` 原样采用 Pygent `ModelConfig`，Agent 的
 `model_request.default_model_group` 指向其中一个组，重试字段使用
 `max_attempts_per_model`。完整可编辑示例见仓库根目录
@@ -25,7 +25,7 @@ API / CLI / case runner
 
 ## Agent Module
 
-`LoraAgent` 组合以下业务 Module：
+`LaraAgent` 组合以下业务 Module：
 
 - `DynamicPromptModule`
 - `ContextCompressionModule`
@@ -34,7 +34,7 @@ API / CLI / case runner
 - `PersistedDiffModule`
 - Pygent `ReActLayer`、`ModelCallLayer`、`ToolCallLayer`
 
-Session、prompt、技能选择、文件快照和 diff 是 Lora 业务语义；admission、并发、取消、retry/fallback、journal、审批 waiter、durable ToolTask 和 fencing 是 Pygent Runtime 语义。
+Session、prompt、技能选择、文件快照和 diff 是 Lara 业务语义；admission、并发、取消、retry/fallback、journal、审批 waiter、durable ToolTask 和 fencing 是 Pygent Runtime 语义。
 
 ## 事件与恢复
 
@@ -48,7 +48,7 @@ execution_id, sequence, kind, module_path, trace_id, data
 
 ## 工具与审批
 
-工具必须声明 `ToolSpec.side_effect`、`idempotency`、`resource_key` 与 `sandbox_profile`。WRITE、EXTERNAL、后台委派等高风险操作进入 `LoraToolAuthorization`，通过 Pygent `wait_external()` 等待统一审批 API。
+工具必须声明 `ToolSpec.side_effect`、`idempotency`、`resource_key` 与 `sandbox_profile`。WRITE、EXTERNAL、后台委派等高风险操作进入 `LaraToolAuthorization`，通过 Pygent `wait_external()` 等待统一审批 API。
 
 MCP 工具在 Runtime 初始化时发现并注册；工具名冲突直接阻止启动，optional server 失败只警告，required server 失败阻止启动。
 

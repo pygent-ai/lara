@@ -11,14 +11,14 @@ from pygent import AIMessage, ToolCall, ToolMessage, ToolResult, UserMessage
 from pygent.llm import ModelExecution, ModelProviderResponse
 from pygent.runtime.codec import message_to_dict
 
-from lora.config import load_run_config
+from lara.config import load_run_config
 from tests.unit.test_model_configuration import native_runtime_config
-from lora.runtime.agent.pipeline import checkpoint_conversation_message
-from lora.runtime.context import LoraContext
-from lora.runtime.service import LoraRuntimeService
-from lora.schema import AgentSession, CaseDefinition
-from lora.sessions import SessionManager
-from lora.tracing import EventStore
+from lara.runtime.agent.pipeline import checkpoint_conversation_message
+from lara.runtime.context import LaraContext
+from lara.runtime.service import LaraRuntimeService
+from lara.schema import AgentSession, CaseDefinition
+from lara.sessions import SessionManager
+from lara.tracing import EventStore
 
 
 @pytest.mark.asyncio
@@ -30,7 +30,7 @@ async def test_interrupted_turn_recovers_completed_conversation_boundaries() -> 
         run_ref = manager.start_case_run(
             session_ref.session_id, "chat", run_config=config
         )
-        context = LoraContext(
+        context = LaraContext(
             session_id=run_ref.session_id,
             case_id=run_ref.case_id,
             case_run_id=run_ref.case_run_id,
@@ -45,7 +45,7 @@ async def test_interrupted_turn_recovers_completed_conversation_boundaries() -> 
                     call_id="read-1",
                     name="read",
                     arguments={"file_path": "README.md"},
-                    tool_id="lora.tool.read",
+                    tool_id="lara.tool.read",
                     tool_version="1",
                 ),
             ),
@@ -118,7 +118,7 @@ async def test_interrupted_turn_recovers_completed_conversation_boundaries() -> 
         next_run = manager.start_case_run(
             session_ref.session_id, "chat", run_config=config
         )
-        service = LoraRuntimeService(config)
+        service = LaraRuntimeService(config)
         _, next_context = await service._prepare_turn(
             manager=manager,
             run_ref=next_run,
@@ -162,7 +162,7 @@ async def test_recovery_and_audit_history_both_redact_secrets() -> None:
         run_ref = manager.start_case_run(
             session_ref.session_id, "chat", run_config=config
         )
-        context = LoraContext(
+        context = LaraContext(
             session_id=run_ref.session_id,
             case_id=run_ref.case_id,
             case_run_id=run_ref.case_run_id,
@@ -195,7 +195,7 @@ async def test_transient_checkpoints_do_not_enter_session_history() -> None:
         run_ref = manager.start_case_run(
             session_ref.session_id, "chat", run_config=config
         )
-        context = LoraContext(
+        context = LaraContext(
             session_id=run_ref.session_id,
             case_id=run_ref.case_id,
             case_run_id=run_ref.case_run_id,
@@ -260,7 +260,7 @@ async def test_execute_case_handles_multi_message_context_policy(
                 ]
             },
         )
-        service = LoraRuntimeService(config)
+        service = LaraRuntimeService(config)
         class Invoker:
             def validate_model(self, _model) -> None:
                 return None

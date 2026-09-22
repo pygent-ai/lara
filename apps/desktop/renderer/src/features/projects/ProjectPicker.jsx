@@ -9,7 +9,7 @@ export function ProjectPicker({ projects, currentPath, disabled, onSelect, onClo
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const chooseDirectory = globalThis.window?.loraDesktop?.chooseProjectDirectory;
+  const chooseDirectory = globalThis.window?.laraDesktop?.chooseProjectDirectory;
   const choices = projectChoices(projects, currentPath, query);
   const path = cleanProjectPath(query);
   const blocked = busy || disabled;

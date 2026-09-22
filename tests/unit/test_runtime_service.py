@@ -14,16 +14,16 @@ from pygent.llm import ModelConfig
 from pygent.runtime import ExecutionOptions
 from pygent.tool import AgentToolExecutor
 
-from lora.runtime.agent.prompt_models import PromptRenderContext
-from lora.runtime.agent.prompt_sources import _render_available_tools_prompt
-from lora.runtime.context import LoraContext
-from lora.runtime.file_effects import FileEffectBaselineStore
-from lora.runtime.service import (
+from lara.runtime.agent.prompt_models import PromptRenderContext
+from lara.runtime.agent.prompt_sources import _render_available_tools_prompt
+from lara.runtime.context import LaraContext
+from lara.runtime.file_effects import FileEffectBaselineStore
+from lara.runtime.service import (
     PROJECTION_OPERATION_METADATA_KEY,
-    LoraRuntimeService,
+    LaraRuntimeService,
 )
-from lora.schema import RunConfig
-from lora.sessions import SessionManager
+from lara.schema import RunConfig
+from lara.sessions import SessionManager
 from tests.unit.test_session_manager import native_run_config
 
 
@@ -72,12 +72,12 @@ async def test_prepare_turn_waits_for_initial_reminder_before_model_start(
 ) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    config = RunConfig(workspace_root=workspace, lora_root=workspace / ".lora")
+    config = RunConfig(workspace_root=workspace, lara_root=workspace / ".lara")
     manager = SessionManager(config)
     session = manager.create("chat", mode="chat")
     run_ref = manager.start_case_run(session.session_id, "chat", run_config=config)
-    service = LoraRuntimeService.__new__(LoraRuntimeService)
-    from lora.runtime.reminders import ReminderService
+    service = LaraRuntimeService.__new__(LaraRuntimeService)
+    from lara.runtime.reminders import ReminderService
 
     service.reminders = ReminderService(config)
 
@@ -97,7 +97,7 @@ async def test_prepare_turn_waits_for_initial_reminder_before_model_start(
 
 
 def test_current_pygent_rejects_removed_mcp_sse_transport() -> None:
-    service = LoraRuntimeService.__new__(LoraRuntimeService)
+    service = LaraRuntimeService.__new__(LaraRuntimeService)
 
     with pytest.raises(ValueError, match="installed Pygent.*use stdio"):
         service._mcp_transport(SimpleNamespace(transport="sse"))
@@ -106,7 +106,7 @@ def test_current_pygent_rejects_removed_mcp_sse_transport() -> None:
 @pytest.mark.asyncio
 async def test_runtime_admits_concurrent_executions_without_application_delay() -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        service = LoraRuntimeService(load_run_config(workspace_root=Path(tmp)))
+        service = LaraRuntimeService(load_run_config(workspace_root=Path(tmp)))
         try:
             await service.initialize()
             bound = service.binding.bind(_DurableEcho())
@@ -148,7 +148,7 @@ async def test_runtime_admits_concurrent_executions_without_application_delay() 
 async def test_runtime_replays_completed_execution_through_pygent_handle() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         config = load_run_config(workspace_root=Path(tmp))
-        service = LoraRuntimeService(config)
+        service = LaraRuntimeService(config)
         try:
             await service.initialize()
             handle = await service.binding.bind(_DurableEcho()).start(
@@ -159,7 +159,7 @@ async def test_runtime_replays_completed_execution_through_pygent_handle() -> No
         finally:
             await service.close()
 
-        restored = LoraRuntimeService(config)
+        restored = LaraRuntimeService(config)
         try:
             await restored.initialize()
             attached = await restored.runtime.get_execution_handle(execution_id)
@@ -179,7 +179,7 @@ async def test_runtime_replays_completed_execution_through_pygent_handle() -> No
 @pytest.mark.asyncio
 async def test_runtime_allows_managed_graph_beyond_old_64_child_limit() -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        service = LoraRuntimeService(load_run_config(workspace_root=Path(tmp)))
+        service = LaraRuntimeService(load_run_config(workspace_root=Path(tmp)))
         try:
             await service.initialize()
             result, _ = await service.binding.bind(_WideManagedGraph(96)).invoke(
@@ -202,7 +202,7 @@ async def test_standard_read_tool_advertises_its_workspace_sandbox() -> None:
         run_ref = manager.start_case_run(
             session.session_id, "sandbox", run_config=config
         )
-        service = LoraRuntimeService(config)
+        service = LaraRuntimeService(config)
         try:
             await service.initialize()
             agent = service.new_agent(
@@ -248,7 +248,7 @@ async def test_standard_read_tool_advertises_its_workspace_sandbox() -> None:
                         ),
                     )
                 ),
-                LoraContext(
+                LaraContext(
                     session_id=run_ref.session_id,
                     case_id=run_ref.case_id,
                     case_run_id=run_ref.case_run_id,
@@ -274,10 +274,10 @@ async def test_standard_read_tool_advertises_its_workspace_sandbox() -> None:
 async def test_runtime_exposes_only_available_agent_collaboration_tools() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         config = load_run_config(workspace_root=Path(tmp))
-        unavailable = LoraRuntimeService(config)
-        collaboration_only = LoraRuntimeService(config, collaboration=object())
+        unavailable = LaraRuntimeService(config)
+        collaboration_only = LaraRuntimeService(config, collaboration=object())
         config.delegation.allowed_agents = ("dev",)
-        service = LoraRuntimeService(config, collaboration=object())
+        service = LaraRuntimeService(config, collaboration=object())
         try:
             assert unavailable.external_tools == ()
             assert {
@@ -307,7 +307,7 @@ def test_available_tools_prompt_documents_exact_grep_arguments() -> None:
         PromptRenderContext(
             session_id="session",
             workspace_root=root,
-            session_dir=root / ".lora" / "sessions" / "session",
+            session_dir=root / ".lara" / "sessions" / "session",
             turn_id="turn",
             projection={},
             tool_names=["grep"],
@@ -324,26 +324,26 @@ def test_available_tools_prompt_documents_exact_grep_arguments() -> None:
 @pytest.mark.asyncio
 async def test_agent_collaboration_uses_pygent_agent_tool_executor() -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        service = LoraRuntimeService(load_run_config(workspace_root=Path(tmp)))
+        service = LaraRuntimeService(load_run_config(workspace_root=Path(tmp)))
         try:
             assert isinstance(
-                service.executor_registry.resolve("lora.agent.agent_start", "1"),
+                service.executor_registry.resolve("lara.agent.agent_start", "1"),
                 AgentToolExecutor,
             )
             with pytest.raises(LookupError):
-                service.executor_registry.resolve("lora.agent.delegate", "1")
+                service.executor_registry.resolve("lara.agent.delegate", "1")
         finally:
             await service.close()
 
 
 @pytest.mark.asyncio
-async def test_complete_lora_graph_is_eligible_for_pygent_module_boundary_recovery() -> (
+async def test_complete_lara_graph_is_eligible_for_pygent_module_boundary_recovery() -> (
     None
 ):
     with tempfile.TemporaryDirectory() as tmp:
         config = load_run_config(workspace_root=Path(tmp))
         assert config.resolved_agent is not None
-        service = LoraRuntimeService(config)
+        service = LaraRuntimeService(config)
         try:
             agent = service.new_agent(interactive_approvals=True)
             report = service.binding.bind(agent).durability
@@ -370,7 +370,7 @@ async def test_one_agent_definition_is_reused_with_isolated_run_contexts() -> No
         second_run = manager.start_case_run(
             second_session.session_id, "chat", run_config=config
         )
-        service = LoraRuntimeService(config, max_runnable_executions=2)
+        service = LaraRuntimeService(config, max_runnable_executions=2)
         try:
             agent = service.new_agent(interactive_approvals=False)
             assert agent is service.new_agent(interactive_approvals=False)
@@ -425,7 +425,7 @@ async def test_eternal_turn_uses_native_projection_replacement() -> None:
             encoding="utf-8",
         )
         run_ref = manager.start_case_run(session.session_id, "chat", run_config=config)
-        service = LoraRuntimeService(config)
+        service = LaraRuntimeService(config)
         try:
             _, context = await service._prepare_turn(
                 manager=manager,
@@ -444,10 +444,10 @@ async def test_eternal_turn_uses_native_projection_replacement() -> None:
             assert isinstance(operation, ReplaceMessageProjection)
             assert operation.expected_revision == context.projection_revision + 1
             assert [item.kind for item in operation.messages] == [
-                "lora.memory.snapshot",
+                "lara.memory.snapshot",
                 None,
                 None,
-                "lora.chat.turn",
+                "lara.chat.turn",
             ]
             assert [item.content for item in operation.messages[1:3]] == [
                 "working user",
@@ -494,7 +494,7 @@ async def test_eternal_turn_keeps_unbounded_session_history_out_of_pygent_invoca
             "large-native",
             run_config=config,
         )
-        service = LoraRuntimeService(config)
+        service = LaraRuntimeService(config)
         try:
             await service.initialize()
             message, context = await service._prepare_turn(
@@ -515,7 +515,7 @@ async def test_eternal_turn_keeps_unbounded_session_history_out_of_pygent_invoca
             await service.close()
 
     assert output.content == message.content
-    assert isinstance(returned, LoraContext)
+    assert isinstance(returned, LaraContext)
     assert returned.committed_messages == ()
 
 
@@ -536,11 +536,11 @@ async def test_projection_delivery_failure_cancels_started_execution():
 
     service = SimpleNamespace(_deliver_projection_replacement=fail_delivery)
     with pytest.raises(ValueError, match="delivery failed"):
-        await LoraRuntimeService._start_agent_execution(
+        await LaraRuntimeService._start_agent_execution(
             service,
             Bound(),
             UserMessage(content="hello"),
-            LoraContext(),
+            LaraContext(),
             execution=None,
         )
     assert calls == ["cancelled"]

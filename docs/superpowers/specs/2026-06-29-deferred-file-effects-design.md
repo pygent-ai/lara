@@ -4,7 +4,7 @@ Date: 2026-06-29
 
 ## Context
 
-Lora currently records file effects by running `FileEffectTracker.snapshot_workspace()` inside `ToolInterceptor.call_tool()`. That makes every tracked tool call wait for a full workspace scan before and after tool execution. The bash timeout still applies to the bash process itself, but the wrapper can remain blocked while file-effect tracking scans and hashes the workspace.
+Lara currently records file effects by running `FileEffectTracker.snapshot_workspace()` inside `ToolInterceptor.call_tool()`. That makes every tracked tool call wait for a full workspace scan before and after tool execution. The bash timeout still applies to the bash process itself, but the wrapper can remain blocked while file-effect tracking scans and hashes the workspace.
 
 The raw snapshot result is not injected into model context. It is internal runtime state used to derive persisted `file.*` events and `diff.created` artifacts. Because of that, file-effect tracking does not need to block the next model request or the next user chat turn.
 
@@ -51,7 +51,7 @@ The background worker processes jobs serially:
 ## Data Flow
 
 ```text
-LoraAgent.stream()
+LaraAgent.stream()
   creates ToolInterceptor
 
 ToolInterceptor.call_tool()
@@ -61,7 +61,7 @@ ToolInterceptor.call_tool()
   append tool.result
   keep DeferredFileEffectJob
 
-LoraAgent.stream() final assistant output path
+LaraAgent.stream() final assistant output path
   drain jobs from interceptor
   enqueue jobs in FileEffectBackgroundWorker
   return to runtime adapter
@@ -74,7 +74,7 @@ FileEffectBackgroundWorker
 
 ## New Runtime Module
 
-Add `src/lora/runtime/file_effects.py`.
+Add `src/lara/runtime/file_effects.py`.
 
 This module should own runtime scheduling and lifecycle concerns:
 
@@ -89,7 +89,7 @@ This code belongs under `runtime`, not `tracing`, because it controls agent exec
 
 ## Existing File Changes
 
-### `src/lora/runtime/tools.py`
+### `src/lara/runtime/tools.py`
 
 Keep:
 
@@ -111,9 +111,9 @@ Change `ToolInterceptor.call_tool()`:
 
 The `ToolInterceptor` should remain responsible for tool call/result trace events and model-facing tool payloads. It should not own background task lifetime.
 
-### `src/lora/runtime/agent.py`
+### `src/lara/runtime/agent.py`
 
-Use the deferred worker from `LoraAgent.stream()`.
+Use the deferred worker from `LaraAgent.stream()`.
 
 Recommended behavior:
 
@@ -122,15 +122,15 @@ Recommended behavior:
 - Enqueue drained jobs into a session/workspace scoped `FileEffectBackgroundWorker`.
 - Do not await job completion.
 
-The agent is the right enqueue point because it has the Lora-specific tool metadata, turn id, session dir, run ref, and workspace root.
+The agent is the right enqueue point because it has the Lara-specific tool metadata, turn id, session dir, run ref, and workspace root.
 
-### `src/lora/runtime/adapter.py`
+### `src/lara/runtime/adapter.py`
 
 No core tracking logic should live here.
 
-If needed, add a small optional hook after stream consumption so generic runtime code can notify agents that a stream finished. The default design can avoid this by placing the enqueue logic inside `LoraAgent.stream()` directly.
+If needed, add a small optional hook after stream consumption so generic runtime code can notify agents that a stream finished. The default design can avoid this by placing the enqueue logic inside `LaraAgent.stream()` directly.
 
-### `src/lora/tracing/diffing.py`
+### `src/lara/tracing/diffing.py`
 
 Update `DiffTool.forward()` to handle pending deferred work.
 
@@ -143,7 +143,7 @@ Recommended behavior:
 
 The existing diff event reading and patch formatting should remain unchanged.
 
-### `src/lora/tracing/events.py`
+### `src/lara/tracing/events.py`
 
 Existing `file.*` and `diff.created` persistence can be reused.
 
@@ -181,7 +181,7 @@ Pending state should be durable enough for `diff` to report incomplete work afte
 Suggested location:
 
 ```text
-.lora/sessions/<session-id>/state/file_effects_pending.json
+.lara/sessions/<session-id>/state/file_effects_pending.json
 ```
 
 Suggested fields:
@@ -246,7 +246,7 @@ Update `tests/unit/test_tools.py`:
 
 Update runtime adapter or agent tests as needed:
 
-- A completed `LoraAgent.stream()` enqueues deferred jobs after final assistant output.
+- A completed `LaraAgent.stream()` enqueues deferred jobs after final assistant output.
 - The stream returns without waiting for worker completion.
 
 ## Open Design Choices

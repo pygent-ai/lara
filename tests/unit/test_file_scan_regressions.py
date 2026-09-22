@@ -5,12 +5,12 @@ from unittest.mock import patch
 
 import pytest
 
-from lora.runtime.tools import FileEffectTracker, SnapshotBudgetExceeded, _bash_command_may_write
-from lora.runtime.file_effects import (FileEffectBaselineStore, process_file_effect_batch,
+from lara.runtime.tools import FileEffectTracker, SnapshotBudgetExceeded, _bash_command_may_write
+from lara.runtime.file_effects import (FileEffectBaselineStore, process_file_effect_batch,
     DeferredFileEffectBatch, DeferredFileEffectJob)
-from lora.runtime.file_effect_models import FileEffect
-from lora.schema import CaseRunRef
-from lora.tracing import EventStore
+from lara.runtime.file_effect_models import FileEffect
+from lara.schema import CaseRunRef
+from lara.tracing import EventStore
 
 
 @pytest.mark.parametrize("command", [
@@ -39,7 +39,7 @@ def test_real_shell_writes(command):
 def scan(tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    session = tmp_path / ".lora" / "sessions" / "s1"
+    session = tmp_path / ".lara" / "sessions" / "s1"
     session.mkdir(parents=True)
     (session / "session.json").write_text("{}")
     run = CaseRunRef(session_id="s1", case_id="chat", case_run_id="r1",
@@ -139,7 +139,7 @@ def test_deadline_checked_during_hashing(scan):
     target = workspace / "large.txt"
     target.write_bytes(b"x" * (2 * 1024 * 1024))
     # Deadline expires after the first chunk, not only between files.
-    with patch("lora.runtime.tools.time.monotonic", side_effect=[0, 0, 0, 6]):
+    with patch("lara.runtime.tools.time.monotonic", side_effect=[0, 0, 0, 6]):
         with pytest.raises(SnapshotBudgetExceeded, match="time budget"):
             tracker.snapshot_workspace(paths=[target])
 

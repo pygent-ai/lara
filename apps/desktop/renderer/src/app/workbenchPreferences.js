@@ -1,4 +1,4 @@
-const KEY = "lora.workbench.preferences.v1";
+const KEY = "lara.workbench.preferences.v1";
 
 export function loadWorkbenchPreferences() {
   try {

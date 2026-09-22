@@ -8,9 +8,9 @@ from types import SimpleNamespace
 
 from pygent import ToolResult as PygentToolResult
 
-from lora.runtime.tools import ToolObserver
-from lora.schema import CaseRunRef
-from lora.tracing import EventStore
+from lara.runtime.tools import ToolObserver
+from lara.schema import CaseRunRef
+from lara.tracing import EventStore
 
 
 class FileEffectTrackingScenarioTests(unittest.IsolatedAsyncioTestCase):
@@ -165,7 +165,7 @@ class FileEffectTrackingScenarioTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            session_dir = Path(tmp) / ".lora" / "sessions" / "s1"
+            session_dir = Path(tmp) / ".lara" / "sessions" / "s1"
             run_dir = session_dir / "cases" / "c1" / "runs" / "r1"
             workspace = Path(tmp) / "workspace"
             session_dir.mkdir(parents=True)
@@ -177,12 +177,12 @@ class FileEffectTrackingScenarioTests(unittest.IsolatedAsyncioTestCase):
                 session_id="s1", case_id="c1", case_run_id="r1", run_dir=run_dir
             )
 
-            from lora.runtime.file_effects import (
+            from lara.runtime.file_effects import (
                 DeferredFileEffectBatch,
                 FileEffectBaselineStore,
                 process_file_effect_batch,
             )
-            from lora.runtime.tools import FileEffectTracker
+            from lara.runtime.tools import FileEffectTracker
 
             store = EventStore(run)
             tracker = FileEffectTracker(workspace_root=workspace, store=store)
@@ -245,9 +245,9 @@ async def _call_and_record(
     *,
     process_jobs: bool = True,
 ) -> SimpleNamespace:
-    """Drive the current Pygent-result -> durable Lora diff projection flow."""
+    """Drive the current Pygent-result -> durable Lara diff projection flow."""
 
-    from lora.runtime.file_effects import (
+    from lara.runtime.file_effects import (
         DeferredFileEffectBatch,
         FileEffectBaselineStore,
         process_file_effect_batch,

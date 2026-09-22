@@ -8,11 +8,11 @@ from types import SimpleNamespace
 import pytest
 from pygent import AIMessage, Context
 
-from lora.orchestration import ManagedSessionTurn, TurnCommand, TurnState
-from lora.schema import CaseRunRef
-from lora_api.models.requests import ChatTurnRequest
-from lora_api.services import chat_runner
-from lora_api.services.chat_runner import (
+from lara.orchestration import ManagedSessionTurn, TurnCommand, TurnState
+from lara.schema import CaseRunRef
+from lara_api.models.requests import ChatTurnRequest
+from lara_api.services import chat_runner
+from lara_api.services.chat_runner import (
     ActiveChatRun,
     ChatRunRegistry,
     _sse,
@@ -70,7 +70,7 @@ async def test_stream_serializes_startup_failures_instead_of_dropping_connection
     ]
 
     assert len(chunks) == 1
-    assert '"kind": "lora.transport.error"' in chunks[0]
+    assert '"kind": "lara.transport.error"' in chunks[0]
     assert '"error": "stale session"' in chunks[0]
     assert '"error_type": "FileNotFoundError"' in chunks[0]
 
@@ -125,10 +125,10 @@ async def test_keepalive_preserves_pending_runtime_event(
     events = run.events(after=7)
     keepalive = await asyncio.wait_for(anext(events), 0.2)
 
-    assert keepalive.kind == "lora.transport.keepalive"
+    assert keepalive.kind == "lara.transport.keepalive"
     assert keepalive.execution_id == "execution-1"
     assert keepalive.sequence == 7
-    assert keepalive.module_path == "lora.transport"
+    assert keepalive.module_path == "lara.transport"
     assert _sse(keepalive) == ": keep-alive\n\n"
 
     release_event.set()
@@ -192,7 +192,7 @@ async def test_nonterminal_durable_execution_is_recovered_instead_of_only_attach
         async def result(self):
             return AIMessage(
                 content="recovered",
-                kind="lora.chat.result",
+                kind="lara.chat.result",
                 data={"result": {"status": "passed"}},
             ), Context()
 
@@ -213,8 +213,10 @@ async def test_nonterminal_durable_execution_is_recovered_instead_of_only_attach
             assert execution_id == "execution-1"
             return run_ref
 
-        async def recover_turn(self, execution_id: str, *, deadline: float):
-            assert deadline > 0
+        async def recover_turn(self, execution_id: str, *, deadline: float | None = None):
+            # The orchestration layer passes no deadline; the runtime
+            # service defaults it to TURN_DEADLINE_SECONDS.
+            assert deadline is None
             self.recovered.append(execution_id)
             return _Handle()
 
@@ -274,7 +276,7 @@ async def test_same_session_creates_next_case_run_only_after_finalization(
             await releases[self.index].wait()
             return AIMessage(
                 content="done",
-                kind="lora.chat.result",
+                kind="lara.chat.result",
                 data={"result": {"status": "passed"}},
             ), Context()
 

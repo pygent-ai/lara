@@ -90,7 +90,7 @@ Rules:
 - Build CLI, skill, and Git baseline as one immutable initial snapshot while the new Session waits for user input.
 - The first user turn waits without a business timeout until preparation reaches a terminal state; partial snapshots are never injected.
 - Claim the snapshot for one `turn_id`, attach it to the UserMessage, start the durable execution, then acknowledge it as consumed with the `execution_id`.
-- `lora chat -m`, API auto-create, case, and delegation paths use lazy preparation when no typing window exists.
+- `lara chat -m`, API auto-create, case, and delegation paths use lazy preparation when no typing window exists.
 - A fork discards the copied bootstrap state and prepares its own baseline.
 - Do not add a second reminder module to the system prompt.
 - Do not include reminder content in `prompt.rendered` system prompt text.
@@ -178,7 +178,7 @@ Unit tests should assert:
 
 Runtime and scenario tests should assert:
 
-- `LoraRuntimeService._prepare_turn()` waits for and stores wrapped user content with the claimed initial snapshot.
+- `LaraRuntimeService._prepare_turn()` waits for and stores wrapped user content with the claimed initial snapshot.
 - `run_case()` appends initial reminders to the first case user message.
 - `prompt.rendered` includes `request_system_module_ids`.
 - `session.json.system_prompt` contains the complete system prompt without any synthetic boundary marker.

@@ -39,7 +39,7 @@ from pygent.llm import (
     OpenAICompatibleClient,
 )
 from pygent.tool import StandardTools
-from lora.core.io import load_env_file
+from lara.core.io import load_env_file
 
 TOOL_PERMISSIONS = frozenset({"filesystem:read", "filesystem:write", "shell:execute"})
 

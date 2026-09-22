@@ -56,9 +56,9 @@ export function ModelSettings({ draft, setDraft, catalogs, activeSection, discov
                         {discoveryState[modelKey]?.message && <small className="route-secret" role="status">{discoveryState[modelKey].message}</small>}
                       </div>
                     </section>
-                    <ModelCapabilitiesEditor value={model.capabilities} catalogs={catalogs} onChange={value => setModel(modelKey, "capabilities", value)} />
+                    <ModelCapabilitiesEditor value={model.capabilities} catalogs={catalogs} provider={selectedConnection?.provider || ""} protocol={model.protocol || ""} modelKey={modelKey} renameModel={renameModel} onChange={value => setModel(modelKey, "capabilities", value)} />
                     <details className="model-capability-advanced settings-detail"><summary>详细配置 <span>名称与 API 协议</span></summary><div className="model-route-grid">
-                        <label><span>本地名称</span><input defaultValue={modelKey} onBlur={(event) => renameModel(modelKey, event.target.value)} /><small>仅供 Lora 的模型组引用，不会发送给服务商。</small></label>
+                        <label><span>本地名称</span><input defaultValue={modelKey} onBlur={(event) => renameModel(modelKey, event.target.value)} /><small>仅供 Lara 的模型组引用，不会发送给服务商。</small></label>
                         <label><span>API 协议</span><select value={model.protocol || ""} onChange={(event) => setModel(modelKey, "protocol", event.target.value)}>{!protocols.includes(model.protocol) && <option value={model.protocol}>{protocolLabel(model.protocol)}</option>}{protocols.map((key) => <option key={key} value={key}>{protocolLabel(key)}</option>)}</select><small>只能选择当前连接提供的协议。</small></label>
 
 

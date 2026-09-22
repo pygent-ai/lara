@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://lora.local/contracts/execution-event.schema.json",
-  "title": "Lora Pygent Execution Event",
+  "$id": "https://lara.local/contracts/execution-event.schema.json",
+  "title": "Lara Pygent Execution Event",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "event_id", "execution_id", "attempt_id", "trace_id", "span_id", "parent_span_id", "sequence", "timestamp_unix_ns", "module_path", "kind", "data"],

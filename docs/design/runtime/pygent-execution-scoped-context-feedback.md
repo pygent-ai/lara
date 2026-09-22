@@ -1,18 +1,18 @@
 # Pygent execution-scoped context extension feedback
 
-> 状态更新（Pygent 0.3.3）：Lora 现在直接以 `LoraContext(PygentAgentContext)`
+> 状态更新（Pygent 0.3.3）：Lara 现在直接以 `LaraContext(PygentAgentContext)`
 > 运行原生 ReAct agent，并使用 Pygent 的 compressor Module、context snapshot、codec
-> 和 execution recovery。0.3.3 原生的有界 `committed_messages` 已替代 Lora 曾经增加的
-> `full_history` 字段；本文描述的 `attach_runtime_context()` workaround 以及 Lora
+> 和 execution recovery。0.3.3 原生的有界 `committed_messages` 已替代 Lara 曾经增加的
+> `full_history` 字段；本文描述的 `attach_runtime_context()` workaround 以及 Lara
 > 自有的压缩状态文件均已移除。`SessionManager` 等 live resource 仍不进入 Context；
 > 相关 execution-scoped resource 建议只适用于无法从 portable identity 重建的依赖。
 
 ## 当前适配结果
 
-Lora 现在直接使用 `LoraContext(PygentAgentContext)` 承载 `session_id`、case/run/turn
+Lara 现在直接使用 `LaraContext(PygentAgentContext)` 承载 `session_id`、case/run/turn
 identity、模型投影、单次 invocation 的有界 commits 和待提交文件副作用。完整历史由
 `SessionManager` 持久化，不进入 Pygent invocation。`RuntimeService` 只在执行入口
-构造该 context；同一个 `LoraAgent` Module graph 可以跨 turn、跨 run 复用。
+构造该 context；同一个 `LaraAgent` Module graph 可以跨 turn、跨 run 复用。
 
 成功轮次把该 context 通过 Pygent 原生 codec 写入现有 session 的
 `metadata.agent_context`；下一轮直接 decode，并把上次成功 checkpoint 之后已经落盘的
@@ -24,12 +24,12 @@ assistant 交互和当前 user message，并以 `expected_revision` 校验投影
 replacement 与 ready input 都持久化后才放行首次模型调用。`covered_through` 只表示 snapshot
 的证据覆盖范围，不用于切分 Pygent Context 中的历史字段。
 
-原来的 `_LoraRunServices`、Agent 上的 run-bound 引用和 observer 隐藏队列已经删除。
+原来的 `_LaraRunServices`、Agent 上的 run-bound 引用和 observer 隐藏队列已经删除。
 `EventStore`、prompt context view、`DiffTool` 等对象在使用点根据 portable identity
 重建。数据库连接、锁、客户端等 live resource 仍不进入 codec；未来若出现不可重建的
 请求级 live resource，本文建议的正式 execution-scoped resource API 仍然适用。
 
-本文记录 Lora 集成 Pygent 0.2.11 时遇到的上下文扩展问题，并提出一个兼顾
+本文记录 Lara 集成 Pygent 0.2.11 时遇到的上下文扩展问题，并提出一个兼顾
 portable context、持久化恢复和下游框架开发体验的改进方向。
 
 ## 摘要
@@ -64,9 +64,9 @@ execution-scoped 扩展通道。需要 session、持久化服务或领域状态�
 我们希望 Pygent 保持 `Context` 的现有边界，同时提供类型安全、生命周期明确的
 execution-scoped resource API。
 
-## Lora 实际需要管理的两类上下文
+## Lara 实际需要管理的两类上下文
 
-Lora 同时存在两类生命周期和语义不同的状态。
+Lara 同时存在两类生命周期和语义不同的状态。
 
 ### 1. 模型请求上下文
 
@@ -80,9 +80,9 @@ Pygent `Context` 表示当前模型调用可见的快照：
 它会在 pipeline 中通过 `replace()` 生成新值，也可能在上下文压缩后只包含摘要和
 近期消息。它适合作为模型输入和可恢复执行数据，不应承担应用服务容器的职责。
 
-### 2. Lora 执行状态
+### 2. Lara 执行状态
 
-Lora 还需要一个覆盖整个 turn 的可变执行状态：
+Lara 还需要一个覆盖整个 turn 的可变执行状态：
 
 - `AgentSession` 和完整、未投影的持久化 history；
 - session status，例如 `compressing`、`compacted`、`compression_failed`；
@@ -95,13 +95,13 @@ Lora 还需要一个覆盖整个 turn 的可变执行状态：
 这些对象不全是 portable 的，也不应被放入 `Context.metadata`。但 prompt、compression、
 tool audit 等 Module 在执行过程中必须访问它们。
 
-## 当前 Lora workaround
+## 当前 Lara workaround
 
-Lora 目前为每个 turn 创建一个新 `LoraAgent`，组装 Module graph，然后在启动执行前
+Lara 目前为每个 turn 创建一个新 `LaraAgent`，组装 Module graph，然后在启动执行前
 补挂运行状态：
 
 ```python
-runtime_context = LoraContext(...)
+runtime_context = LaraContext(...)
 agent.attach_runtime_context(runtime_context, manager)
 
 handle = await bound.start(turn_message, pygent_context, execution=options)
@@ -110,12 +110,12 @@ handle = await bound.start(turn_message, pygent_context, execution=options)
 `attach_runtime_context()` 实际把对象写入整个 graph 共享的 services：
 
 ```python
-class _LoraRunServices:
+class _LaraRunServices:
     def __init__(self, *, agent, context_manager, observer):
         self.agent = agent
         self.context_manager = context_manager
         self.observer = observer
-        self.runtime_context: LoraContext | None = None
+        self.runtime_context: LaraContext | None = None
         self.session_manager: SessionManager | None = None
         self.model_context_compacted = False
 ```
@@ -134,7 +134,7 @@ class DynamicPromptModule(Module):
         return message, replace(context, system_prompt=prompt.text)
 ```
 
-这套方案能工作，是因为 Lora 当前严格保证“一次 turn 创建一个 Agent 实例”。它不是
+这套方案能工作，是因为 Lara 当前严格保证“一次 turn 创建一个 Agent 实例”。它不是
 可复用 Agent graph 上安全的通用方案。
 
 ## 给下游造成的不便
@@ -156,7 +156,7 @@ new agent -> assemble graph -> attach runtime context -> bind -> start
 并发 execution 可能覆盖同一个 `runtime_context`，导致 session history、压缩状态或持久化
 目标串线。
 
-为了避免该风险，Lora 必须每 turn 重建 Agent graph，削弱了 graph/plan 复用价值。
+为了避免该风险，Lara 必须每 turn 重建 Agent graph，削弱了 graph/plan 复用价值。
 
 ### 3. Module API 看不到真实依赖
 
@@ -166,18 +166,18 @@ Module 的签名只显示：
 async def forward(self, message, context): ...
 ```
 
-但它实际还依赖 Lora session、manager 和 observer。这些依赖藏在闭包或共享 services
+但它实际还依赖 Lara session、manager 和 observer。这些依赖藏在闭包或共享 services
 中，使 Module 难以独立测试、复用和审查。
 
 ### 4. 下游出现两个容易混淆的 context
 
-Lora 开发者需要同时区分：
+Lara 开发者需要同时区分：
 
 ```python
 context.messages                 # 当前模型可见视图
 runtime_context.history          # 完整持久化历史
 context.system_prompt            # 当前不可变请求值
-runtime_context.system_prompt    # Lora session 状态
+runtime_context.system_prompt    # Lara session 状态
 ```
 
 两者不能合并，但框架没有提供正式的组合或访问方式，导致每个下游自行设计 facade 和
@@ -202,7 +202,7 @@ runtime_context.system_prompt    # Lora session 状态
 最直观的下游诉求可能是：
 
 ```python
-class LoraContext(Context):
+class LaraContext(Context):
     session: AgentSession
     manager: SessionManager
 ```
@@ -251,17 +251,17 @@ class Module:
     ) -> tuple[Message, Context]: ...
 ```
 
-Lora 的使用方式：
+Lara 的使用方式：
 
 ```python
-scope = LoraExecutionScope(session=session, session_manager=manager)
+scope = LaraExecutionScope(session=session, session_manager=manager)
 
 handle = await bound.start(
     message,
     context,
     execution=ExecutionOptions(
         request_id=case_run_id,
-        resources={LoraExecutionScope: scope},
+        resources={LaraExecutionScope: scope},
     ),
 )
 ```
@@ -270,15 +270,15 @@ Module 中的依赖变为：
 
 ```python
 async def forward(self, message, context, execution):
-    lora = execution.resources.require(LoraExecutionScope)
+    lara = execution.resources.require(LaraExecutionScope)
     prompt = self.prompt_service.build(
-        session=lora.session,
+        session=lara.session,
         model_context=context,
     )
     return message, replace(context, system_prompt=prompt.text)
 ```
 
-这里的 `LoraExecutionScope` 只是 process-local resource，不进入 execution journal 或
+这里的 `LaraExecutionScope` 只是 process-local resource，不进入 execution journal 或
 portable codec。需要恢复的事实仍通过 `Context.metadata`、`ExecutionOptions` 或应用自己的
 持久化层保存。
 
@@ -309,11 +309,11 @@ Module 最好能声明必需资源：
 ```python
 class DynamicPromptModule(Module):
     execution_requirements = ExecutionRequirements(
-        resources=(ResourceRequirement(LoraExecutionScope),)
+        resources=(ResourceRequirement(LaraExecutionScope),)
     )
 ```
 
-Binding/start 可以在执行前验证资源是否存在，从而替代 Lora 当前的 Optional 字段和
+Binding/start 可以在执行前验证资源是否存在，从而替代 Lara 当前的 Optional 字段和
 运行时守卫。
 
 ## 兼容性较低成本的备选方案
@@ -337,18 +337,18 @@ class BoundExecution:
 实现可以内部使用 `ContextVar` 传播当前 execution handle，但不应要求下游应用直接管理
 全局 `ContextVar`，也不应让资源的正确性依赖 task-local 隐式设置。
 
-## 面向 Lora 开发者的组合 facade
+## 面向 Lara 开发者的组合 facade
 
-即使 Pygent 提供 execution resources，Lora 仍可能为自己的 Module 提供统一 facade：
+即使 Pygent 提供 execution resources，Lara 仍可能为自己的 Module 提供统一 facade：
 
 ```python
 @dataclass(frozen=True)
-class LoraContext:
+class LaraContext:
     model: pygent.Context
-    execution: LoraExecutionScope
+    execution: LaraExecutionScope
 ```
 
-该 facade 可以改善领域开发体验，但它应是 Lora 层的组合视图，而不是要求 Pygent
+该 facade 可以改善领域开发体验，但它应是 Lara 层的组合视图，而不是要求 Pygent
 序列化的 `Context` 子类。Pygent 提供正式 execution scope 后，适配器无需再通过
 `agent.attach_runtime_context()` 或共享 mutable services 获取执行状态。
 
@@ -361,7 +361,7 @@ class LoraContext:
 - 自动恢复所有第三方 live resource；
 - 将完整应用 session history 变成模型可见 messages；
 - 取消 `Context` 的 immutable、slots 或 portable codec 约束；
-- 强制 Pygent 理解 Lora 的 `AgentSession`。
+- 强制 Pygent 理解 Lara 的 `AgentSession`。
 
 ## 建议验收用例
 
@@ -381,21 +381,21 @@ class LoraContext:
 
 真实永续会话验收发现，Pygent 0.3.0 的原生 `BashTools` 在 Windows 取消或超时时只终止
 `bash.exe`，不会终止其 pytest/Python 子进程树。子进程继续持有 stdout pipe 时，输出捕获
-任务无法收到 EOF，execution 会留下孤儿进程。Lora 暂时通过
+任务无法收到 EOF，execution 会留下孤儿进程。Lara 暂时通过
 `runtime/pygent_compat.py` 在 Windows 使用 `taskkill /T /F` 补齐进程树清理；其他平台仍
 直接使用原生实现。上游提供等价修复后应删除该兼容层，并保留取消真实子进程的回归测试。
 
 ## 期望结果
 
-如果 Pygent 提供上述能力，Lora 可以：
+如果 Pygent 提供上述能力，Lara 可以：
 
-- 删除 `LoraAgent.attach_runtime_context()`；
-- 删除 `_LoraRunServices.runtime_context: Optional` 和延迟补挂协议；
+- 删除 `LaraAgent.attach_runtime_context()`；
+- 删除 `_LaraRunServices.runtime_context: Optional` 和延迟补挂协议；
 - 在 execution 启动时一次性校验 session scope；
 - 安全复用 Agent graph，而不是依赖“每 turn 新建 Agent”保证隔离；
 - 让 Module 的依赖更容易测试和审查；
 - 清晰保留 `Pygent Context = portable model snapshot` 与
-  `Lora execution scope = live domain state` 的边界。
+  `Lara execution scope = live domain state` 的边界。
 
 一句话概括我们的请求：
 

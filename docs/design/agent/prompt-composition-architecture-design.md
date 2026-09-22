@@ -2,7 +2,7 @@
 
 ## 1. 目标
 
-本设计描述当前 Lora Agent 真实发送给模型的提示词链路。重构后的核心目标是：
+本设计描述当前 Lara Agent 真实发送给模型的提示词链路。重构后的核心目标是：
 
 1. 把 session 级稳定内容和每次请求都要重新渲染的 system 内容拆开。
 2. 明确哪些内容进入 system prompt、哪些内容进入 user/tool message。
@@ -59,7 +59,7 @@ Literal["static", "request_system"]
 | `system.tool_policy` | 工具调用策略和工具结果信任边界 |
 | `system.injection_guard` | 非可信内容与 prompt injection 防护 |
 | `system.action_safety` | 不可逆、对外、隐私和 Git 操作的授权边界 |
-| `system.path_policy` | workspace、project/user Lora root 和工具路径规则 |
+| `system.path_policy` | workspace、project/user Lara root 和工具路径规则 |
 | `system.coding_rules` | 编码工作规则 |
 | `system.output_style` | 输出风格 |
 
@@ -89,7 +89,7 @@ Literal["static", "request_system"]
 
 ```mermaid
 flowchart TB
-  Runtime["LoraAgent.stream / run_case"] --> Builder["AgentContextManager.build_model_request_prompt"]
+  Runtime["LaraAgent.stream / run_case"] --> Builder["AgentContextManager.build_model_request_prompt"]
   Builder --> Cache["StaticPromptSessionCache.get_or_create"]
   Builder --> Registry["PromptRegistry.resolve phase=request_system"]
   Cache --> StaticText["Static prompt text"]
@@ -109,7 +109,7 @@ flowchart TB
 3. 直接拼出完整 system prompt，不插入额外边界 marker。
 4. 把完整文本写入 `runtime_context.system_prompt` 和 `runtime_context.session.system_prompt`。
 5. 记录 `prompt.rendered` 事件，并由 `EventStore` 写入 rendered prompt 文件。
-6. `LoraAgent.stream()` 把完整 `ModelRequestPrompt.text` 传给底层模型。
+6. `LaraAgent.stream()` 把完整 `ModelRequestPrompt.text` 传给底层模型。
 
 ## 6. `<system-reminder>` 消息链路
 
@@ -136,17 +136,17 @@ CLI context 和 skill context 始终共用一个外层标签：
 
 Reminder 已从 prompt source 中独立为 `runtime/reminders` 子系统。`ReminderService` 拥有 Session bootstrap、后台任务和动态 observation 生命周期；`bootstrap.py` 构造首次完整快照，`store.py` 管理原子状态转换，`rendering.py` 只负责模型可见格式，Git、CLI、skills 文件只负责各自的事实采集与差异计算。Prompt registry 不读取或写入 Reminder 状态。
 
-Session 创建后立即后台预热 CLI、skills 和 Git 的完整 initial snapshot。第一条用户消息通过 `claim_initial()` 无超时等待快照到达 `ready`，把完整 `<system-reminder>` 附加到 UserMessage 后才允许启动持久化 ReAct；执行创建成功后状态才从 `claimed` 进入 `consumed`。没有显式创建步骤的 chat、case 和 delegation 由首轮 lazy prepare 兜底。交互式 `lora session chat` 使用线程化输入，使用户键入期间后台预热可以继续运行。
+Session 创建后立即后台预热 CLI、skills 和 Git 的完整 initial snapshot。第一条用户消息通过 `claim_initial()` 无超时等待快照到达 `ready`，把完整 `<system-reminder>` 附加到 UserMessage 后才允许启动持久化 ReAct；执行创建成功后状态才从 `claimed` 进入 `consumed`。没有显式创建步骤的 chat、case 和 delegation 由首轮 lazy prepare 兜底。交互式 `lara session chat` 使用线程化输入，使用户键入期间后台预热可以继续运行。
 
-Git provider 使用 `git status --short --branch --no-ahead-behind --untracked-files=normal` 的有界快照，排除 `.lora` 内部状态，最多保留 100 行和 4096 字符。首次快照展示完整有界状态，并成为后续 observation baseline。工具边界只触发后台检测，不等待检测完成；已经完成的结果在后续 tool 或 user 边界收割并注入。后续 reminder 只展示相对 baseline 的新增、移除、状态码变化、分支变化或 dirty 文件内容变化，并附当前 dirty 总数。检查至少间隔 10 秒，按耗时的 20 倍自适应退避且最长 60 秒；每个 Git 子命令超时 0.5 秒。dirty 文件使用有界的 `size + mtime_ns` 签名，状态不变时不生成 reminder。
+Git provider 使用 `git status --short --branch --no-ahead-behind --untracked-files=normal` 的有界快照，排除 `.lara` 内部状态，最多保留 100 行和 4096 字符。首次快照展示完整有界状态，并成为后续 observation baseline。工具边界只触发后台检测，不等待检测完成；已经完成的结果在后续 tool 或 user 边界收割并注入。后续 reminder 只展示相对 baseline 的新增、移除、状态码变化、分支变化或 dirty 文件内容变化，并附当前 dirty 总数。检查至少间隔 10 秒，按耗时的 20 倍自适应退避且最长 60 秒；每个 Git 子命令超时 0.5 秒。dirty 文件使用有界的 `size + mtime_ns` 签名，状态不变时不生成 reminder。
 
 ## 7. 落盘与审计
 
 ### Static Prompt Cache
 
 ```text
-.lora/sessions/{session_id}/context/prompts/static_prompt.txt
-.lora/sessions/{session_id}/context/prompts/static_prompt.json
+.lara/sessions/{session_id}/context/prompts/static_prompt.txt
+.lara/sessions/{session_id}/context/prompts/static_prompt.json
 ```
 
 这里只保存 `phase="static"` 的文本和元数据，不包含 request system modules，也不包含 `<system-reminder>`。
@@ -158,8 +158,8 @@ Git provider 使用 `git status --short --branch --no-ahead-behind --untracked-f
 ```text
 {run_dir}/rendered_prompts/{turn_id}.txt
 {run_dir}/rendered_prompts/{turn_id}.json
-.lora/sessions/{session_id}/context/rendered_prompts/{case_run_id}/{turn_id}.txt
-.lora/sessions/{session_id}/context/rendered_prompts/{case_run_id}/{turn_id}.json
+.lara/sessions/{session_id}/context/rendered_prompts/{case_run_id}/{turn_id}.txt
+.lara/sessions/{session_id}/context/rendered_prompts/{case_run_id}/{turn_id}.json
 ```
 
 `prompt.rendered` payload 包含：
@@ -196,9 +196,9 @@ Git provider 使用 `git status --short --branch --no-ahead-behind --untracked-f
 Reminder 生命周期落盘到：
 
 ```text
-.lora/sessions/{session_id}/state/reminders/bootstrap.json
-.lora/sessions/{session_id}/state/reminders/initial-snapshot.json
-.lora/sessions/{session_id}/state/reminders/observations.json
+.lara/sessions/{session_id}/state/reminders/bootstrap.json
+.lara/sessions/{session_id}/state/reminders/initial-snapshot.json
+.lara/sessions/{session_id}/state/reminders/observations.json
 ```
 
 ## 8. 测试要求
@@ -217,7 +217,7 @@ Reminder 生命周期落盘到：
 
 场景测试应覆盖：
 
-- `lora session run -m` 首轮等待 initial snapshot，UserMessage 带完整 Reminder 后才启动 ReAct。
+- `lara session run -m` 首轮等待 initial snapshot，UserMessage 带完整 Reminder 后才启动 ReAct。
 - 续接同一个 session 时 static prompt 命中缓存，但 request system modules 重新渲染。
 - case run 的第一条 user message 能收到初始 skill reminder。
 - trace 和 session 落盘文件能读取到 `request_system_module_ids` 和完整 prompt 文本。

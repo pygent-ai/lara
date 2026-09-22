@@ -5,7 +5,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from lora.cli import build_parser, main
+from lara.cli import build_parser, main
 
 
 def test_automation_create_cli_contract() -> None:

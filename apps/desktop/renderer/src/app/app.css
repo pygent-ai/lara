@@ -18,6 +18,7 @@
   --text: #303238;
   --muted: #626469;
   --soft: #76787d;
+  --shimmer-bright: #c3cedb;
   --accent: #2f7de1;
   --accent-2: #dcebfc;
   --accent-deep: #236ac4;
@@ -31,6 +32,8 @@
   --shadow: 0 24px 70px rgba(35, 67, 105, 0.12);
   --history-width: 272px;
   --trace-width: 420px;
+  --font-ui: "Segoe UI Variable Text", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+  --font-mono: "Cascadia Code", "Cascadia Mono", Consolas, "Microsoft YaHei UI", "PingFang SC", monospace;
 }
 
 * {
@@ -51,7 +54,7 @@ body {
   height: 100vh;
   color: var(--text);
   background: var(--bg);
-  font-family: "Segoe UI Variable Text", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+  font-family: var(--font-ui);
 }
 
 button,
@@ -349,6 +352,35 @@ button:focus-visible {
 .session-group-header:focus-visible {
   outline: 2px solid rgba(111, 126, 139, 0.34);
   outline-offset: 1px;
+}
+
+/* Drag-and-drop reordering of projects and sessions. */
+.session-group-header[draggable="true"] {
+  cursor: grab;
+}
+.session-group-header[draggable="true"]:active {
+  cursor: grabbing;
+}
+.session-group.drop-target > .session-group-header,
+.session-row.drop-target {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+.session-more {
+  width: fit-content;
+  margin: 2px 0 0 22px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #657891;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.session-more:hover {
+  color: #263e60;
+  background: var(--button-hover-bg);
 }
 
 .session-rail {
@@ -867,7 +899,7 @@ button:focus-visible {
   border-radius: 6px;
   background: #f1f4f7;
   color: #29343e;
-  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.92em;
 }
 
@@ -991,9 +1023,42 @@ button:focus-visible {
   padding: 6px 0 0;
   color: var(--muted);
   font-size: inherit;
-  font-weight: 500;
+  font-weight: 400;
   line-height: inherit;
   overflow-wrap: anywhere;
+}
+
+/* Transient live-state text ("Calling the model...", "Thinking"): dim text
+   with a light band sweeping across it from left to right while it is the
+   active state. */
+.activity-live-status {
+  --shimmer-base: var(--muted);
+}
+.thinking-running .thinking-label {
+  --shimmer-base: #738094;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .activity-live-status,
+  .thinking-running .thinking-label {
+    background-image: linear-gradient(
+      90deg,
+      var(--shimmer-base) 0%,
+      var(--shimmer-base) 38%,
+      var(--shimmer-bright) 50%,
+      var(--shimmer-base) 62%,
+      var(--shimmer-base) 100%
+    );
+    background-size: 200% 100%;
+    background-repeat: repeat;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: status-shimmer 2.4s linear infinite;
+  }
+}
+@keyframes status-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: 0% 0; }
 }
 
 .activity-block {
@@ -1101,7 +1166,7 @@ button:focus-visible {
   border-radius: 8px;
   background: #f7f9fa;
   color: var(--muted);
-  font-family: "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.55;
   white-space: pre-wrap;
@@ -1518,7 +1583,7 @@ input:focus,
   min-height: 0;
   overflow: auto;
   padding: 12px 13px 20px;
-  font-family: "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.55;
 }
@@ -1547,7 +1612,7 @@ input:focus,
   padding: 0;
   color: var(--text);
   background: transparent;
-  font-family: "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
 }
 
@@ -1783,7 +1848,7 @@ input:focus,
   border-radius: 5px;
   color: var(--text);
   background: var(--surface);
-  font-family: "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
 }
 
@@ -1814,7 +1879,7 @@ input:focus,
 .context-stepper span {
   padding: 0 6px;
   color: var(--muted);
-  font-family: "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   white-space: nowrap;
 }
@@ -1842,7 +1907,7 @@ input:focus,
 
 .context-version strong {
   color: var(--text);
-  font-family: "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
 }
 
@@ -1866,7 +1931,7 @@ input:focus,
   border-bottom: 1px solid var(--line);
   color: var(--soft);
   background: var(--surface-2);
-  font-family: "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
 }
 
@@ -1903,7 +1968,7 @@ input:focus,
 .context-variable-chevron,
 .context-variable-index,
 .context-variable-role {
-  font-family: "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
 }
 
@@ -1963,7 +2028,7 @@ input:focus,
   border-radius: 5px;
   color: var(--text);
   background: #f9fbfe;
-  font-family: "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -2059,7 +2124,7 @@ input:focus,
   border-radius: 6px;
   color: var(--text);
   background: var(--surface-2);
-  font-family: "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -2091,7 +2156,7 @@ input:focus,
 
 .config-row span {
   color: var(--text);
-  font-family: "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.45;
   overflow-wrap: anywhere;
@@ -2912,7 +2977,7 @@ input:focus,
 .message.pending-steering .bubble { border:1px dashed #b6bdca; background:transparent; color:#6d7684; }
 .pending-steering-label { display:block; margin-bottom:6px; color:#8a93a3; font-size:11px; font-weight:700; letter-spacing:.05em; }
 .message.assistant .bubble { line-height:1.8; color:var(--text); }
-.activity-head { width:fit-content; padding:4px 0; border:0; border-radius:0; background:transparent; color:#738094; font-size:13px; font-weight:500; line-height:1.5; transition:color 160ms ease; }
+.activity-head { width:fit-content; padding:4px 0; border:0; border-radius:0; background:transparent; color:#738094; font-size:13px; font-weight:400; line-height:1.5; transition:color 160ms ease; }
 .activity-head:hover { background:transparent; color:#405779; }
 .activity-title { align-items:center; gap:7px; }
 .activity-chevron { width:14px; height:14px; flex:0 0 14px; align-self:center; transition:transform 180ms ease; }
@@ -2920,7 +2985,7 @@ input:focus,
 .activity-detail { padding-top:14px; animation:conversation-reveal 180ms ease-out; }
 .activity-section { padding:6px 0; }
 .tool-group { padding:5px 0; gap:8px; }
-.tool-group-head, .thinking-summary { align-items:center; gap:8px; padding:3px 0; border:0; border-radius:0; background:transparent; font-size:13px; font-weight:500; line-height:1.5; color:#738094; transition:color 160ms ease; }
+.tool-group-head, .thinking-summary { align-items:center; gap:8px; padding:3px 0; border:0; border-radius:0; background:transparent; font-size:13px; font-weight:400; line-height:1.5; color:#738094; transition:color 160ms ease; }
 .tool-group-head:hover, .thinking-summary:hover { color:#405779; background:transparent; }
 .tool-group-body { padding:4px 0; border:0; border-radius:0; background:transparent; animation:conversation-reveal 180ms ease-out; }
 .activity-head:focus-visible, .tool-group-head:focus-visible, .thinking-summary:focus-visible { outline:2px solid #7d9fcc; outline-offset:3px; }

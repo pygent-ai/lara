@@ -2,9 +2,9 @@
 
 ## 1. 背景与目标
 
-当前 Lora 已经能通过 `EventStore` 记录 `tool.call`、`tool.result` 和部分 `file.read` 事件，并且 `EventStore` 已支持把 `file.read/file.write/file.edit/file.delete` 投影到 run/session 级 `file_events.jsonl`。
+当前 Lara 已经能通过 `EventStore` 记录 `tool.call`、`tool.result` 和部分 `file.read` 事件，并且 `EventStore` 已支持把 `file.read/file.write/file.edit/file.delete` 投影到 run/session 级 `file_events.jsonl`。
 
-`pygent-ai==0.1.9` 下默认 `LoraAgent` 注册的工具白名单为：
+`pygent-ai==0.1.9` 下默认 `LaraAgent` 注册的工具白名单为：
 
 - `bash`
 - `read`
@@ -19,7 +19,7 @@
 
 第一版目标：
 
-1. 默认 `LoraAgent` 的真实工具调用路径开启 workspace 文件效果跟踪。
+1. 默认 `LaraAgent` 的真实工具调用路径开启 workspace 文件效果跟踪。
 2. 记录 workspace 内文件新增、编辑、删除的净效果：`file.write`、`file.edit`、`file.delete`。
 3. 对 `read/write/edit` 的明确工具参数生成声明效果，并与 snapshot diff 合并。
 4. 对常见 `bash` 读命令做 best-effort `file.read` inferred 记录，不承诺完整文件访问审计。
@@ -31,17 +31,17 @@
 1. 不记录 A -> B -> A 这类最终无净变化的中间过程。
 2. 不引入 OS 级审计，例如 strace、eBPF、ETW 或 USN Journal。
 3. 不记录 workspace 外文件变化。
-4. 不新增配置开关；`ToolInterceptor` 保留兼容默认值，但 `LoraAgent` 默认开启 tracking。
+4. 不新增配置开关；`ToolInterceptor` 保留兼容默认值，但 `LaraAgent` 默认开启 tracking。
 
 ## 2. 当前状态
 
 当前代码状态：
 
-- `src/lora/trace.py` 的 `EventStore` 已支持所有 `file.*` 事件类型，并会把它们投影到 `file_events.jsonl`。
-- `src/lora/tools.py` 中已有 `FileStateTracker`，用于读取去重和部分 `file.read` 事件记录。
-- `src/lora/tools.py` 已实现 `FileEffectTracker`，支持 workspace 快照、工具参数声明效果、snapshot diff、效果合并和去重写入。
+- `src/lara/trace.py` 的 `EventStore` 已支持所有 `file.*` 事件类型，并会把它们投影到 `file_events.jsonl`。
+- `src/lara/tools.py` 中已有 `FileStateTracker`，用于读取去重和部分 `file.read` 事件记录。
+- `src/lara/tools.py` 已实现 `FileEffectTracker`，支持 workspace 快照、工具参数声明效果、snapshot diff、效果合并和去重写入。
 - `ToolInterceptor` 兼容旧的 `ToolInterceptor(store)` 调用，也支持 `workspace_root` 和 `track_file_effects=True` 开启文件效果跟踪。
-- `src/lora/agent.py` 中 `LoraAgent.stream()` 已使用 `ToolInterceptor(EventStore(self.case_run_ref), workspace_root=self.workspace_root, track_file_effects=True)`，真实 agent 工具调用默认开启 tracking。
+- `src/lara/agent.py` 中 `LaraAgent.stream()` 已使用 `ToolInterceptor(EventStore(self.case_run_ref), workspace_root=self.workspace_root, track_file_effects=True)`，真实 agent 工具调用默认开启 tracking。
 
 已有回归测试：
 
@@ -54,7 +54,7 @@
 
 ### 3.1 数据模型
 
-在 `src/lora/tools.py` 中新增内部 dataclass。
+在 `src/lara/tools.py` 中新增内部 dataclass。
 
 ```python
 @dataclass(slots=True)
@@ -99,7 +99,7 @@ class FileEffect:
 
 ### 3.2 `FileEffectTracker`
 
-在 `src/lora/tools.py` 中新增：
+在 `src/lara/tools.py` 中新增：
 
 ```python
 class FileEffectTracker:
@@ -146,7 +146,7 @@ class FileEffectTracker:
 `snapshot_workspace()`：
 
 - 遍历 `workspace_root` 下文件。
-- 忽略 `.git`、`.lora`、`.venv`、`__pycache__`、`.pytest_cache`、`sessions`。
+- 忽略 `.git`、`.lara`、`.venv`、`__pycache__`、`.pytest_cache`、`sessions`。
 - 第一版直接计算文件内容 SHA-256，优先保证正确性。
 - 只需要记录文件；目录本身变化不产生 file effect。
 
@@ -227,9 +227,9 @@ tool raises
   -> return ToolResult(status="error")
 ```
 
-### 3.4 `LoraAgent` 默认开启
+### 3.4 `LaraAgent` 默认开启
 
-在 `src/lora/agent.py` 的 `LoraAgent.stream()` 中，将当前 interceptor 初始化：
+在 `src/lara/agent.py` 的 `LaraAgent.stream()` 中，将当前 interceptor 初始化：
 
 ```python
 interceptor = ToolInterceptor(EventStore(self.case_run_ref))
@@ -253,7 +253,7 @@ file effect 事件 payload 统一为：
 
 ```json
 {
-  "path": "E:\\Projects\\lora\\demo.txt",
+  "path": "E:\\Projects\\lara\\demo.txt",
   "tool_call_id": "evt_...",
   "tool_name": "bash",
   "detected_by": ["snapshot_diff"],
@@ -285,7 +285,7 @@ uv run python -m unittest discover -s tests
 
 验收标准：
 
-1. `from lora.tools import FileEffectTracker` 可导入。
+1. `from lara.tools import FileEffectTracker` 可导入。
 2. `ToolInterceptor(store)` 兼容旧调用。
 3. `ToolInterceptor(store, workspace_root=workspace, track_file_effects=True)` 支持新调用。
 4. 任意工具调用造成 workspace 内文件新增时，写入一条 `file.write`。
@@ -297,4 +297,4 @@ uv run python -m unittest discover -s tests
 10. workspace 外文件变化不写入 file events；声明路径逃逸时拒绝。
 11. 忽略目录中的变化不写入 file events。
 12. `bash` 常见读命令可生成 inferred `file.read`，但仅作为 best-effort。
-13. 真实 `LoraAgent` 默认工具调用路径会启用 tracking，并能在 run/session `file_events.jsonl` 中看到 file effects。
+13. 真实 `LaraAgent` 默认工具调用路径会启用 tracking，并能在 run/session `file_events.jsonl` 中看到 file effects。

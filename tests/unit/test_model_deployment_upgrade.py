@@ -8,7 +8,7 @@ import sqlite3
 import pytest
 from pygent.runtime import SQLiteModelDeploymentStore
 
-from lora.runtime.service import LoraRuntimeService
+from lara.runtime.service import LaraRuntimeService
 from tests.unit.test_model_configuration import native_runtime_config
 
 
@@ -23,16 +23,16 @@ async def test_old_model_json_does_not_block_new_runtime(tmp_path: Path, locatio
     await store.close()
     snapshot = {
         "model_group": {
-            "name": "lora:dev", "routes": [], "fallback": [],
+            "name": "lara:dev", "routes": [], "fallback": [],
             "capacity_key": None, "max_concurrency": None, "resolution": "concrete",
         },
     }
     with sqlite3.connect(legacy) as db:
         if location == "profile":
             db.execute("INSERT INTO pygent_model_profiles VALUES(?,?,?,?,0)",
-                       ("scope", "lora:dev", "default", json.dumps(snapshot)))
+                       ("scope", "lara:dev", "default", json.dumps(snapshot)))
         else:
-            admission = {"snapshots": [{"group_name": "lora:dev", "snapshot": snapshot}]}
+            admission = {"snapshots": [{"group_name": "lara:dev", "snapshot": snapshot}]}
             db.execute("INSERT INTO pygent_model_admissions VALUES(?,?,?,1)",
                        ("old-execution", "scope", json.dumps(admission)))
 
@@ -45,7 +45,7 @@ async def test_old_model_json_does_not_block_new_runtime(tmp_path: Path, locatio
         await broken.close()
     original = legacy.read_bytes()
 
-    service = LoraRuntimeService(config)
+    service = LaraRuntimeService(config)
     try:
         agent = service.new_agent(interactive_approvals=False)
         await service.bind(agent, agent)
@@ -65,7 +65,7 @@ async def test_current_store_keeps_its_namespace_on_restart(tmp_path: Path) -> N
     await store.close()
     namespaces = []
     for _ in range(2):
-        service = LoraRuntimeService(config)
+        service = LaraRuntimeService(config)
         try:
             agent = service.new_agent(interactive_approvals=False)
             await service.bind(agent, agent)
@@ -92,8 +92,8 @@ async def test_model_config_generation_uses_separate_store_while_old_runtime_is_
     new_config.model_config = None
     new_config.__post_init__()
 
-    old_service = LoraRuntimeService(old_config)
-    new_service = LoraRuntimeService(new_config)
+    old_service = LaraRuntimeService(old_config)
+    new_service = LaraRuntimeService(new_config)
     try:
         old_agent = old_service.new_agent(interactive_approvals=False)
         await old_service.bind(old_agent, old_agent)

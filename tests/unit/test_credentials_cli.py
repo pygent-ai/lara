@@ -7,8 +7,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from lora.cli import main
-from lora.credentials import read_env_entries
+from lara.cli import main
+from lara.credentials import read_env_entries
 from tests.native_config_support import native_model_config_yaml
 
 
@@ -16,10 +16,10 @@ class CredentialsCliTests(unittest.TestCase):
     def test_credentials_set_list_validate_and_delete(self) -> None:
         with (
             tempfile.TemporaryDirectory() as tmp,
-            patch("lora.config.loader.Path.home", return_value=Path(tmp)),
+            patch("lara.config.loader.Path.home", return_value=Path(tmp)),
         ):
             root = Path(tmp) / "workspace"
-            user_root = Path(tmp) / ".lora"
+            user_root = Path(tmp) / ".lara"
             root.mkdir()
             user_root.mkdir()
             (user_root / "config.yaml").write_text(
@@ -84,10 +84,10 @@ class CredentialsCliTests(unittest.TestCase):
     def test_credentials_validate_reports_missing_key(self) -> None:
         with (
             tempfile.TemporaryDirectory() as tmp,
-            patch("lora.config.loader.Path.home", return_value=Path(tmp)),
+            patch("lara.config.loader.Path.home", return_value=Path(tmp)),
         ):
             root = Path(tmp)
-            user_root = root / ".lora"
+            user_root = root / ".lara"
             user_root.mkdir()
             (user_root / "config.yaml").write_text(
                 native_model_config_yaml(

@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lora.core.paths import project_lora_root
+from lara.core.paths import project_lara_root
 from tests.native_config_support import native_model_config_yaml
 
 
@@ -23,8 +23,8 @@ class RepairFlowScenarioTests(unittest.TestCase):
                 "USERPROFILE": str(root / "home"),
             }
             _write_no_api_config(root)
-            (project_lora_root(root, root / "home" / ".lora")).mkdir(parents=True)
-            (project_lora_root(root, root / "home" / ".lora") / "repair.json").write_text(
+            (project_lara_root(root, root / "home" / ".lara")).mkdir(parents=True)
+            (project_lara_root(root, root / "home" / ".lara") / "repair.json").write_text(
                 json.dumps({"commands": [[sys.executable, "-c", "print('gate passed')"]]}),
                 encoding="utf-8",
             )
@@ -46,7 +46,7 @@ class RepairFlowScenarioTests(unittest.TestCase):
             )
 
             run = subprocess.run(
-                [sys.executable, "-m", "lora", "--workspace-root", str(root), "case", "run", str(case_file)],
+                [sys.executable, "-m", "lara", "--workspace-root", str(root), "case", "run", str(case_file)],
                 check=True,
                 capture_output=True,
                 text=True,
@@ -60,7 +60,7 @@ class RepairFlowScenarioTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "lora",
+                    "lara",
                     "--workspace-root",
                     str(root),
                     "repair",
@@ -89,7 +89,7 @@ class RepairFlowScenarioTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "lora",
+                    "lara",
                     "--workspace-root",
                     str(root),
                     "repair",
@@ -111,7 +111,7 @@ class RepairFlowScenarioTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "lora",
+                    "lara",
                     "--workspace-root",
                     str(root),
                     "repair",
@@ -139,13 +139,13 @@ def _read_jsonl(path: Path) -> list[dict[str, object]]:
 
 
 def _write_no_api_config(root: Path) -> None:
-    config_path = root / "home" / ".lora" / "config.yaml"
+    config_path = root / "home" / ".lara" / "config.yaml"
     config_path.parent.mkdir(parents=True)
     config_path.write_text(
         native_model_config_yaml(
             alias="test",
             base_url="https://example.invalid/v1",
-            credential_env="LORA_SCENARIO_NO_API_KEY",
+            credential_env="LARA_SCENARIO_NO_API_KEY",
         ),
         encoding="utf-8",
     )

@@ -10,24 +10,24 @@
 
 - 模型难以区分“工具成功返回一段文本”和“工具调用失败”。
 - 上层 trace、evaluation、repair 流程无法可靠统计工具失败。
-- Lora 的 `ToolInterceptor` 只能根据异常判断失败；如果 pygent 工具把错误吞成字符串，interceptor 会记录成功。
+- Lara 的 `ToolInterceptor` 只能根据异常判断失败；如果 pygent 工具把错误吞成字符串，interceptor 会记录成功。
 
 ## 已验证现象
 
 验证环境：
 
 - `pygent-ai==0.1.10`
-- workspace root: `E:\Projects\lora`
-- Lora 调用路径：`ToolInterceptor.call_tool(...)`
+- workspace root: `E:\Projects\lara`
+- Lara 调用路径：`ToolInterceptor.call_tool(...)`
 
 复测结果：
 
 | 工具 | 输入 | 当前外层状态 | 当前结果 | 期望 |
 | --- | --- | --- | --- | --- |
-| `read` | 缺失文件 `/e/Projects/lora/NO_SUCH_FILE.md` | `status=success`, `error=None` | `错误：文件不存在 E:\Projects\lora\NO_SUCH_FILE.md` | 工具级 `error` |
-| `glob` | 缺失目录 `/e/Projects/lora/NO_SUCH_DIR` | `status=success`, `error=None` | `error: path does not exist E:\Projects\lora\NO_SUCH_DIR` | 工具级 `error` |
-| `grep` | 缺失目录 `/e/Projects/lora/NO_SUCH_DIR` | `status=success`, `error=None` | `错误：路径不存在 E:\Projects\lora\NO_SUCH_DIR` | 工具级 `error` |
-| `edit` | 缺失文件 `/e/Projects/lora/NO_SUCH_FILE.md` | `status=success`, `error=None` | `错误：文件不存在或不是文件 E:\Projects\lora\NO_SUCH_FILE.md` | 工具级 `error` |
+| `read` | 缺失文件 `/e/Projects/lara/NO_SUCH_FILE.md` | `status=success`, `error=None` | `错误：文件不存在 E:\Projects\lara\NO_SUCH_FILE.md` | 工具级 `error` |
+| `glob` | 缺失目录 `/e/Projects/lara/NO_SUCH_DIR` | `status=success`, `error=None` | `error: path does not exist E:\Projects\lara\NO_SUCH_DIR` | 工具级 `error` |
+| `grep` | 缺失目录 `/e/Projects/lara/NO_SUCH_DIR` | `status=success`, `error=None` | `错误：路径不存在 E:\Projects\lara\NO_SUCH_DIR` | 工具级 `error` |
+| `edit` | 缺失文件 `/e/Projects/lara/NO_SUCH_FILE.md` | `status=success`, `error=None` | `错误：文件不存在或不是文件 E:\Projects\lara\NO_SUCH_FILE.md` | 工具级 `error` |
 | `bash` | 缺失 `working_directory` | `status=success`, `error=None` | `error: working directory does not exist...` | 工具级 `error` |
 | `bash` | `command="exit 7"` | `status=success`, `error=None` | `exit_code: 7` | 语义需明确，建议不归为工具级错误 |
 
@@ -42,7 +42,7 @@
 
 ## 需求目标
 
-pygent 工具层需要提供结构化错误语义，使 Lora 或其他调用方可以无歧义地判断工具调用是否失败。
+pygent 工具层需要提供结构化错误语义，使 Lara 或其他调用方可以无歧义地判断工具调用是否失败。
 
 最低目标：
 
@@ -75,8 +75,8 @@ pygent 工具层需要提供结构化错误语义，使 Lora 或其他调用方�
   "error": {
     "type": "FileNotFoundError",
     "message": "File does not exist",
-    "path": "E:\\Projects\\lora\\NO_SUCH_FILE.md",
-    "input_path": "/e/Projects/lora/NO_SUCH_FILE.md"
+    "path": "E:\\Projects\\lara\\NO_SUCH_FILE.md",
+    "input_path": "/e/Projects/lara/NO_SUCH_FILE.md"
   }
 }
 ```
@@ -95,12 +95,12 @@ ToolExecutionError(
 
 ### 2. 上层可映射为 `status=error`
 
-pygent 应保证 Lora 这类调用方能可靠映射：
+pygent 应保证 Lara 这类调用方能可靠映射：
 
 ```json
 {
   "status": "error",
-  "error": "File does not exist: E:\\Projects\\lora\\NO_SUCH_FILE.md",
+  "error": "File does not exist: E:\\Projects\\lara\\NO_SUCH_FILE.md",
   "error_type": "FileNotFoundError",
   "result": null
 }
@@ -174,25 +174,25 @@ error: ...
 
 ### read
 
-- `read(file_path="/e/Projects/lora/NO_SUCH_FILE.md")` 返回工具级 error。
+- `read(file_path="/e/Projects/lara/NO_SUCH_FILE.md")` 返回工具级 error。
 - 上层 tool result 为 `status=error`。
 - `error_type` 为 `FileNotFoundError` 或等价类型。
 - `result` 不应是 `"错误：文件不存在 ..."`。
 
 ### glob
 
-- `glob(path="/e/Projects/lora/NO_SUCH_DIR", pattern="*.md")` 返回工具级 error。
+- `glob(path="/e/Projects/lara/NO_SUCH_DIR", pattern="*.md")` 返回工具级 error。
 - 上层 tool result 为 `status=error`。
 - 错误 details 中包含原始 `path` 和 resolved path。
 
 ### grep
 
-- `grep(path="/e/Projects/lora/NO_SUCH_DIR", pattern="x")` 返回工具级 error。
+- `grep(path="/e/Projects/lara/NO_SUCH_DIR", pattern="x")` 返回工具级 error。
 - 上层 tool result 为 `status=error`。
 
 ### edit
 
-- `edit(file_path="/e/Projects/lora/NO_SUCH_FILE.md", old_string="x", new_string="y")` 返回工具级 error。
+- `edit(file_path="/e/Projects/lara/NO_SUCH_FILE.md", old_string="x", new_string="y")` 返回工具级 error。
 - 不应创建文件。
 - 不应记录 `file.edit` 或 `file.write` 的 declared success。
 
@@ -204,14 +204,14 @@ error: ...
 
 ### bash
 
-- `bash(command="pwd", working_directory="/e/Projects/lora/NO_SUCH_DIR")` 返回工具级 error。
-- `bash(command="exit 7", working_directory="/e/Projects/lora")` 可以保持工具成功，但结果中必须能结构化读取 `exit_code=7`。
+- `bash(command="pwd", working_directory="/e/Projects/lara/NO_SUCH_DIR")` 返回工具级 error。
+- `bash(command="exit 7", working_directory="/e/Projects/lara")` 可以保持工具成功，但结果中必须能结构化读取 `exit_code=7`。
 
 ## 非目标
 
 - 不要求把所有 bash 非零退出码都改成工具级 error。
 - 不要求改变普通命令输出格式，除非为了表达 `exit_code`、`stdout`、`stderr` 的结构化结果。
-- 不要求 Lora 通过字符串匹配补救 pygent 的错误语义；修复应优先发生在 pygent 工具层或 pygent 的工具调用协议层。
+- 不要求 Lara 通过字符串匹配补救 pygent 的错误语义；修复应优先发生在 pygent 工具层或 pygent 的工具调用协议层。
 
 ## 推荐实现顺序
 
@@ -220,7 +220,7 @@ error: ...
 3. 调整 OpenAI/function calling 适配层，让结构化工具错误映射为 `status=error`。
 4. 保留 `bash` 命令进程退出码语义，并为非零退出码提供结构化字段。
 5. 增加 Windows 路径和缺失路径的回归测试。
-6. 用 Lora 的 `ToolInterceptor.call_tool(...)` 复测，确认不再出现错误文本加 `status=success`。
+6. 用 Lara 的 `ToolInterceptor.call_tool(...)` 复测，确认不再出现错误文本加 `status=success`。
 
 ## 成功标准
 

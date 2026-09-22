@@ -9,15 +9,15 @@ import pytest
 from pygent import AIMessage, ToolCall, ToolResult, freeze_json
 from pygent.tool import ToolTask, ToolTaskState
 
-from lora.config import load_run_config
+from lara.config import load_run_config
 from tests.unit.test_model_configuration import native_runtime_config
-from lora.core.io import plain_object
-from lora.runtime.context import LoraContext
-from lora.runtime.service import LoraRuntimeService
-from lora.runtime.tools import ToolObserver
-from lora.schema import CaseRunRef
-from lora.tracing import EventStore
-from lora.sessions import SessionManager
+from lara.core.io import plain_object
+from lara.runtime.context import LaraContext
+from lara.runtime.service import LaraRuntimeService
+from lara.runtime.tools import ToolObserver
+from lara.schema import CaseRunRef
+from lara.tracing import EventStore
+from lara.sessions import SessionManager
 
 
 def test_detached_result_preserves_task_and_output_without_error(tmp_path: Path) -> None:
@@ -63,14 +63,14 @@ def test_background_output_keeps_existing_preview_limits(
 @pytest.mark.parametrize("wait_seconds", [0, 0.05])
 async def test_managed_bash_background_can_be_queried_stopped_and_read_after_restart(tmp_path: Path, wait_seconds: float) -> None:
     config = native_runtime_config(tmp_path)
-    service = LoraRuntimeService(config, tool_max_concurrency=1)
+    service = LaraRuntimeService(config, tool_max_concurrency=1)
     task_id = None
     try:
         await service.initialize()
         agent = service.new_agent(interactive_approvals=False)
         tools = agent.new_tool_layer()
         bound = service.runtime.bind(tools, binding=service.binding)
-        context = LoraContext(tools=agent.tool_definitions)
+        context = LaraContext(tools=agent.tool_definitions)
         answer, _ = await bound.invoke(AIMessage(tool_calls=(ToolCall(
             call_id="start", name="bash",
             arguments={"command": "echo started; sleep 30", "timeout": wait_seconds},
@@ -97,7 +97,7 @@ async def test_managed_bash_background_can_be_queried_stopped_and_read_after_res
         assert final is not None and final.status != "succeeded"
     finally:
         await service.close()
-    restarted = LoraRuntimeService(config)
+    restarted = LaraRuntimeService(config)
     try:
         await restarted.initialize()
         assert await restarted.get_task(task_id) is not None
@@ -110,18 +110,18 @@ async def test_managed_bash_background_can_be_queried_stopped_and_read_after_res
 @pytest.mark.asyncio
 @pytest.mark.parametrize("finish", ["complete", "cancel", "shutdown", "restore"])
 async def test_background_completion_finalizes_audit_and_late_file_writes(tmp_path: Path, finish: str) -> None:
-    from lora.runtime.agent.pipeline import ToolAuditModule
-    from lora.runtime.bash_tasks import BashTaskObservations
+    from lara.runtime.agent.pipeline import ToolAuditModule
+    from lara.runtime.bash_tasks import BashTaskObservations
 
     config = native_runtime_config(tmp_path)
     manager = SessionManager(config)
     session = manager.create("chat", mode="chat")
     run = manager.start_case_run(session.session_id, "chat", run_config=config)
-    service = LoraRuntimeService(config)
+    service = LaraRuntimeService(config)
     try:
         await service.initialize()
         agent = service.new_agent(interactive_approvals=False)
-        context = LoraContext(session_id=run.session_id, case_id=run.case_id,
+        context = LaraContext(session_id=run.session_id, case_id=run.case_id,
                               case_run_id=run.case_run_id, run_dir=str(run.run_dir),
                               turn_id="turn-1", tools=agent.tool_definitions)
         await service.bash_tasks.prepare(context)
@@ -181,7 +181,7 @@ async def test_bash_background_never_bypasses_approval(tmp_path: Path, arguments
     config = native_runtime_config(tmp_path)
     config.runtime_approvals.enabled = True
     config.runtime_approvals.preauthorized_tools = ()
-    service = LoraRuntimeService(config)
+    service = LaraRuntimeService(config)
     try:
         await service.initialize()
         agent = service.new_agent(interactive_approvals=False)
@@ -189,7 +189,7 @@ async def test_bash_background_never_bypasses_approval(tmp_path: Path, arguments
         answer, _ = await bound.invoke(AIMessage(tool_calls=(ToolCall(
             call_id="forbidden", name="bash",
             arguments={"command": "echo forbidden > forbidden.txt", **arguments},
-        ),)), LoraContext(tools=agent.tool_definitions))
+        ),)), LaraContext(tools=agent.tool_definitions))
         assert answer.results[0].status == "rejected"
         assert not (tmp_path / "forbidden.txt").exists()
     finally:

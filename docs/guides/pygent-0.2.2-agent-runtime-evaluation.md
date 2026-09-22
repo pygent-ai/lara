@@ -8,13 +8,13 @@ FastAPI 不再直接用裸 `asyncio.Task` 执行 Agent。服务为每个聊天 t
 ```text
 FastAPI SSE
   -> shared LocalRuntime + Binding
-    -> LoraAgent (one root per chat turn)
+    -> LaraAgent (one root per chat turn)
         -> ReActLayer
           -> DynamicPromptModule -> ContextCompressionModule -> ModelCallLayer
           -> ToolCallLayer -> ToolAuditModule -> SystemReminderModule -> PersistedDiffModule
 ```
 
-默认容量策略位于 `lora_api/services/managed_chat_runtime.py`：
+默认容量策略位于 `lara_api/services/managed_chat_runtime.py`：
 
 | 资源 | 默认值 | 作用 |
 |---|---:|---|
@@ -36,7 +36,7 @@ lifespan 关闭时调用 `LocalRuntime.close(cancel=True)`。完成事件会返�
 - 主模型与上下文压缩模型是 execution graph 中的真实 child module；模型流式事件来自
   Pygent execution journal。
 - 工具通过正式的 `ToolSpec`、授权 Module、`ToolCallLayer`、ToolTask 和 ToolResult 链路执行；
-  Lora 的 trace、workspace 安全和文件效果逻辑作为部署 executor 保留。
+  Lara 的 trace、workspace 安全和文件效果逻辑作为部署 executor 保留。
 - API SSE 只负责投影 execution events，不再拥有模型调用的生命周期。
 
 这不会缩短模型本身的推理时间。性能收益主要体现为负载下避免过量并发、连接耗尽和
@@ -51,7 +51,7 @@ lifespan 关闭时调用 `LocalRuntime.close(cancel=True)`。完成事件会返�
   `0.246 s`（接近四批执行）。
 - 真实 managed API 多工具请求：37.56 秒，13 次工具结果，无错误，产生可关联的
   execution ID 和 trace ID。
-- ToolCallLayer 改造后的真实请求：`glob` 确认 `pyproject.toml` 后返回 `lora`，耗时约
+- ToolCallLayer 改造后的真实请求：`glob` 确认 `pyproject.toml` 后返回 `lara`，耗时约
   14.6 秒；一次供应商瞬时失败也验证了错误会作为 `chat.error` 暴露，而不会伪装成空成功。
 - 主测试集：`229 passed, 13 subtests passed`。
 
@@ -76,7 +76,7 @@ API 服务或未来的子 Agent 并行执行，收益明显。
 
 ## 当前限制
 
-- `ToolInterceptor` 仍是 Lora 的工具审计和文件效果业务边界，但执行身份、授权、任务状态、
+- `ToolInterceptor` 仍是 Lara 的工具审计和文件效果业务边界，但执行身份、授权、任务状态、
   timeout、容量和事件已由 `ToolCallLayer` 管理。
 - 当前容量值是代码级默认值，生产化前应进入配置文件并增加运行指标端点。
 - `identity=session_id` 只用于追踪；当前由 API registry 在进入 Runtime 前实现 session 级互斥。
