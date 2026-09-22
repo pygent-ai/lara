@@ -101,3 +101,18 @@ test("polls do not overlap and unmount aborts and ignores pending responses", as
   assert.deepEqual(updates, []);
   assert.equal(env.timers.size, 0);
 });
+
+test("a 304 (null) response keeps the current groups untouched", async () => {
+  const env = surfaces();
+  const updates = [];
+  let response = { groups: [{ sessions: [{ session_id: "one" }] }] };
+  const sync = createSessionGroupSync({ listSessionGroups: async () => response }, (groups) => updates.push(groups));
+  const stop = sync.start(env);
+  await env.tick();
+  assert.equal(updates.length, 1);
+  response = null; // conditional GET answered 304 Not Modified
+  await env.tick();
+  assert.equal(updates.length, 1);
+  stop();
+});
+

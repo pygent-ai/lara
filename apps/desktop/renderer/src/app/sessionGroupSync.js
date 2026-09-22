@@ -5,7 +5,9 @@ export function createSessionGroupSync(api, onGroups) {
   async function refresh(options = {}) {
     const requestRevision = ++revision;
     const response = await api.listSessionGroups(options);
-    if (requestRevision === revision && !options.signal?.aborted) {
+    // A conditional GET answers null on 304: the payload is unchanged and
+    // consumers keep their current state.
+    if (response && requestRevision === revision && !options.signal?.aborted) {
       onGroups(response.groups || []);
     }
     return response;
