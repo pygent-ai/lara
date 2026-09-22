@@ -63,7 +63,7 @@ test("api client updates settings with backend snake_case fields", async () => {
   });
 
   const response = await client.updateSettings({
-    workspaceRoot: "E:/Projects/lora",
+    workspaceRoot: "E:/Projects/lara",
     agent: "dev",
     maxSteps: 7,
     contextWindow: "64000",
@@ -74,7 +74,7 @@ test("api client updates settings with backend snake_case fields", async () => {
   assert.equal(calls[0].url, "http://127.0.0.1:8765/settings");
   assert.equal(calls[0].init.method, "PATCH");
   assert.deepEqual(JSON.parse(calls[0].init.body), {
-    workspace_root: "E:/Projects/lora",
+    workspace_root: "E:/Projects/lara",
     agent_alias: "dev",
     max_steps: 7,
     context_window: 64000,
@@ -97,14 +97,14 @@ test("api client sends blank runtime fields so settings can clear overrides", as
   });
 
   await client.updateSettings({
-    workspaceRoot: "E:/Projects/lora",
+    workspaceRoot: "E:/Projects/lara",
     agent: "default",
     maxSteps: -1,
     contextWindow: "",
   });
 
   assert.deepEqual(JSON.parse(calls[0].init.body), {
-    workspace_root: "E:/Projects/lora",
+    workspace_root: "E:/Projects/lara",
     agent_alias: "default",
     max_steps: -1,
     context_window: null,
@@ -122,7 +122,7 @@ test("api client lists session groups for directory-scoped sidebar", async () =>
         status: 200,
         headers: { get: () => "application/json" },
         json: async () => ({
-          active_scope_id: "project:E:/Projects/lora",
+          active_scope_id: "project:E:/Projects/lara",
           groups: [],
         }),
       };
@@ -133,7 +133,7 @@ test("api client lists session groups for directory-scoped sidebar", async () =>
 
   assert.equal(calls[0].url, "http://127.0.0.1:8765/sessions/groups");
   assert.deepEqual(response, {
-    active_scope_id: "project:E:/Projects/lora",
+    active_scope_id: "project:E:/Projects/lara",
     groups: [],
   });
 });
@@ -167,9 +167,11 @@ test("api client requests bounded session and trace windows", async () => {
 
   await client.getSession("chat one", { scopeId: "conversation", historyLimit: 200 });
   await client.getTraceEvents("chat one", "run one", { eventLimit: 500, contextSnapshotLimit: 50 });
+  await client.getSessionActivity("chat one", { eventLimit: 500 });
 
   assert.equal(calls[0].url, "http://127.0.0.1:8765/sessions/chat%20one?scope_id=conversation&history_limit=200");
   assert.equal(calls[1].url, "http://127.0.0.1:8765/traces/chat%20one/run%20one?event_limit=500&context_snapshot_limit=50");
+  assert.equal(calls[2].url, "http://127.0.0.1:8765/traces/chat%20one/activity?event_limit=500");
 });
 
 test("api client removes a project from the sidebar by scope", async () => {
@@ -201,11 +203,11 @@ test("api client lists and opens project files by scope", async () => {
     },
   });
 
-  await client.listWorkspaceEntries("project:C:/Projects/lora", "src/lora");
-  await client.readWorkspaceFile("project:C:/Projects/lora", "README.md");
+  await client.listWorkspaceEntries("project:C:/Projects/lara", "src/lara");
+  await client.readWorkspaceFile("project:C:/Projects/lara", "README.md");
 
-  assert.equal(calls[0], "http://127.0.0.1:8765/workspace/entries?scope_id=project%3AC%3A%2FProjects%2Flora&path=src%2Flora");
-  assert.equal(calls[1], "http://127.0.0.1:8765/workspace/file?scope_id=project%3AC%3A%2FProjects%2Flora&path=README.md");
+  assert.equal(calls[0], "http://127.0.0.1:8765/workspace/entries?scope_id=project%3AC%3A%2FProjects%2Flara&path=src%2Flara");
+  assert.equal(calls[1], "http://127.0.0.1:8765/workspace/file?scope_id=project%3AC%3A%2FProjects%2Flara&path=README.md");
 });
 
 test("api client executes and resets a scoped PowerShell session", async () => {
@@ -218,12 +220,12 @@ test("api client executes and resets a scoped PowerShell session", async () => {
     },
   });
 
-  await client.executeTerminalCommand("project:C:/Projects/lora", "Get-Location");
-  await client.resetTerminal("project:C:/Projects/lora");
+  await client.executeTerminalCommand("project:C:/Projects/lara", "Get-Location");
+  await client.resetTerminal("project:C:/Projects/lara");
 
   assert.equal(calls[0].url, "http://127.0.0.1:8765/terminal/execute");
   assert.deepEqual(JSON.parse(calls[0].init.body), {
-    scope_id: "project:C:/Projects/lora",
+    scope_id: "project:C:/Projects/lara",
     command: "Get-Location",
   });
   assert.equal(calls[1].url, "http://127.0.0.1:8765/terminal/reset");
@@ -278,7 +280,7 @@ test("api client sends the exact native Pygent model subtree", async () => {
     },
   };
   await client.updateSettings({
-    workspaceRoot: "E:/Projects/lora",
+    workspaceRoot: "E:/Projects/lara",
     agent: "dev",
     connections,
     models,
@@ -354,7 +356,7 @@ test("parseSseEvents decodes named events and JSON payloads", () => {
   const events = parseSseEvents(
     [
       "event: execution.event",
-      'data: {"execution_id":"exec1","sequence":1,"kind":"lora.chat.started","data":{"session_id":"s1"}}',
+      'data: {"execution_id":"exec1","sequence":1,"kind":"lara.chat.started","data":{"session_id":"s1"}}',
       "",
       ": keep-alive",
       "",
@@ -368,7 +370,7 @@ test("parseSseEvents decodes named events and JSON payloads", () => {
   assert.deepEqual(events, [
     {
       event: "execution.event",
-      data: { execution_id: "exec1", sequence: 1, kind: "lora.chat.started", data: { session_id: "s1" } },
+      data: { execution_id: "exec1", sequence: 1, kind: "lara.chat.started", data: { session_id: "s1" } },
     },
     {
       event: "execution.event",
@@ -388,7 +390,7 @@ test("streamChat keeps reading when an event handler throws", async () => {
         new Response(
           [
             "event: execution.event\n",
-            'data: {"execution_id":"exec1","sequence":1,"kind":"lora.chat.started","data":{}}\n\n',
+            'data: {"execution_id":"exec1","sequence":1,"kind":"lara.chat.started","data":{}}\n\n',
             "event: execution.event\n",
             'data: {"execution_id":"exec1","sequence":2,"kind":"model.text.delta","data":{"text":"hello"}}\n\n',
             'event: execution.event\ndata: {"execution_id":"exec1","sequence":3,"kind":"execution.completed","data":{}}\n\n',
@@ -415,7 +417,7 @@ test("streamChat keeps reading when an event handler throws", async () => {
     console.error = previousConsoleError;
   }
 
-  assert.deepEqual(seen, ["lora.chat.started", "model.text.delta", "execution.completed"]);
+  assert.deepEqual(seen, ["lara.chat.started", "model.text.delta", "execution.completed"]);
 });
 
 test("streamChat resumes the same run after a stream read failure", async () => {
@@ -440,7 +442,7 @@ test("streamChat resumes the same run after a stream read failure", async () => 
                 encoder.encode(
                   [
                     "event: execution.event\n",
-                    'data: {"execution_id":"exec1","sequence":1,"kind":"lora.chat.started","data":{"session_id":"s1"}}\n\n',
+                    'data: {"execution_id":"exec1","sequence":1,"kind":"lara.chat.started","data":{"session_id":"s1"}}\n\n',
                   ].join(""),
                 ),
               );
@@ -477,7 +479,7 @@ test("streamChat resumes the same run after a stream read failure", async () => 
     },
   );
 
-  assert.deepEqual(seen, ["lora.chat.started", "model.text.delta", "execution.completed"]);
+  assert.deepEqual(seen, ["lara.chat.started", "model.text.delta", "execution.completed"]);
   assert.equal(calls.length, 2);
   assert.equal(calls[1].execution_id, "exec1");
   assert.equal(calls[1].after_sequence, 1);
@@ -494,7 +496,7 @@ test("streamChat reconnects after premature EOF even after a long running task",
       calls.push(JSON.parse(init.body));
       if (calls.length === 1) {
         now = 120_000;
-        return new Response('event: execution.event\ndata: {"execution_id":"exec-long","sequence":10,"kind":"lora.chat.started","data":{}}\n\n');
+        return new Response('event: execution.event\ndata: {"execution_id":"exec-long","sequence":10,"kind":"lara.chat.started","data":{}}\n\n');
       }
       return new Response('event: execution.event\ndata: {"execution_id":"exec-long","sequence":11,"kind":"execution.completed","data":{}}\n\n');
     }});
@@ -510,4 +512,30 @@ test("streamChat reconnects after premature EOF even after a long running task",
 test("streamChat rejects EOF without an execution id or terminal event", async () => {
   const client = createApiClient({fetchImpl: async () => new Response("")});
   await assert.rejects(client.streamChat({message: "work"}), /before the task finished/);
+});
+
+test("session group polls go conditional and 304 keeps the current payload", async () => {
+  const calls = [];
+  const payload = { active_scope_id: "project:E:/Projects/lara", groups: [] };
+  const client = createApiClient({
+    baseUrl: "http://127.0.0.1:8765",
+    fetchImpl: async (url, init) => {
+      calls.push({ url, headers: init.headers });
+      if (init.headers["If-None-Match"] === '"etag-1"') {
+        return new Response(null, { status: 304, headers: { ETag: '"etag-1"' } });
+      }
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { ETag: '"etag-1"', "Content-Type": "application/json" },
+      });
+    },
+  });
+
+  const first = await client.listSessionGroups();
+  assert.deepEqual(first, payload);
+  assert.equal(calls[0].headers["If-None-Match"], undefined);
+
+  const second = await client.listSessionGroups();
+  assert.equal(second, null);
+  assert.equal(calls[1].headers["If-None-Match"], '"etag-1"');
 });

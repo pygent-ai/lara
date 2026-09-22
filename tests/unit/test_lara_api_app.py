@@ -1,0 +1,432 @@
+from __future__ import annotations
+
+from pathlib import Path
+from unittest.mock import AsyncMock
+
+import pytest
+from fastapi import HTTPException, Response
+from fastapi.middleware.cors import CORSMiddleware
+from httpx import ASGITransport, AsyncClient
+
+from lara.core.io import read_json, write_json
+from lara.runtime.reminders import BootstrapStatus
+from lara.tracing import EventStore
+from lara_api.app import create_app
+from lara_api.dependencies import ApiContext
+from lara_api.routers.health import health
+from lara_api.routers.tool_results import get_tool_result
+from lara_api.routers.traces import get_session_activity, get_trace_events
+from lara_api.services.session_service import SessionService
+from tests.unit.test_model_request_journal import EXECUTION_ID, _prepared_event, _seed_journal
+
+
+@pytest.mark.asyncio
+async def test_lifespan_closes_runtime_when_application_body_fails(monkeypatch):
+    app = create_app(workspace_root=".")
+    lease = AsyncMock()
+    acquire = AsyncMock(return_value=lease)
+    monkeypatch.setattr(ApiContext, "acquire_runtime", acquire)
+    close = AsyncMock()
+    monkeypatch.setattr(ApiContext, "aclose", close)
+    with pytest.raises(RuntimeError, match="application failed"):
+        async with app.router.lifespan_context(app):
+            raise RuntimeError("application failed")
+    close.assert_awaited_once()
+    lease.release.assert_awaited_once()
+
+
+def test_create_app_allows_desktop_renderer_cors_requests() -> None:
+    app = create_app(workspace_root=".")
+
+    middleware_types = [entry.cls for entry in app.user_middleware]
+
+    assert CORSMiddleware in middleware_types
+
+
+def test_create_app_exposes_runtime_approval_and_task_contracts() -> None:
+    schema = create_app(workspace_root=".").openapi()
+
+    assert "post" in schema["paths"]["/chat/approvals/{approval_id}"]
+    assert {"get", "delete"} <= set(schema["paths"]["/runtime/tasks/{task_id}"])
+
+
+@pytest.mark.asyncio
+async def test_session_creation_prewarms_without_constructing_runtime(tmp_path) -> None:
+    context = ApiContext(
+        workspace_root=str(tmp_path), state_path=str(tmp_path / "state.json")
+    )
+    reminders = context.reminders
+
+    session = SessionService(context.manager, reminders).create_session()
+    task = reminders._preparations[session.session_id]
+    await task
+
+    assert context._runtime_pool is None
+    state = reminders.store.load_bootstrap(reminders.scope(session.session_id))
+    assert state["status"] == BootstrapStatus.READY.value
+    await context.aclose()
+
+
+def test_health_exposes_backend_instance_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LARA_BACKEND_INSTANCE_ID", "desktop-instance-1")
+    response = Response()
+
+    payload = health(response)
+
+    assert payload.status == "ok"
+    assert payload.service == "lara-api"
+    assert response.headers["X-Lara-Backend-Instance"] == "desktop-instance-1"
+
+
+@pytest.mark.asyncio
+async def test_missing_session_returns_readable_404_after_listing(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    app = create_app(workspace_root=str(tmp_path))
+    context = app.state.api_context
+    ref = context.manager.create("chat", mode="chat")
+    origin = "http://127.0.0.1:5173"
+    async with AsyncClient(
+        transport=ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
+        headers={"Origin": origin},
+    ) as client:
+        groups = (await client.get("/sessions/groups")).json()
+        assert any(
+            session["session_id"] == ref.session_id
+            for group in groups["groups"]
+            for session in group["sessions"]
+        )
+        assert (await client.get(f"/sessions/{ref.session_id}")).status_code == 200
+        (Path(ref.session_dir) / "session.json").unlink()
+        response = await client.get(f"/sessions/{ref.session_id}")
+
+    assert response.status_code == 404
+    assert ref.session_id in response.json()["detail"]
+    assert response.headers["access-control-allow-origin"] == origin
+    assert (Path(ref.session_dir) / "metadata.json").is_file()
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_returns_structured_error_for_stale_session(tmp_path) -> None:
+    app = create_app(workspace_root=str(tmp_path))
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/chat/stream",
+                json={
+                    "message": "hello",
+                    "session_id": "missing-session",
+                    "case_id": "chat",
+                },
+            )
+
+    assert response.status_code == 200
+    assert "lara.transport.error" in response.text
+    assert "FileNotFoundError" in response.text
+    assert "missing-session" in response.text
+
+
+def test_get_tool_result_returns_persisted_result(tmp_path) -> None:
+    context = ApiContext(
+        workspace_root=str(tmp_path), state_path=str(tmp_path / "state.json")
+    )
+    session = context.manager.create(case_id="chat", mode="chat")
+    run = context.manager.start_case_run(
+        session.session_id, "chat", run_config=context.config
+    )
+    store = EventStore(run)
+    call_id = store.append(
+        "tool.call",
+        actor="assistant",
+        payload={"tool_name": "glob", "args": {"pattern": "**/*.py"}},
+    )
+    store.append(
+        "tool.result",
+        actor="tool",
+        payload={
+            "tool_call_id": call_id,
+            "status": "success",
+            "result": "complete output",
+        },
+    )
+
+    response = get_tool_result(call_id, context)
+
+    assert response.model_dump() == {
+        "tool_call_id": call_id,
+        "tool_name": "glob",
+        "status": "success",
+        "result": "complete output",
+        "error": None,
+        "result_size": len("complete output"),
+        "created_at": response.created_at,
+    }
+
+
+def test_trace_response_includes_session_context_snapshots(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    context = ApiContext(
+        workspace_root=str(tmp_path), state_path=str(tmp_path / "state.json")
+    )
+    session = context.manager.create(case_id="chat", mode="chat")
+    run = context.manager.start_case_run(
+        session.session_id, "chat", run_config=context.config
+    )
+    metadata_path = Path(run.run_dir) / "run_metadata.json"
+    metadata = read_json(metadata_path)
+    metadata["runtime_execution_id"] = EXECUTION_ID
+    write_json(metadata_path, metadata)
+    _seed_journal(
+        Path(context.config.runtime_durability.history_path),
+        [(EXECUTION_ID, 0, _prepared_event("event-0"))],
+    )
+
+    response = get_trace_events(session.session_id, run.case_run_id, context)
+
+    assert [item["snapshot_id"] for item in response.context_snapshots] == [
+        "request-event-0"
+    ]
+    assert response.context_snapshots_total == 1
+    assert all(
+        item["session_id"] == session.session_id
+        and item["case_run_id"] == run.case_run_id
+        for item in response.context_snapshots
+    )
+
+
+def test_trace_response_skips_snapshots_without_journal_execution(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    context = ApiContext(
+        workspace_root=str(tmp_path), state_path=str(tmp_path / "state.json")
+    )
+    session = context.manager.create(case_id="chat", mode="chat")
+    run = context.manager.start_case_run(
+        session.session_id, "chat", run_config=context.config
+    )
+
+    response = get_trace_events(session.session_id, run.case_run_id, context)
+
+    assert response.context_snapshots == []
+    assert response.context_snapshots_total == 0
+
+
+def test_trace_response_can_limit_large_event_windows(tmp_path) -> None:
+    context = ApiContext(
+        workspace_root=str(tmp_path), state_path=str(tmp_path / "state.json")
+    )
+    session = context.manager.create(case_id="chat", mode="chat")
+    run = context.manager.start_case_run(
+        session.session_id, "chat", run_config=context.config
+    )
+    store = EventStore(run)
+    for index in range(5):
+        store.append("tool.call", actor="assistant", payload={"index": index})
+
+    response = get_trace_events(
+        session.session_id,
+        run.case_run_id,
+        event_limit=2,
+        context=context,
+    )
+
+    assert response.events_total == 5
+    assert response.events_truncated is True
+    assert [item["payload"]["index"] for item in response.events] == [3, 4]
+
+
+def test_get_trace_events_rejects_a_run_without_a_directory(tmp_path) -> None:
+    context = ApiContext(
+        workspace_root=str(tmp_path), state_path=str(tmp_path / "state.json")
+    )
+    manager = context.manager
+    session = manager.create("chat", mode="chat")
+
+    # The renderer asks for the trace while a turn is starting, so a missing run
+    # directory must stay a client error: an unhandled 500 leaves the CORS
+    # middleware and the renderer only reports "failed to fetch".
+    with pytest.raises(HTTPException) as missing:
+        get_trace_events(session.session_id, "run-does-not-exist", context)
+    assert missing.value.status_code == 404
+
+    with pytest.raises(HTTPException) as unknown:
+        get_trace_events("chat-does-not-exist", "run-does-not-exist", context)
+    assert unknown.value.status_code == 404
+
+
+def test_session_activity_aggregates_tools_across_runs(tmp_path) -> None:
+    context = ApiContext(
+        workspace_root=str(tmp_path), state_path=str(tmp_path / "state.json")
+    )
+    manager = context.manager
+    session = manager.create("chat", mode="chat")
+    for index in range(2):
+        run = manager.start_case_run(session.session_id, "chat", run_config=context.config)
+        store = EventStore(run)
+        call_id = store.append(
+            "tool.call",
+            actor="assistant",
+            payload={
+                "tool_name": "read",
+                "args": {"file_path": f"file-{index}.py"},
+                "model_tool_call_id": f"call_model_{index}",
+            },
+        )
+        store.append(
+            "tool.result",
+            actor="tool",
+            payload={
+                "tool_call_id": call_id,
+                "model_tool_call_id": f"call_model_{index}",
+                "status": "success",
+                "result": f"output {index}",
+            },
+        )
+
+    response = get_session_activity(session.session_id, context)
+
+    assert response.events_total == 4
+    assert response.events_truncated is False
+    assert [event["type"] for event in response.events] == [
+        "tool.call",
+        "tool.result",
+        "tool.call",
+        "tool.result",
+    ]
+    assert [event["case_run_id"] for event in response.events[2:]] == [
+        run.case_run_id,
+        run.case_run_id,
+    ]
+    first_result = response.events[1]["payload"]
+    assert first_result["tool_call_id"] == "call_model_0"
+    assert first_result["result"] == "output 0"
+    assert first_result["tool_name"] == "read"
+    assert first_result["result_ref"] == "call_model_0"
+
+
+def test_session_activity_includes_file_and_diff_events(tmp_path) -> None:
+    context = ApiContext(
+        workspace_root=str(tmp_path), state_path=str(tmp_path / "state.json")
+    )
+    session = context.manager.create("chat", mode="chat")
+    run = context.manager.start_case_run(
+        session.session_id, "chat", run_config=context.config
+    )
+    store = EventStore(run)
+    store.append(
+        "file.write",
+        actor="tool",
+        payload={"path": str(tmp_path / "notes.txt")},
+    )
+    store.append("diff.created", actor="tool", payload={"path": str(tmp_path / "notes.txt")})
+
+    response = get_session_activity(session.session_id, context)
+
+    assert [event["type"] for event in response.events] == ["file.write", "diff.created"]
+    assert response.events[0]["payload"]["path"] == str(tmp_path / "notes.txt")
+
+
+def test_session_activity_can_limit_large_event_windows(tmp_path) -> None:
+    context = ApiContext(
+        workspace_root=str(tmp_path), state_path=str(tmp_path / "state.json")
+    )
+    session = context.manager.create("chat", mode="chat")
+    run = context.manager.start_case_run(
+        session.session_id, "chat", run_config=context.config
+    )
+    store = EventStore(run)
+    for index in range(3):
+        store.append("tool.call", actor="assistant", payload={"tool_name": "read", "args": {"index": index}})
+
+    response = get_session_activity(session.session_id, event_limit=2, context=context)
+
+    assert response.events_total == 3
+    assert response.events_truncated is True
+    assert len(response.events) == 2
+
+
+def test_session_activity_rejects_unknown_session(tmp_path) -> None:
+    context = ApiContext(
+        workspace_root=str(tmp_path), state_path=str(tmp_path / "state.json")
+    )
+
+    with pytest.raises(HTTPException) as unknown:
+        get_session_activity("chat-does-not-exist", context)
+    assert unknown.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_traces_activity_route_is_not_shadowed_by_run_route(tmp_path) -> None:
+    app = create_app(workspace_root=str(tmp_path))
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            create_response = await client.post("/sessions", json={"case_id": "chat", "mode": "chat"})
+            session_id = create_response.json()["session_id"]
+            response = await client.get(
+                f"/traces/{session_id}/activity", params={"event_limit": 50}
+            )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["session_id"] == session_id
+    assert body["events_total"] == 0
+
+
+def test_get_tool_result_accepts_model_tool_call_id(tmp_path) -> None:
+    context = ApiContext(
+        workspace_root=str(tmp_path), state_path=str(tmp_path / "state.json")
+    )
+    session = context.manager.create(case_id="chat", mode="chat")
+    run = context.manager.start_case_run(
+        session.session_id, "chat", run_config=context.config
+    )
+    store = EventStore(run)
+    trace_call_id = store.append(
+        "tool.call",
+        actor="assistant",
+        payload={
+            "tool_name": "bash",
+            "args": {"command": "echo hi"},
+            "model_tool_call_id": "call_model_bash",
+        },
+    )
+    store.append(
+        "tool.result",
+        actor="tool",
+        payload={
+            "tool_call_id": trace_call_id,
+            "model_tool_call_id": "call_model_bash",
+            "status": "success",
+            "result": "hi",
+        },
+    )
+
+    response = get_tool_result("call_model_bash", context)
+
+    assert response.tool_call_id == "call_model_bash"
+    assert response.tool_name == "bash"
+    assert response.status == "success"
+    assert response.result == "hi"
+
+
+def test_get_tool_result_returns_404_for_missing_id(tmp_path) -> None:
+    context = ApiContext(
+        workspace_root=str(tmp_path), state_path=str(tmp_path / "state.json")
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        get_tool_result("missing-call", context)
+
+    assert exc_info.value.status_code == 404
+    assert "missing-call" in str(exc_info.value.detail)

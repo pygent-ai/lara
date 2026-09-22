@@ -63,7 +63,7 @@ const ScheduledPage = deferredPanel(() => import("../features/automations/Schedu
 
 const EMPTY_SETTINGS = {
   workspace_root: "",
-  lora_root: "",
+  lara_root: "",
   agent: "default",
   model_configuration_status: "unconfigured",
   model_configuration_error: "model_configuration_required",
@@ -72,7 +72,7 @@ const EMPTY_SETTINGS = {
   model_groups: {},
   default_model_group: "",
   retry: null,
-  user_lora_root: "",
+  user_lara_root: "",
   max_steps: -1,
   context_window: null,
   context_compression_trigger_ratio: 0.9,
@@ -83,6 +83,8 @@ const INSPECTOR_LABELS = { Overview: "概览", Events: "事件", Context: "上�
 const TOOL_ARGUMENT_PREVIEW_LIMIT = 4_000;
 const TOOL_RESULT_PREVIEW_LIMIT = 6_000;
 const TRACE_RENDER_LIMIT = 300;
+const EMPTY_SESSION_ACTIVITY = { events: [], shown: 0, total: 0, truncated: false };
+const EMPTY_TRACE_WINDOW = { shown: 0, total: 0, truncated: false };
 
 export function App() {
   const api = useMemo(() => createApiClient(), []);
@@ -128,6 +130,8 @@ export function App() {
   const [activityCollapseToken, setActivityCollapseToken] = useState(0);
   const [pendingSteerings, setPendingSteerings] = useState({});
   const [traceEvents, setTraceEvents] = useState([]);
+  const [sessionActivity, setSessionActivity] = useState(EMPTY_SESSION_ACTIVITY);
+  const [traceWindow, setTraceWindow] = useState(EMPTY_TRACE_WINDOW);
   const [liveEvents, setLiveEvents] = useState([]);
   const [contextSnapshots, setContextSnapshots] = useState([]);
   const [status, setStatus] = useState("Loading");
@@ -152,6 +156,7 @@ export function App() {
   const traceLoadTokenRef = useRef(0);
   const activeSessionSignatureRef = useRef("");
   const traceEventsSignatureRef = useRef("");
+  const activitySignatureRef = useRef("");
   const contextSnapshotsSignatureRef = useRef("");
   const messagesHistorySignatureRef = useRef("");
 
@@ -162,6 +167,10 @@ export function App() {
     [sessionGroups, runningSessionIds],
   );
   const visibleTraceEvents = useMemo(() => [...traceEvents, ...liveEvents], [traceEvents, liveEvents]);
+  const visibleActivityEvents = useMemo(
+    () => dedupeTraceEvents([...sessionActivity.events, ...liveEvents]),
+    [sessionActivity.events, liveEvents],
+  );
 
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
@@ -203,30 +212,62 @@ export function App() {
 
   const loadTrace = useCallback(
     async (session, token = traceLoadTokenRef.current) => {
-      if (!session?.last_case_run_id) {
-        if (token === traceLoadTokenRef.current) {
-          setTraceEvents([]);
-          setContextSnapshots([]);
-        }
+      if (!session?.session_id) {
         return;
       }
-      const response = await api
-        .getTraceEvents(session.session_id, session.last_case_run_id, {
-          eventLimit: TRACE_EVENT_LIMIT,
-          contextSnapshotLimit: CONTEXT_SNAPSHOT_LIMIT,
-        })
-        .catch((err) => {
-          // A turn that just started has no run directory yet; the periodic
-          // refresh retries, so a missing trace is not a user-facing error.
-          if (err?.status === 404) {
-            return null;
-          }
-          throw err;
-        });
-      if (response && token === traceLoadTokenRef.current) {
-        setTraceEvents(response.events || []);
-        setContextSnapshots((current) => mergeContextSnapshots(response.context_snapshots || [], current));
+      const runId = session.last_case_run_id || "";
+      const [traceResponse, activityResponse] = await Promise.all([
+        runId
+          ? api
+            .getTraceEvents(session.session_id, runId, {
+              eventLimit: TRACE_EVENT_LIMIT,
+              contextSnapshotLimit: CONTEXT_SNAPSHOT_LIMIT,
+            })
+            .catch((err) => {
+              // A turn that just started has no run directory yet; the periodic
+              // refresh retries, so a missing trace is not a user-facing error.
+              if (err?.status === 404) {
+                return null;
+              }
+              throw err;
+            })
+          : Promise.resolve(null),
+        api
+          .getSessionActivity(session.session_id, { eventLimit: TRACE_EVENT_LIMIT })
+          .catch((err) => {
+            if (err?.status === 404) {
+              return null;
+            }
+            throw err;
+          }),
+      ]);
+      if (token !== traceLoadTokenRef.current) {
+        return;
       }
+      if (traceResponse) {
+        setTraceEvents(traceResponse.events || []);
+        setContextSnapshots((current) => mergeContextSnapshots(traceResponse.context_snapshots || [], current));
+        setTraceWindow({
+          shown: (traceResponse.events || []).length,
+          total: traceResponse.events_total || 0,
+          truncated: Boolean(traceResponse.events_truncated),
+        });
+      } else {
+        // The run window is unknown while a turn is starting (404) or the
+        // session has no run at all; the session-wide activity feed still
+        // shows the full tool history either way.
+        setTraceEvents([]);
+        setTraceWindow(EMPTY_TRACE_WINDOW);
+        setContextSnapshots([]);
+      }
+      setSessionActivity(activityResponse
+        ? {
+            events: activityResponse.events || [],
+            shown: (activityResponse.events || []).length,
+            total: activityResponse.events_total || 0,
+            truncated: Boolean(activityResponse.events_truncated),
+          }
+        : EMPTY_SESSION_ACTIVITY);
     },
     [api],
   );
@@ -249,6 +290,8 @@ export function App() {
       messagesRef.current = previewMessages;
       setMessages(previewMessages);
       setTraceEvents([]);
+      setTraceWindow(EMPTY_TRACE_WINDOW);
+      setSessionActivity(EMPTY_SESSION_ACTIVITY);
       setLiveEvents(previewLiveEvents);
       setContextSnapshots([]);
       let detail;
@@ -269,9 +312,11 @@ export function App() {
         setActiveSession(null);
         setMessages([]);
         setTraceEvents([]);
+        setTraceWindow(EMPTY_TRACE_WINDOW);
+        setSessionActivity(EMPTY_SESSION_ACTIVITY);
         setLiveEvents([]);
         setContextSnapshots([]);
-        setNotice("This chat is unavailable in the current project. Select another chat or start a new one.");
+        setNotice("当前项目中找不到此对话，请选择其他对话或新建一个。");
         setStatus("Ready");
         return;
       }
@@ -333,6 +378,8 @@ export function App() {
         setActiveSession(null);
         setMessages([]);
         setTraceEvents([]);
+        setTraceWindow(EMPTY_TRACE_WINDOW);
+        setSessionActivity(EMPTY_SESSION_ACTIVITY);
         setLiveEvents([]);
         setContextSnapshots([]);
       }
@@ -422,6 +469,42 @@ export function App() {
     }
   }, [api, projects, refreshWorkbench, settings.workspace_root]);
 
+  const handleReorderProjects = useCallback(async (orderedScopeIds) => {
+    setSessionGroups((current) => {
+      const byScopeId = new Map(current.map((group) => [group.scope?.scope_id, group]));
+      const next = orderedScopeIds.map((scopeId) => byScopeId.get(scopeId)).filter(Boolean);
+      for (const group of current) {
+        if (!orderedScopeIds.includes(group.scope?.scope_id)) next.push(group);
+      }
+      return next;
+    });
+    try {
+      await api.updateProjectOrder(orderedScopeIds);
+    } catch (err) {
+      setError(readableError(err));
+      sessionGroupSync.refresh().catch(() => {});
+    }
+  }, [api, sessionGroupSync]);
+
+  const handleReorderSessions = useCallback(async (scopeId, orderedSessionIds) => {
+    setSessionGroups((current) => current.map((group) => {
+      if (group.scope?.scope_id !== scopeId) return group;
+      const sessions = group.sessions || [];
+      const byId = new Map(sessions.map((session) => [session.session_id, session]));
+      const next = orderedSessionIds.map((id) => byId.get(id)).filter(Boolean);
+      for (const session of sessions) {
+        if (!orderedSessionIds.includes(session.session_id)) next.push(session);
+      }
+      return { ...group, sessions: next };
+    }));
+    try {
+      await api.updateSessionOrder(scopeId, orderedSessionIds);
+    } catch (err) {
+      setError(readableError(err));
+      sessionGroupSync.refresh().catch(() => {});
+    }
+  }, [api, sessionGroupSync]);
+
   const handleSelectSession = useCallback(
     async (session, scope) => {
       setActiveView("chat");
@@ -457,6 +540,7 @@ export function App() {
       setError("");
       setNotice("");
       setTraceEvents([]);
+      setTraceWindow(EMPTY_TRACE_WINDOW);
       setLiveEvents([]);
       if (!initialSessionId) {
         setContextSnapshots([]);
@@ -476,7 +560,7 @@ export function App() {
       let activeAssistantId = assistantId;
 
       // A stream that has not bound a session yet belongs to the new-chat view
-      // it started in; after lora.chat.started only that session follows it.
+      // it started in; after lara.chat.started only that session follows it.
       const isStreamSessionVisible = () => {
         const currentSessionId = activeSessionIdRef.current;
         return streamSessionId
@@ -566,7 +650,7 @@ export function App() {
             onEvent: ({ data }) => {
               const eventKind = data.kind || "";
               const eventData = data.data || {};
-              const eventSessionId = eventKind === "lora.chat.started" ? String(eventData.session_id || "") : "";
+              const eventSessionId = eventKind === "lara.chat.started" ? String(eventData.session_id || "") : "";
               if (eventSessionId && !streamSessionId) {
                 // Read visibility before binding: an unbound stream is visible
                 // from the new-chat view, and only while the user stayed there.
@@ -593,7 +677,7 @@ export function App() {
                   }).catch(() => {});
                 }
               }
-              const terminalEvent = ["execution.completed", "execution.failed", "execution.deadline_exceeded", "execution.cancelled", "lora.transport.error"].includes(eventKind);
+              const terminalEvent = ["execution.completed", "execution.failed", "execution.deadline_exceeded", "execution.cancelled", "lara.transport.error"].includes(eventKind);
               if (streamSessionId && data.execution_id && !terminalEvent) {
                 activeExecutionsRef.current.set(streamSessionId, { executionId: data.execution_id });
                 setSteeringSessionIds((items) => items[streamSessionId] ? items : { ...items, [streamSessionId]: true });
@@ -623,7 +707,7 @@ export function App() {
               // The runtime announces the ReAct boundary it drained a steering
               // input on: that is where the transcript splits and the input stops
               // being pending.
-              if (eventKind === "lora.runtime.message" && eventData.role === "user" && eventData.kind === "lora.user.steering") {
+              if (eventKind === "lara.runtime.message" && eventData.role === "user" && eventData.kind === "lara.user.steering") {
                 const inputId = String(eventData.data?.input_id || "");
                 const newAssistantId = `assistant-${Date.now()}`;
                 const nextMessages = splitAssistantForSteering(
@@ -638,7 +722,7 @@ export function App() {
                 }
                 setPendingSteerings((items) => resolvePendingSteering(items, streamSessionId, inputId));
               }
-              if (eventKind === "lora.approval.requested") {
+              if (eventKind === "lara.approval.requested") {
                 setApprovals((items) => [
                   ...items.filter((item) => item.approval_id !== eventData.approval_id),
                   { ...eventData, session_id: eventSessionId || streamSessionId },
@@ -648,7 +732,7 @@ export function App() {
                 if (isStreamSessionVisible()) {
                   setActivityCollapseToken((value) => value + 1);
                 }
-              } else if (eventKind === "lora.transport.error" || eventKind === "execution.failed" || eventKind === "execution.deadline_exceeded") {
+              } else if (eventKind === "lara.transport.error" || eventKind === "execution.failed" || eventKind === "execution.deadline_exceeded") {
                 finalStatus = "Error";
                 streamError = eventData.error ? readableError(eventData.error) : "执行未能恢复或已经失败，可保留历史并发送新消息。";
                 if (isStreamSessionVisible()) {
@@ -691,7 +775,7 @@ export function App() {
         setError(readableError(err));
         flushDeltaEvents();
         projectLiveExecutionEvent(updateVisibleMessages, activeAssistantId, {
-          kind: "lora.transport.error",
+          kind: "lara.transport.error",
           data: { error: readableError(err) },
         });
         if (isStreamSessionVisible()) {
@@ -726,7 +810,7 @@ export function App() {
           setActiveSession(sessionFromDetail(detail));
           resumeSessionRef.current?.(detail);
         },
-        onSnapshot: (detail, trace) => {
+        onSnapshot: (detail, trace, activity) => {
           traceLoadTokenRef.current += 1;
           const loadedSession = sessionFromDetail(detail);
           const activeSessionSignature = sessionDetailSignature(loadedSession);
@@ -738,11 +822,26 @@ export function App() {
           if (traceEventsSignatureRef.current !== traceEventsSignature) {
             traceEventsSignatureRef.current = traceEventsSignature;
             setTraceEvents(trace.events || []);
+            setTraceWindow({
+              shown: (trace.events || []).length,
+              total: trace.events_total || 0,
+              truncated: Boolean(trace.events_truncated),
+            });
           }
           const contextSnapshotsSignature = traceResponseSignature(trace, "context_snapshots");
           if (contextSnapshotsSignatureRef.current !== contextSnapshotsSignature) {
             contextSnapshotsSignatureRef.current = contextSnapshotsSignature;
             setContextSnapshots(trace.context_snapshots || []);
+          }
+          const activitySignature = traceResponseSignature(activity, "events");
+          if (activitySignatureRef.current !== activitySignature) {
+            activitySignatureRef.current = activitySignature;
+            setSessionActivity({
+              events: activity.events || [],
+              shown: (activity.events || []).length,
+              total: activity.events_total || 0,
+              truncated: Boolean(activity.events_truncated),
+            });
           }
           sessionLiveEventsRef.current.delete(activeSessionId);
           setLiveEvents((current) => current.length ? [] : current);
@@ -802,13 +901,19 @@ export function App() {
     [api, refreshWorkbench, settings],
   );
 
+  const handleOpenSettings = useCallback(() => setSettingsOpen(true), []);
+  const handleOpenScheduled = useCallback(() => setActiveView("scheduled"), []);
+  const handleToggleHistory = useCallback(
+    () => setLayout((current) => toggleHistory(current, { compact: current.compact })),
+    [],
+  );
   const handleChooseProject = useCallback(async (newTask = false) => {
     if (projectChooserBusyRef.current) return;
     projectChooserBusyRef.current = true;
     try {
       setError("");
       setNotice("");
-      const chooseDirectory = globalThis.window?.loraDesktop?.chooseProjectDirectory;
+      const chooseDirectory = globalThis.window?.laraDesktop?.chooseProjectDirectory;
       if (typeof chooseDirectory !== "function") {
         setError("请在桌面应用中打开项目，以使用系统文件夹选择器。");
         return;
@@ -847,7 +952,7 @@ export function App() {
       await api.deliverApproval(
         approval.approval_id,
         approved,
-        approved ? "Approved in Lora Desktop" : "Rejected in Lora Desktop",
+        approved ? "已在 Lara Desktop 批准" : "已在 Lara Desktop 拒绝",
       );
       setApprovals((items) => items.filter((item) => item.approval_id !== approval.approval_id));
     } catch (approvalError) {
@@ -872,13 +977,13 @@ export function App() {
         onDeleteSession={handleDeleteSession}
         onDeleteProject={handleDeleteProject}
         onSelectSession={handleSelectSession}
+        onReorderProjects={handleReorderProjects}
+        onReorderSessions={handleReorderSessions}
         onChooseProject={handleChooseProject}
-        onOpenSettings={() => setSettingsOpen(true)}
-        onOpenScheduled={() => setActiveView("scheduled")}
+        onOpenSettings={handleOpenSettings}
+        onOpenScheduled={handleOpenScheduled}
         scheduledActive={activeView === "scheduled"}
-        onToggle={() =>
-          setLayout((current) => toggleHistory(current, { compact: current.compact }))
-        }
+        onToggle={handleToggleHistory}
       />
       {activeView === "scheduled" ? <ScheduledPage
         api={api}
@@ -923,11 +1028,14 @@ export function App() {
         collapsed={layout.traceCollapsed}
         contextSnapshots={contextSnapshots}
         events={visibleTraceEvents}
+        activityEvents={visibleActivityEvents}
+        activityMeta={sessionActivity}
+        traceMeta={traceWindow}
         settings={settings}
         onToggle={() =>
           setLayout((current) => toggleTrace(current, { compact: current.compact }))
         }
-      /> : <aside className="trace automation-aside"><CalendarClock size={26} /><strong>后台运行</strong><p>Lora Desktop 保持运行时，任务会在计划时间自动开始。</p></aside>}
+      /> : <aside className="trace automation-aside"><CalendarClock size={26} /><strong>后台运行</strong><p>Lara Desktop 保持运行时，任务会在计划时间自动开始。</p></aside>}
       </div>
       {(error || notice) && (
         <div className={error ? "toast error" : "toast"} role="status">
@@ -990,7 +1098,20 @@ export function appLayoutClassName(layout) {
     .join(" ");
 }
 
-export function SessionSidebar({
+export const MAX_VISIBLE_SESSIONS = 5;
+
+// Insert `fromId` where `toId` sits: dragging upward places the item before
+// the target, dragging downward after it, so a drop always swaps positions.
+export function reorderIds(ids, fromId, toId) {
+  const from = ids.indexOf(fromId);
+  const to = ids.indexOf(toId);
+  if (from === -1 || to === -1 || from === to) return ids;
+  const next = ids.filter((id) => id !== fromId);
+  next.splice(next.indexOf(toId) + (to < from ? 0 : 1), 0, fromId);
+  return next;
+}
+
+export const SessionSidebar = memo(function SessionSidebar({
   collapsed,
   settings,
   projects,
@@ -1001,6 +1122,8 @@ export function SessionSidebar({
   onDeleteSession,
   onDeleteProject,
   onSelectSession,
+  onReorderProjects,
+  onReorderSessions,
   onChooseProject,
   onOpenSettings,
   onOpenScheduled,
@@ -1008,13 +1131,66 @@ export function SessionSidebar({
   onToggle,
 }) {
   const [collapsedGroups, setCollapsedGroups] = useState({});
+  const [expandedGroups, setExpandedGroups] = useState({});
+  const [dragItem, setDragItem] = useState(null);
+  const [dropTarget, setDropTarget] = useState(null);
   const [query, setQuery] = useState("");
   const search = query.trim().toLocaleLowerCase();
-  const filteredGroups = sessionGroups.map((group) => ({ ...group, sessions: (group.sessions || []).filter((session) => !search || `${session.title || ""} ${session.session_id || ""} ${group.scope?.label || ""}`.toLocaleLowerCase().includes(search)) })).filter((group) => !search || group.sessions.length);
+  // Searching rebuilds the filtered tree; without a query reuse the poll
+  // payload identity so memoization below can actually skip work.
+  const filteredGroups = search
+    ? sessionGroups
+        .map((group) => ({ ...group, sessions: (group.sessions || []).filter((session) => `${session.title || ""} ${session.session_id || ""} ${group.scope?.label || ""}`.toLocaleLowerCase().includes(search)) }))
+        .filter((group) => group.sessions.length)
+    : sessionGroups;
   const [acknowledgedStatuses, setAcknowledgedStatuses] = useState(loadAcknowledgedSessionStatuses);
 
   function toggleGroup(scopeId) {
     setCollapsedGroups((current) => ({ ...current, [scopeId]: !current[scopeId] }));
+  }
+
+  function endDrag() {
+    setDragItem(null);
+    setDropTarget(null);
+  }
+
+  function beginDrag(event, item) {
+    if (search) return;
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", JSON.stringify(item));
+    setDragItem(item);
+  }
+
+  function dragOverProject(event, scopeId) {
+    if (!dragItem || dragItem.type !== "project" || dragItem.scopeId === scopeId || scopeId === "conversation") return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDropTarget({ type: "project", scopeId });
+  }
+
+  function dropOnProject(event, scopeId) {
+    if (!dragItem || dragItem.type !== "project" || dragItem.scopeId === scopeId) return;
+    event.preventDefault();
+    const scopeIds = sessionGroups.map((group) => group.scope?.scope_id).filter(Boolean);
+    onReorderProjects(reorderIds(scopeIds, dragItem.scopeId, scopeId));
+    endDrag();
+  }
+
+  function dragOverSession(event, scopeId, sessionId) {
+    if (!dragItem || dragItem.type !== "session" || dragItem.scopeId !== scopeId || dragItem.sessionId === sessionId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDropTarget({ type: "session", scopeId, sessionId });
+  }
+
+  function dropOnSession(event, scope, sessions, sessionId) {
+    if (!dragItem || dragItem.type !== "session" || dragItem.scopeId !== scope.scope_id || dragItem.sessionId === sessionId) return;
+    event.preventDefault();
+    onReorderSessions(
+      scope.scope_id,
+      reorderIds(sessions.map((item) => item.session_id), dragItem.sessionId, sessionId),
+    );
+    endDrag();
   }
 
   function acknowledgeSessionStatus(session) {
@@ -1026,7 +1202,7 @@ export function SessionSidebar({
       <div className="history-shell">
         <div className="history-top">
           <div className="brand">
-            <h1 className="brand-title">{collapsed ? "L" : "Lora"}</h1>
+            <h1 className="brand-title">{collapsed ? "L" : "Lara"}</h1>
           </div>
           <div className="history-header-actions" aria-label="Create">
             <button className="icon-button header-action" title="New chat" aria-label="New chat in current project"
@@ -1062,12 +1238,25 @@ export function SessionSidebar({
               (project) => project.workspace_root
                 && projectPathKey(project.workspace_root) !== projectPathKey(scope.workspace_root),
             );
+            const groupSessions = group.sessions || [];
+            const showAllSessions = Boolean(expandedGroups[scope.scope_id]);
+            const visibleSessions = search || showAllSessions
+              ? groupSessions
+              : groupSessions.slice(0, MAX_VISIBLE_SESSIONS);
             return (
-              <section className="session-group" key={scope.scope_id || scope.label}>
+              <section
+                className={`session-group${dropTarget?.type === "project" && dropTarget.scopeId === scope.scope_id ? " drop-target" : ""}`}
+                key={scope.scope_id || scope.label}
+                onDragOver={(event) => dragOverProject(event, scope.scope_id)}
+                onDrop={(event) => dropOnProject(event, scope.scope_id)}
+              >
                 <button
                   className={`${scope.scope_id === activeScopeId ? "session-group-header active" : "session-group-header"} has-new-chat${scope.workspace_root ? " has-project-actions" : ""}`}
                   title={scope.tooltip || scope.label}
                   type="button"
+                  draggable={Boolean(scope.workspace_root) && !search}
+                  onDragStart={(event) => beginDrag(event, { type: "project", scopeId: scope.scope_id })}
+                  onDragEnd={endDrag}
                   onClick={() => toggleGroup(scope.scope_id)}
                 >
                   {scope.workspace_root && <FolderCode aria-hidden="true" />}
@@ -1092,8 +1281,8 @@ export function SessionSidebar({
                 </div>
                 {!isCollapsed && (
                   <div className="session-list">
-                    {(group.sessions || []).length === 0 && <div className="empty-state compact">No chats yet</div>}
-                    {(group.sessions || []).map((session) => (
+                    {groupSessions.length === 0 && <div className="empty-state compact">No chats yet</div>}
+                    {visibleSessions.map((session) => (
                         <SessionRow
                           active={session.session_id === activeSessionId}
                           key={session.session_id}
@@ -1103,8 +1292,23 @@ export function SessionSidebar({
                         onAcknowledgeStatus={acknowledgeSessionStatus}
                         onDeleteSession={onDeleteSession}
                         onSelectSession={onSelectSession}
+                        dragEnabled={!search}
+                        dropActive={dropTarget?.type === "session" && dropTarget.sessionId === session.session_id}
+                        onDragStart={(event) => beginDrag(event, { type: "session", scopeId: scope.scope_id, sessionId: session.session_id })}
+                        onDragOver={(event) => dragOverSession(event, scope.scope_id, session.session_id)}
+                        onDrop={(event) => dropOnSession(event, scope, groupSessions, session.session_id)}
+                        onDragEnd={endDrag}
                       />
                     ))}
+                    {!search && groupSessions.length > MAX_VISIBLE_SESSIONS && (
+                      <button
+                        className="session-more"
+                        type="button"
+                        onClick={() => setExpandedGroups((current) => ({ ...current, [scope.scope_id]: !current[scope.scope_id] }))}
+                      >
+                        {showAllSessions ? "收起" : `显示全部 ${groupSessions.length} 个会话`}
+                      </button>
+                    )}
                   </div>
                 )}
               </section>
@@ -1126,7 +1330,7 @@ export function SessionSidebar({
       </div>
     </aside>
   );
-}
+});
 
 function SessionRow({
   active,
@@ -1136,6 +1340,12 @@ function SessionRow({
   onAcknowledgeStatus,
   onDeleteSession,
   onSelectSession,
+  dragEnabled = false,
+  dropActive = false,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
 }) {
   const title = cleanSessionTitle(session.title) || session.session_id || "Untitled chat";
   const statusKind = sessionStatusKind(session.last_case_run_status);
@@ -1149,9 +1359,14 @@ function SessionRow({
 
   return (
     <div
-      className={active ? "session-row active" : "session-row"}
+      className={`session-row${active ? " active" : ""}${dropActive ? " drop-target" : ""}`}
       role="button"
       tabIndex={0}
+      draggable={dragEnabled}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
       onClick={selectSession}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return;
@@ -1224,7 +1439,7 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
   const composerRef = useRef(null);
   const followTranscriptRef = useRef(true);
   const [awayFromLatest, setAwayFromLatest] = useState(false);
-  const chatTitle = activeSession?.title || "Select or create a chat session";
+  const chatTitle = activeSession?.title || "选择或创建会话";
 
   // The entrance animation plays only for messages appended to the session
   // view the user is already looking at; see enteringMessageIds.
@@ -1285,7 +1500,7 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
   }
 
   return (
-    <section className={`chat${empty ? " chat-empty" : ""}`} aria-label="Chat">
+    <section className={`chat${empty ? " chat-empty" : ""}`} aria-label="对话">
       <header className="chat-header">
         <div className="chat-title">
           <h2 title={chatTitle}>{chatTitle}</h2>
@@ -1320,13 +1535,13 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
       {approvals.map((approval) => (
         <aside className="approval-card" key={approval.approval_id} aria-live="assertive">
           <div>
-            <span className="approval-kicker">Execution paused</span>
+            <span className="approval-kicker">执行已暂停</span>
             <strong>{approval.tool_name}</strong>
             <code>{safeJsonStringify(approval.arguments || {})}</code>
           </div>
           <div className="approval-actions">
-            <button className="plain-action" type="button" onClick={() => onApproval(approval, false)}>Reject</button>
-            <button className="send" type="button" onClick={() => onApproval(approval, true)}>Approve once</button>
+            <button className="plain-action" type="button" onClick={() => onApproval(approval, false)}>拒绝</button>
+            <button className="send" type="button" onClick={() => onApproval(approval, true)}>批准一次</button>
           </div>
         </aside>
       ))}
@@ -1334,9 +1549,9 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
       <footer className="composer">
         {messages.length === 0 && (
           <div className="welcome">
-            <span className="welcome-eyebrow">LORA WORKSPACE</span>
+            <span className="welcome-eyebrow">LARA WORKSPACE</span>
             <h3>从一个任务开始</h3>
-            <p>描述你的目标，Lora 会结合当前项目分析、执行并整理结果。</p>
+            <p>描述你的目标，Lara 会结合当前项目分析、执行并整理结果。</p>
             <div className="starter-actions">{["介绍这个项目的结构", "检查当前代码中的问题", "梳理待完成的工作"].map((prompt) => <button key={prompt} type="button" onClick={() => { setDraft(prompt); composerRef.current?.focus(); }}>{prompt}<ArrowUp size={16} aria-hidden="true" /></button>)}</div>
           </div>
         )}
@@ -1685,7 +1900,7 @@ export function ThinkingActivity({ content, running }) {
 
   return (
     <details
-      className="thinking-activity"
+      className={`thinking-activity${running ? " thinking-running" : ""}`}
       open={running && !userClosedRef.current ? true : undefined}
       onToggle={(event) => {
         if (!running) {
@@ -1703,7 +1918,7 @@ export function ThinkingActivity({ content, running }) {
       }}
     >
       <summary className="thinking-summary">
-        <span className="thinking-label">{running ? "Thinking" : "Thinking complete"}</span>
+        <span className="thinking-label">{running ? "思考中" : "思考完成"}</span>
         {running && <span className="thinking-indicator running" aria-hidden="true" />}
         {running && <span className="thinking-preview">{preview}</span>}
         <ChevronRight className="thinking-chevron" size={14} aria-hidden="true" />
@@ -1814,21 +2029,25 @@ function ToolCallRow({ call, api }) {
       </button>
       {expanded && hasResult && (
         <pre className="tool-call-result">
-          {loading ? "Loading result..." : loadError || fullResult || call.result}
+          {loading ? "正在加载结果…" : loadError || fullResult || call.result}
         </pre>
       )}
     </div>
   );
 }
 
-export function TracePanel({ api, collapsed, contextSnapshots, events, settings, activeSession, onToggle }) {
+export function TracePanel({ api, collapsed, contextSnapshots, events, activityEvents, activityMeta, traceMeta, settings, activeSession, onToggle }) {
+  const sessionEvents = Array.isArray(activityEvents) ? activityEvents : [];
   const [panelMode, setPanelMode] = useState("Trace");
   const [tab, setTab] = useState("Overview");
   const [eventPrefix, setEventPrefix] = useState("all");
   const [expandedEventKeys, setExpandedEventKeys] = useState(() => new Set());
-  const overviewTools = useMemo(() => traceToolEvents(events), [events]);
+  const overviewTools = useMemo(() => traceToolEvents(sessionEvents), [sessionEvents]);
   const traceListRef = useRef(null);
-  const tabEvents = useMemo(() => traceTabEvents(tab, events), [tab, events]);
+  // Tools and Changes read the session-wide activity feed; the raw event list
+  // stays scoped to the current run.
+  const tabSource = tab === "Tools" || tab === "Changes" ? sessionEvents : events;
+  const tabEvents = useMemo(() => traceTabEvents(tab, tabSource), [tab, tabSource]);
   const prefixGroups = useMemo(
     () => (tab === "Events" ? eventPrefixGroups(tabEvents) : []),
     [tab, tabEvents],
@@ -1847,6 +2066,7 @@ export function TracePanel({ api, collapsed, contextSnapshots, events, settings,
     [renderedEvents, tab],
   );
   const expandedCount = renderedEventKeys.filter((key) => expandedEventKeys.has(key)).length;
+  const sourceMeta = tab === "Tools" || tab === "Changes" ? activityMeta : traceMeta;
   const projectScopeId = activeSession?.scope_id === "conversation"
     ? ""
     : activeSession?.scope_id || scopeIdFromWorkspace(settings.workspace_root);
@@ -1868,7 +2088,7 @@ export function TracePanel({ api, collapsed, contextSnapshots, events, settings,
         <div className="trace-title">
           <h3>{INSPECTOR_LABELS[panelMode]}</h3>
           <p>{panelMode === "Trace"
-            ? "运行概览、工具结果与原始记录"
+            ? "工具与文件活动为会话全量，事件为当前运行"
             : projectScopeId ? settings.workspace_root : "No project selected"}</p>
         </div>
         <button
@@ -1908,10 +2128,10 @@ export function TracePanel({ api, collapsed, contextSnapshots, events, settings,
           <div className="run-overview">
             <span className="section-label">当前任务</span>
             <h4>{activeSession?.title || "还没有任务"}</h4>
-            <p className="overview-status">{!events.length ? "执行任务后，这里会显示工具活动与文件记录。" : "执行记录已就绪，可按需查看工具结果与原始事件。"}</p>
+            <p className="overview-status">{!events.length && !sessionEvents.length ? "执行任务后，这里会显示工具活动与文件记录。" : "执行记录已就绪，可按需查看工具结果与原始事件。"}</p>
             <div className="overview-metrics">
               <button type="button" onClick={() => setTab("Tools")}><strong>{overviewTools.length}</strong><span>工具调用</span></button>
-              <button type="button" onClick={() => setTab("Changes")}><strong>{traceTabEvents("Changes", events).length}</strong><span>文件活动</span></button>
+              <button type="button" onClick={() => setTab("Changes")}><strong>{traceTabEvents("Changes", sessionEvents).length}</strong><span>文件活动</span></button>
               <button type="button" onClick={() => setTab("Events")}><strong>{events.length}</strong><span>原始事件</span></button>
             </div>
             <h5>最近工具活动</h5>
@@ -1978,6 +2198,9 @@ export function TracePanel({ api, collapsed, contextSnapshots, events, settings,
           </div>
           <div className="trace-list" ref={traceListRef}>
             {visibleEvents.length === 0 && <div className="empty-state">No {tab.toLowerCase()} yet</div>}
+            {traceWindowNotice(sourceMeta) && (
+              <div className="empty-state compact">{traceWindowNotice(sourceMeta)}</div>
+            )}
             {hiddenEventCount > 0 && (
               <div className="empty-state compact">Showing latest {renderedEvents.length} of {visibleEvents.length}</div>
             )}
@@ -2299,7 +2522,7 @@ export function historyToMessages(history) {
     const content = displayMessageContent(message);
     if (content) {
       rendered.push({ id: `history-${index}`, role: messageDisplayRole(message), content,
-        ...(message.kind === "lora.user.steering" ? { steeringInputId: message.data?.input_id } : {}),
+        ...(message.kind === "lara.user.steering" ? { steeringInputId: message.data?.input_id } : {}),
       });
     }
     const segment = [];
@@ -2500,12 +2723,12 @@ export function projectLiveAssistantEvent(message, event, now = Date.now()) {
   }
 
   if (kind === "model.tool_call.completed" || kind === "tool.started"
-      || (kind === "lora.runtime.message" && payload.role === "assistant" && toolCallsFromMessage(payload).length)) {
+      || (kind === "lara.runtime.message" && payload.role === "assistant" && toolCallsFromMessage(payload).length)) {
     let sections = Array.isArray(message.sections) ? message.sections : [];
     if (String(message.content || "").trim()) {
       sections = appendTextSection(sections, "Assistant content", message.content);
     }
-    const calls = kind === "lora.runtime.message" ? toolCallsFromMessage(payload) : [{
+    const calls = kind === "lara.runtime.message" ? toolCallsFromMessage(payload) : [{
       id: payload.call_id || payload.tool_call_id,
       name: payload.name || payload.tool_name,
       arguments: payload.arguments ?? payload.args,
@@ -2515,7 +2738,7 @@ export function projectLiveAssistantEvent(message, event, now = Date.now()) {
     return { ...message, content: "", sections: appendToolCallsSection(sections, newCalls) };
   }
 
-  if (kind === "tool.result" || (kind === "lora.runtime.message" && payload.role === "tool")) {
+  if (kind === "tool.result" || (kind === "lara.runtime.message" && payload.role === "tool")) {
     const result = kind === "tool.result" ? toolResultActivity(payload, payload) : toolResultActivity(payload);
     return {
       ...message,
@@ -2554,17 +2777,17 @@ export function projectLiveAssistantEvent(message, event, now = Date.now()) {
   if (kind === "execution.cancelled") {
     return {
       ...message,
-      content: String(payload.reason || "Chat cancelled."),
+      content: String(payload.reason || "对话已取消。"),
       endedAt: message.endedAt ?? now,
       sections: finalizeToolSections(message.sections || []),
       status: "error",
     };
   }
 
-  if (kind === "lora.transport.error" || kind === "execution.failed" || kind === "execution.deadline_exceeded") {
+  if (kind === "lara.transport.error" || kind === "execution.failed" || kind === "execution.deadline_exceeded") {
     return {
       ...message,
-      content: `Error: ${payload.error || payload.message || "chat failed"}`,
+      content: `错误：${payload.error || payload.message || "对话执行失败"}`,
       endedAt: message.endedAt ?? now,
       sections: finalizeToolSections(message.sections || []),
       status: "error",
@@ -2590,11 +2813,11 @@ function activityLiveStatus(message) {
     const isStreamingThinking = liveSection.type === "text"
       && liveSection.title === "Thinking"
       && liveSection === sections[sections.length - 1];
-    return isStreamingThinking ? "" : "Calling the model...";
+    return isStreamingThinking ? "" : "模型调用中";
   }
   // Turn start and the gap after tool results: the model request is in
   // flight until reasoning, tool calls, or streamed text replaces it.
-  return hasVisibleAssistantContent(message) ? "" : "Calling the model...";
+  return hasVisibleAssistantContent(message) ? "" : "模型调用中";
 }
 
 function latestLiveStatusSection(sections) {
@@ -2752,8 +2975,8 @@ function finalizeToolSections(sections) {
 function toolGroupTitle(section) {
   const calls = Array.isArray(section.calls) ? section.calls : [];
   const count = calls.length;
-  const verb = section.status === "running" ? "Executing" : "Executed";
-  return `${verb} ${count} tool call${count === 1 ? "" : "s"}`;
+  const verb = section.status === "running" ? "正在执行" : "已执行";
+  return `${verb} ${count} 个工具调用`;
 }
 
 function traceTabEvents(tab, events) {
@@ -2767,6 +2990,27 @@ function traceTabEvents(tab, events) {
     });
   }
   return events;
+}
+
+export function traceWindowNotice(meta) {
+  if (!meta?.truncated) {
+    return "";
+  }
+  return `已载入最近 ${meta.shown || 0} / ${meta.total || 0} 条，更早的记录未载入`;
+}
+
+export function dedupeTraceEvents(events) {
+  const items = [];
+  const seen = new Set();
+  for (const event of Array.isArray(events) ? events : []) {
+    const id = String(event?.id || "");
+    if (id) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+    }
+    items.push(event);
+  }
+  return items;
 }
 
 export function traceToolEvents(events) {
@@ -2856,7 +3100,7 @@ export function traceToolEvents(events) {
       continue;
     }
 
-    if (type === "runtime.message" || type === "lora.runtime.message") {
+    if (type === "runtime.message" || type === "lara.runtime.message") {
       if (payload.role === "assistant") {
         for (const call of toolCallsFromMessage(payload)) {
           const state = toolCallState(call);
@@ -2890,7 +3134,7 @@ export function traceToolEvents(events) {
 function configRows(settings) {
   return [
     ["workspace", settings.workspace_root],
-    ["lora_root", settings.lora_root],
+    ["lara_root", settings.lara_root],
     ["agent", settings.agent],
     ["profile", settings.profile],
     ["routes", settings.routes],
@@ -2898,7 +3142,7 @@ function configRows(settings) {
     ["max_steps", settings.max_steps],
     ["context_window", settings.context_window],
     ["compression_trigger", compressionTriggerLabel(settings.context_window, settings.context_compression_trigger_ratio)],
-    ["user_lora_root", settings.user_lora_root],
+    ["user_lara_root", settings.user_lara_root],
   ];
 }
 
@@ -3116,7 +3360,7 @@ function cleanContent(content) {
 }
 
 function messageDisplayRole(message) {
-  return message?.kind === "lora.automation.trigger" || message?.data?.origin === "automation" ? "automation" : "user";
+  return message?.kind === "lara.automation.trigger" || message?.data?.origin === "automation" ? "automation" : "user";
 }
 
 function displayMessageContent(message) {
@@ -3152,9 +3396,9 @@ function toolResultActivity(message, parsed = parseJsonObject(message?.content))
   const taskId = parsed.task?.task_id;
   const content = stringifyDetail(detail);
   return {
-    title: `Tool result: ${toolCallId}`,
+    title: `工具结果：${toolCallId}`,
     toolCallId,
-    content: tone === "running" && taskId ? `${content}${content ? "\n" : ""}Task: ${taskId}` : content,
+    content: tone === "running" && taskId ? `${content}${content ? "\n" : ""}任务：${taskId}` : content,
     status: tone,
     backgroundRunning: tone === "running",
     toolName: parsed.tool_name,
@@ -3259,7 +3503,7 @@ function toolActionLabel(name) {
   if (aliases[normalized]) {
     return aliases[normalized];
   }
-  return normalized ? normalized.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()) : "Tool";
+  return normalized ? normalized.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()) : "工具";
 }
 
 function toolCallDisplayLabel(call) {
@@ -3271,12 +3515,12 @@ function toolCallDisplayLabel(call) {
 function toolStatusLabel(status) {
   const kind = statusKind(status);
   if (kind === "error") {
-    return "Error";
+    return "错误";
   }
   if (kind === "success") {
-    return "Done";
+    return "完成";
   }
-  return "Running";
+  return "运行中";
 }
 
 function shortToolTarget(name, args) {
@@ -3530,9 +3774,20 @@ function statusTone(status) {
 function statusLabel(status) {
   const value = String(status || "Ready");
   if (value === "passed") {
-    return "Done";
+    return "完成";
   }
-  return value;
+  const labels = {
+    Ready: "就绪",
+    Connecting: "连接中",
+    Loading: "加载中",
+    Running: "运行中",
+    Reconnecting: "重连中",
+    Done: "完成",
+    Error: "错误",
+    Skipped: "已跳过",
+    Offline: "离线",
+  };
+  return labels[value] || value;
 }
 
 function sessionStatusLabel(status) {
