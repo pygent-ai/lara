@@ -28,7 +28,7 @@ test("completion, replay, and history replacement share the durable run duration
     { role: "assistant", content: "Done", run_timing: timing },
   ]);
   for (const message of [live, restored, appModule.projectLiveAssistantEvent(live, event, 1)]) {
-    assert.equal(activityHeaderText(message, 0), "Processed for 17s");
+    assert.equal(activityHeaderText(message, 0), "已完成 17 秒");
     assert.equal(message.caseRunId, "run-1");
   }
 });
@@ -94,7 +94,7 @@ test("reconnecting sessions allow drafting but cannot steer until connected", ()
 
 test("a steering boundary already rendered from history does not split twice", () => {
   const restored = appModule.historyToMessages([
-    { role: "user", content: "focus on tests", kind: "lora.user.steering", data: { input_id: "input-1" } },
+    { role: "user", content: "focus on tests", kind: "lara.user.steering", data: { input_id: "input-1" } },
     { role: "assistant", content: "working on tests" },
   ]);
   assert.equal(restored[0].steeringInputId, "input-1");
@@ -273,11 +273,64 @@ test("trace panel starts with an overview and retains raw-event navigation", () 
     }),
   );
 
+
   assert.match(html, /当前任务/);
   assert.match(html, /原始事件/);
   assert.match(html, /工具调用/);
   assert.match(html, /aria-label="Trace tabs"/);
   assert.doesNotMatch(html, /aria-label="Expand model.request"/);
+});
+
+test("trace panel overview reads session-wide tool activity", () => {
+  const activityEvents = [
+    {
+      id: "call-1",
+      type: "tool.call",
+      payload: { tool_call_id: "call-1", tool_name: "read", args: { file_path: "src/old.js" } },
+    },
+    {
+      id: "result-1",
+      type: "tool.result",
+      payload: { tool_call_id: "call-1", status: "success", result: "old output" },
+    },
+  ];
+  const html = renderToStaticMarkup(
+    React.createElement(appModule.TracePanel, {
+      activeSession: { session_id: "session-1", last_case_run_id: "run-1" },
+      collapsed: false,
+      contextSnapshots: [],
+      events: [{ id: "run-event", type: "model.response", payload: {} }],
+      activityEvents,
+      settings: {},
+      onToggle() {},
+    }),
+  );
+
+  assert.match(html, /<strong>1<\/strong><span>工具调用<\/span>/);
+  assert.match(html, /trace-event-title">Read</);
+});
+
+test("trace window notice describes a truncated fetch window", () => {
+  assert.equal(
+    appModule.traceWindowNotice({ truncated: true, shown: 2, total: 9 }),
+    "已载入最近 2 / 9 条，更早的记录未载入",
+  );
+  assert.equal(appModule.traceWindowNotice({ truncated: false, shown: 9, total: 9 }), "");
+  assert.equal(appModule.traceWindowNotice(null), "");
+});
+
+test("dedupeTraceEvents keeps the first occurrence per id and id-less events", () => {
+  const events = [
+    { id: "a", type: "tool.call" },
+    { id: "a", type: "tool.call" },
+    { type: "runtime.error" },
+  ];
+
+  assert.deepEqual(
+    appModule.dedupeTraceEvents(events).map((event) => event.type),
+    ["tool.call", "runtime.error"],
+  );
+  assert.deepEqual(appModule.dedupeTraceEvents("nope"), []);
 });
 
 test("trace event prefix filters are derived from the first type segment", () => {
@@ -335,10 +388,10 @@ test("trace tools retain the call name when a result omits it", () => {
 });
 
 test("trace files prioritize the action and path", () => {
-  const event = { type: "file.read", payload: { path: "E:\\Projects\\lora\\src\\app.js", before_hash: null } };
+  const event = { type: "file.read", payload: { path: "E:\\Projects\\lara\\src\\app.js", before_hash: null } };
 
   assert.equal(appModule.eventTitle(event), "Read file");
-  assert.equal(appModule.eventSummary(event), "E:\\Projects\\lora\\src\\app.js");
+  assert.equal(appModule.eventSummary(event), "E:\\Projects\\lara\\src\\app.js");
 });
 
 test("conversation tool messages show each actual result without the duplicated payload", () => {
@@ -432,7 +485,7 @@ test("context inspector renders original and compressed versions as variable row
           case_run_id: "run-1",
           compression_version: 0,
           projection_revision: 3,
-          system_prompt: "You are Lora.",
+          system_prompt: "You are Lara.",
           message_count: 1,
           tool_count: 0,
           messages: [{ role: "user", content: "Inspect the project." }],
@@ -443,7 +496,7 @@ test("context inspector renders original and compressed versions as variable row
           compression_version: 1,
           phase: "response",
           projection_revision: 4,
-          system_prompt: "You are Lora.",
+          system_prompt: "You are Lara.",
           message_count: 2,
           tool_count: 1,
           messages: [
@@ -512,7 +565,7 @@ test("live tool calls appear before results and update the same inspector row", 
   assert.equal(pending.payload.has_result, false);
   assert.equal(pending.payload.tool_name, "bash");
   assert.match(pending.payload.arguments, /long-command/);
-  const result = { type: "lora.runtime.message", payload: { role: "tool", tool_call_id: "live-1", content: "command output" } };
+  const result = { type: "lara.runtime.message", payload: { role: "tool", tool_call_id: "live-1", content: "command output" } };
   const done = { type: "tool.completed", payload: { call_id: "live-1" } };
   const tools = appModule.traceToolEvents([call, started, result, done]);
   assert.equal(tools.length, 1);
@@ -554,7 +607,7 @@ test("background chat results remain running through turn completion and history
   const toolMessage = { role: "tool", tool_call_id: "bg", content: JSON.stringify(payload) };
   const initial = { role: "assistant", content: "", status: "running", sections: [] };
   const live = appModule.projectLiveAssistantEvent(initial, { kind: "tool.result", data: payload });
-  const runtime = appModule.projectLiveAssistantEvent(initial, { kind: "lora.runtime.message", data: toolMessage });
+  const runtime = appModule.projectLiveAssistantEvent(initial, { kind: "lara.runtime.message", data: toolMessage });
   const [, replay] = appModule.historyToMessages([
     { role: "user", content: "Start background work" },
     { role: "assistant", content: "", tool_calls: [{ id: "bg", function: { name: "bash", arguments: "{}" } }] },
@@ -578,7 +631,7 @@ test("background chat results remain running through turn completion and history
       assert.equal(final.sections[0].status, "done");
     }
   }
-  const [trace] = appModule.traceToolEvents([{ type: "lora.runtime.message", payload: toolMessage }]);
+  const [trace] = appModule.traceToolEvents([{ type: "lara.runtime.message", payload: toolMessage }]);
   assert.equal(trace.payload.status, "running");
 });
 
@@ -611,15 +664,15 @@ test("project groups create chats directly and omit session counts", () => {
   const html = renderToStaticMarkup(
     React.createElement(appModule.SessionSidebar, {
       collapsed: false,
-      settings: { workspace_root: "C:/Projects/lora", agent: "default", routes: [] },
-      projects: [{ workspace_root: "C:/Projects/lora" }, { workspace_root: "C:/Projects/other" }],
+      settings: { workspace_root: "C:/Projects/lara", agent: "default", routes: [] },
+      projects: [{ workspace_root: "C:/Projects/lara" }, { workspace_root: "C:/Projects/other" }],
       sessionGroups: [
-        { scope: { scope_id: "project:C:/Projects/lora", label: "lora", workspace_root: "C:/Projects/lora" },
+        { scope: { scope_id: "project:C:/Projects/lara", label: "lara", workspace_root: "C:/Projects/lara" },
           sessions: [{ session_id: "chat-1", title: "First chat" }] },
         { scope: { scope_id: "project:C:/Projects/other", label: "other", workspace_root: "C:/Projects/other" }, sessions: [] },
         { scope: { scope_id: "conversation", label: "Chat", workspace_root: null }, sessions: [] },
       ],
-      activeScopeId: "project:C:/Projects/lora",
+      activeScopeId: "project:C:/Projects/lara",
       activeSessionId: "chat-1",
       onCreateSession() {}, onDeleteSession() {}, onSelectSession() {},
       onChooseProject() {}, onOpenSettings() {}, onToggle() {},
@@ -627,9 +680,9 @@ test("project groups create chats directly and omit session counts", () => {
   );
 
   assert.match(html, /title="Open project"/);
-  assert.match(html, /aria-label="New chat in lora"/);
+  assert.match(html, /aria-label="New chat in lara"/);
   assert.match(html, /aria-label="New chat in Chat"/);
-  assert.match(html, /aria-label="Remove project lora"/);
+  assert.match(html, /aria-label="Remove project lara"/);
   assert.match(html, /aria-label="Remove project other"/);
   assert.doesNotMatch(html, /aria-label="Remove project Chat"/);
   assert.doesNotMatch(html, /group-count/);
@@ -643,11 +696,11 @@ test("switching workspace clears an unchanged agent override", () => {
   };
 
   assert.deepEqual(
-    appModule.settingsForSave(draft, { workspace_root: "E:/Projects/lora", agent: "dev" }),
+    appModule.settingsForSave(draft, { workspace_root: "E:/Projects/lara", agent: "dev" }),
     { workspaceRoot: "E:/Projects/other", agent: "" },
   );
   assert.equal(
-    appModule.settingsForSave({ ...draft, agent: "other" }, { workspace_root: "E:/Projects/lora", agent: "dev" }).agent,
+    appModule.settingsForSave({ ...draft, agent: "other" }, { workspace_root: "E:/Projects/lara", agent: "dev" }).agent,
     "other",
   );
 });
@@ -723,14 +776,14 @@ test("initial workbench selects the first session from the active project only",
       sessions: [{ session_id: "pygent-session" }],
     },
     {
-      scope: { scope_id: "project:E:/Projects/lora" },
-      sessions: [{ session_id: "lora-session" }],
+      scope: { scope_id: "project:E:/Projects/lara" },
+      sessions: [{ session_id: "lara-session" }],
     },
   ];
 
   assert.equal(
-    appModule.firstSessionIdInScope(groups, "project:E:/Projects/lora"),
-    "lora-session",
+    appModule.firstSessionIdInScope(groups, "project:E:/Projects/lara"),
+    "lara-session",
   );
   assert.equal(appModule.firstSessionIdInScope(groups, "project:E:/Projects/missing"), "");
 });
@@ -776,7 +829,7 @@ test("native Pygent events project to the same completed turn as persisted histo
     },
     { kind: "tool.completed", data: { call_id: "call-1" } },
     {
-      kind: "lora.runtime.message",
+      kind: "lara.runtime.message",
       data: {
         role: "tool",
         content: toolResult,
@@ -938,7 +991,7 @@ test("chat tool cards appear on tool start and retain results through completion
   assert.equal(pending.sections[0].calls[0].status, "running");
   assert.equal(pending.sections[0].calls[0].name, "bash");
   const result = appModule.projectLiveAssistantEvent(pending, {
-    kind: "lora.runtime.message", data: { role: "tool", tool_call_id: "slow", content: "finished output" },
+    kind: "lara.runtime.message", data: { role: "tool", tool_call_id: "slow", content: "finished output" },
   });
   const completed = appModule.projectLiveAssistantEvent(result, { kind: "tool.completed", data: { call_id: "slow" } });
   const replayed = appModule.projectLiveAssistantEvent(completed, start);
@@ -949,7 +1002,7 @@ test("chat tool cards appear on tool start and retain results through completion
 
 test("assistant runtime calls create chat cards before tool results without model deltas", () => {
   const projected = appModule.projectLiveAssistantEvent({ content: "", sections: [] }, {
-    kind: "lora.runtime.message", data: { role: "assistant", tool_calls: [
+    kind: "lara.runtime.message", data: { role: "assistant", tool_calls: [
       { id: "one", function: { name: "read", arguments: { path: "a" } } },
       { id: "two", function: { name: "read", arguments: { path: "b" } } },
     ] },
@@ -971,7 +1024,7 @@ test("only an execution failure marks the whole assistant turn as failed", () =>
 
   assert.equal(failed.status, "error");
   assert.equal(failed.endedAt, 2);
-  assert.equal(failed.content, "Error: agent exhausted its recovery steps");
+  assert.equal(failed.content, "错误：agent exhausted its recovery steps");
 });
 
 test("persisted tool errors do not mark a recovered historical turn as failed", () => {
@@ -1005,7 +1058,7 @@ test("completed turn durations survive history refreshes and subsequent turns", 
     { role: "assistant", content: "First answer" },
   ];
   const refreshed = appModule.historyToMessages(firstHistory);
-  assert.equal(activityHeaderText(refreshed[1], 90000), "Processed for 15s");
+  assert.equal(activityHeaderText(refreshed[1], 90000), "已完成 15 秒");
 
   const secondHistory = [
     ...firstHistory,
@@ -1013,8 +1066,8 @@ test("completed turn durations survive history refreshes and subsequent turns", 
     { role: "assistant", content: "Second answer" },
   ];
   const reloaded = appModule.historyToMessages(secondHistory);
-  assert.equal(activityHeaderText(reloaded[1], 90000), "Processed for 15s");
-  assert.equal(activityHeaderText(reloaded[3], 90000), "Processed for 7s");
+  assert.equal(activityHeaderText(reloaded[1], 90000), "已完成 15 秒");
+  assert.equal(activityHeaderText(reloaded[3], 90000), "已完成 7 秒");
 });
 
 test("missing or mismatched historical timing does not become a fabricated zero duration", () => {
@@ -1031,10 +1084,10 @@ test("missing or mismatched historical timing does not become a fabricated zero 
     const [, message] = appModule.historyToMessages(history, timings);
     assert.equal(message.startedAt, undefined);
     assert.equal(message.endedAt, undefined);
-    assert.equal(activityHeaderText(message, 90000), "Processed");
+    assert.equal(activityHeaderText(message, 90000), "已完成");
   }
-  assert.equal(activityHeaderText({ status: "running", startedAt: 1000 }, 6000), "Processing for 5s");
-  assert.equal(activityHeaderText({ status: "error" }, 6000), "Failed");
+  assert.equal(activityHeaderText({ status: "running", startedAt: 1000 }, 6000), "处理中 5 秒");
+  assert.equal(activityHeaderText({ status: "error" }, 6000), "失败");
 });
 
 test("thinking streams with a live preview and completes when the answer or tools begin", () => {
@@ -1043,8 +1096,9 @@ test("thinking streams with a live preview and completes when the answer or tool
     message: { status: "running", sections: [section], content: "" },
   }));
   assert.match(live, /<details[^>]* open/);
+  assert.match(live, /class="thinking-activity thinking-running"/);
   assert.match(live, /thinking-preview[^>]*>First line Second line</);
-  assert.match(live, /<span class="thinking-label">Thinking<\/span>/);
+  assert.match(live, /<span class="thinking-label">思考中<\/span>/);
   const longSection = {
     type: "text", title: "Thinking",
     content: `HEAD_MARKER ${"x ".repeat(200)}TAIL_END_MARKER`,
@@ -1056,18 +1110,19 @@ test("thinking streams with a live preview and completes when the answer or tool
   const answered = renderToStaticMarkup(React.createElement(appModule.AssistantActivity, {
     message: { status: "running", sections: [section], content: "Answer" },
   }));
-  assert.match(answered, /Thinking complete/);
+  assert.match(answered, /思考完成/);
   assert.doesNotMatch(answered, /thinking-preview/);
+  assert.doesNotMatch(answered, /thinking-running/);
   assert.doesNotMatch(answered, /<details[^>]* open/);
   const tooling = renderToStaticMarkup(React.createElement(appModule.AssistantActivity, {
     message: { status: "running", sections: [section, { type: "tools", status: "running", calls: [] }], content: "" },
   }));
-  assert.match(tooling, /Thinking complete/);
+  assert.match(tooling, /思考完成/);
   assert.doesNotMatch(tooling, /thinking-preview/);
   const finished = renderToStaticMarkup(React.createElement(appModule.ThinkingActivity, {
     content: "First line\nSecond line", running: false,
   }));
-  assert.match(finished, /Thinking complete/);
+  assert.match(finished, /思考完成/);
   assert.doesNotMatch(finished, /thinking-preview/);
   assert.doesNotMatch(finished, /<details[^>]* open/);
   assert.match(finished, /First line/);
@@ -1086,13 +1141,13 @@ test("reasoning renders in chronological position among activity and tool output
       ],
     },
   }));
-  assert.equal((html.match(/class="thinking-activity"/g) || []).length, 2);
-  assert.ok(html.indexOf("Processing for") < html.indexOf("First reasoning"));
+  assert.equal((html.match(/class="thinking-activity[^"]*"/g) || []).length, 2);
+  assert.ok(html.indexOf("处理中") < html.indexOf("First reasoning"));
   assert.ok(html.indexOf("First reasoning") < html.indexOf('class="tool-group"'));
   assert.ok(html.indexOf('class="tool-group"') < html.indexOf("Earlier activity"));
   assert.ok(html.indexOf("Earlier activity") < html.indexOf("Latest reasoning"));
-  assert.match(html, /<span class="thinking-label">Thinking<\/span>/);
-  assert.match(html, /Thinking complete/);
+  assert.match(html, /<span class="thinking-label">思考中<\/span>/);
+  assert.match(html, /思考完成/);
   assert.doesNotMatch(html, /Waiting for model output/);
 });
 
@@ -1103,7 +1158,7 @@ test("finished reasoning renders in place while processing continues", () => {
       sections: [{ type: "text", title: "Thinking", content: "Preserved reasoning" }],
     },
   }));
-  assert.match(html, /Thinking complete/);
+  assert.match(html, /思考完成/);
   assert.ok(html.indexOf('class="activity-head"') < html.indexOf('class="thinking-activity"'));
   assert.ok(html.indexOf('class="activity-detail"') < html.indexOf('class="thinking-activity"'));
 });
@@ -1115,8 +1170,8 @@ test("collapsed processing keeps only the processed header at the top", () => {
       sections: [{ type: "text", title: "Thinking", content: "Preserved reasoning" }],
     },
   }));
-  assert.match(html, /Processed for 15s/);
-  assert.doesNotMatch(html, /Thinking complete/);
+  assert.match(html, /已完成 15 秒/);
+  assert.doesNotMatch(html, /思考完成/);
   assert.doesNotMatch(html, /Preserved reasoning/);
   assert.doesNotMatch(html, /class="activity-detail"/);
 });
@@ -1195,7 +1250,7 @@ test("settings separate native model identity from connection fields", () => {
   assert.match(html, /openai-main · openai/);
   assert.match(html, /OpenAI Responses/);
   assert.match(html, /本地名称/);
-  assert.match(html, /仅供 Lora 的模型组引用/);
+  assert.match(html, /仅供 Lara 的模型组引用/);
   assert.doesNotMatch(html, /逗号分隔/);
   assert.match(html, /type="checkbox" checked=""/);
 });
@@ -1224,7 +1279,7 @@ test("new-chat composer keeps the pending model group and pending scope selectab
     activeSession: null,
     messages: [],
     settings: {
-      workspace_root: "E:\\Projects\\lora",
+      workspace_root: "E:\\Projects\\lara",
       model_groups: {
         ds: { models: ["DeepSeek-V4-Flash-0731"] },
         "glm-5.3-flash": { models: ["glm-5.3-flash"] },
@@ -1272,32 +1327,32 @@ test("the transient model-call state shows wherever no other live state does", (
     message: { status: "running", content, startedAt: Date.now(), sections },
   }));
   // Turn start: the request is in flight before the first token.
-  assert.match(render([]), /activity-live-status[^>]*>Calling the model\.\.\.</);
+  assert.match(render([]), /activity-live-status[^>]*>模型调用中</);
   // Gap between finished tool calls and the next model response.
   const gap = render([
     { type: "text", title: "Thinking", content: "First reasoning" },
     { type: "tools", status: "done", calls: [{ id: "a", name: "read", status: "success" }] },
     { type: "text", title: "Assistant content", content: "Checked" },
   ]);
-  assert.match(gap, /activity-live-status[^>]*>Calling the model\.\.\.</);
+  assert.match(gap, /activity-live-status[^>]*>模型调用中</);
   // Actively streaming reasoning is its own state and replaces it.
   const thinking = render([{ type: "text", title: "Thinking", content: "Streaming" }]);
   assert.doesNotMatch(thinking, /activity-live-status/);
   // A running tool call and streamed text each replace it as well.
   const tooling = render([{ type: "tools", status: "running", calls: [{ id: "b", name: "glob", status: "running" }] }]);
-  assert.doesNotMatch(tooling, /Calling the model/);
+  assert.doesNotMatch(tooling, /模型调用中/);
   const streaming = render(
     [{ type: "tools", status: "done", calls: [{ id: "a", name: "read", status: "success" }] }],
     "Partial answer",
   );
-  assert.doesNotMatch(streaming, /Calling the model/);
+  assert.doesNotMatch(streaming, /模型调用中/);
   assert.doesNotMatch(streaming, /Waiting for model output/);
 });
 
 test("automation triggers render as system-origin cards with the raw instruction", () => {
   const [message] = appModule.historyToMessages([{
     role: "user",
-    kind: "lora.automation.trigger",
+    kind: "lara.automation.trigger",
     content: "<automation-trigger><instructions>escaped</instructions></automation-trigger>",
     data: { origin: "automation", raw_content: "检查构建状态" },
   }]);
@@ -1357,4 +1412,32 @@ test("essential connection and model fields remain visible before optional detai
   assert.match(html, /连接未验证|请填写 API Key/);
   assert.match(html.match(/<button[^>]*aria-label="Save and Reload"[^>]*>/)[0], /disabled/);
   assert.match(html, /默认模型组 · /);
+});
+
+test("sidebar reordering swaps the dragged item with its drop target", () => {
+  assert.deepEqual(appModule.reorderIds(["a", "b", "c", "d"], "a", "c"), ["b", "c", "a", "d"]);
+  assert.deepEqual(appModule.reorderIds(["a", "b", "c"], "c", "a"), ["c", "a", "b"]);
+  assert.deepEqual(appModule.reorderIds(["a", "b"], "a", "a"), ["a", "b"]);
+  assert.deepEqual(appModule.reorderIds(["a", "b"], "x", "b"), ["a", "b"]);
+});
+
+test("sidebar caps visible sessions per project and offers the full list on demand", () => {
+  const sessions = Array.from({ length: 7 }, (_, index) => ({ session_id: `session-${index}`, title: `Task ${index}` }));
+  const html = renderToStaticMarkup(React.createElement(appModule.SessionSidebar, {
+    collapsed: false,
+    settings: {},
+    projects: [],
+    sessionGroups: [{ scope: { scope_id: "project:p", label: "Project P", workspace_root: "" }, sessions, collapsed: false }],
+    activeScopeId: "",
+    activeSessionId: "",
+    onCreateSession() {}, onDeleteSession() {}, onDeleteProject() {}, onSelectSession() {},
+    onReorderProjects() {}, onReorderSessions() {}, onChooseProject() {}, onOpenSettings() {},
+    onOpenScheduled() {}, scheduledActive: false, onToggle() {},
+  }));
+  assert.equal((html.match(/class="session-row"/g) || []).length, appModule.MAX_VISIBLE_SESSIONS);
+  assert.match(html, /显示全部 7 个会话/);
+});
+
+test("sidebar is memoized so chat streaming cannot re-render it", () => {
+  assert.equal(appModule.SessionSidebar?.$$typeof, Symbol.for("react.memo"));
 });
