@@ -1,27 +1,77 @@
-import { sessionStatusIdentity, sessionStatusKind } from "./sessionStatusState.js";
+import {
+  hasStoredSessionStatuses,
+  loadStoredSessionStatuses,
+  sessionStatusIdentity,
+  sessionStatusKind,
+  storeSessionStatuses,
+} from "./sessionStatusState.js";
 
+export const BADGE_BASELINE_KEY = "lara.desktop.badge-baseline-session-statuses.v1";
 export const BADGE_ICON_SIZE = 16;
 export const BADGE_MAX_COUNT = 9;
 
 // A session is badge-worthy once a run finished and the user has not opened
 // that result yet; sessions that never ran have nothing "completed" to report.
-export function isUnacknowledgedCompletedSession(session, acknowledgedStatuses) {
+export function isCompletedSession(session) {
   const status = String(session?.last_case_run_status || "");
-  if (!status || sessionStatusKind(status) === "running") {
+  return Boolean(status) && sessionStatusKind(status) !== "running";
+}
+
+export function isUnacknowledgedCompletedSession(session, acknowledgedStatuses) {
+  if (!isCompletedSession(session)) {
     return false;
   }
   const sessionId = String(session?.session_id || "");
   return acknowledgedStatuses?.[sessionId] !== sessionStatusIdentity(session);
 }
 
-export function countUnacknowledgedCompletedSessions(sessionGroups, acknowledgedStatuses) {
-  let count = 0;
+function* iterateSessions(sessionGroups) {
   for (const group of Array.isArray(sessionGroups) ? sessionGroups : []) {
     for (const session of group?.sessions || []) {
-      if (isUnacknowledgedCompletedSession(session, acknowledgedStatuses)) {
-        count += 1;
+      if (session) {
+        yield session;
       }
     }
+  }
+}
+
+// The baseline records every session that was already finished when the badge
+// first ran, so the historical backlog never raises the badge. It is written
+// once and never updated: a run finishing later produces a new
+// sessionStatusIdentity, which is exactly what the badge counts.
+export function loadBadgeBaseline(storage) {
+  return loadStoredSessionStatuses(BADGE_BASELINE_KEY, storage);
+}
+
+export function seedBadgeBaseline(sessionGroups, storage) {
+  if (hasStoredSessionStatuses(BADGE_BASELINE_KEY, storage)) {
+    return loadStoredSessionStatuses(BADGE_BASELINE_KEY, storage);
+  }
+  const baseline = {};
+  for (const session of iterateSessions(sessionGroups)) {
+    if (isCompletedSession(session)) {
+      baseline[String(session.session_id || "")] = sessionStatusIdentity(session);
+    }
+  }
+  storeSessionStatuses(BADGE_BASELINE_KEY, baseline, storage);
+  return baseline;
+}
+
+export function countUnacknowledgedCompletedSessions(sessionGroups, acknowledgedStatuses, baselineStatuses = {}) {
+  let count = 0;
+  for (const session of iterateSessions(sessionGroups)) {
+    if (!isCompletedSession(session)) {
+      continue;
+    }
+    const sessionId = String(session?.session_id || "");
+    const identity = sessionStatusIdentity(session);
+    if (baselineStatuses[sessionId] === identity) {
+      continue;
+    }
+    if (acknowledgedStatuses?.[sessionId] === identity) {
+      continue;
+    }
+    count += 1;
   }
   return count;
 }

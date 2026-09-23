@@ -50,6 +50,9 @@ import {
 } from "./sessionStatusState.js";
 import {
   countUnacknowledgedCompletedSessions,
+  isUnacknowledgedCompletedSession,
+  loadBadgeBaseline,
+  seedBadgeBaseline,
   updateTaskbarBadge,
 } from "./taskbarBadge.js";
 
@@ -1149,13 +1152,47 @@ export const SessionSidebar = memo(function SessionSidebar({
         .filter((group) => group.sessions.length)
     : sessionGroups;
   const [acknowledgedStatuses, setAcknowledgedStatuses] = useState(loadAcknowledgedSessionStatuses);
+  const [badgeBaseline, setBadgeBaseline] = useState(loadBadgeBaseline);
+  const [badgeReady, setBadgeReady] = useState(false);
 
-  // Mirror the sidebar status dots on the taskbar icon: finished sessions the
-  // user has not opened yet show as a count, so completions stay visible
-  // while the window is in the background or minimized.
+  function acknowledgeSessionStatus(session) {
+    setAcknowledgedStatuses((current) => acknowledgeStoredSessionStatus(current, session));
+  }
+
+  // The taskbar badge mirrors the sidebar dots but only for completions from
+  // now on: the first poll snapshot seeds every already-finished session into
+  // the baseline, so the historical backlog never lights up the badge.
+  useEffect(() => {
+    if (badgeReady || sessionGroups.length === 0) {
+      return;
+    }
+    setBadgeBaseline(seedBadgeBaseline(sessionGroups));
+    setBadgeReady(true);
+  }, [badgeReady, sessionGroups]);
+
+  // The session the user is looking at is its own acknowledgement: watching a
+  // run finish in the open session does not need a taskbar nag.
+  useEffect(() => {
+    if (!activeSessionId) {
+      return;
+    }
+    for (const group of sessionGroups) {
+      const session = (group?.sessions || []).find((item) => item?.session_id === activeSessionId);
+      if (!session) {
+        continue;
+      }
+      if (isUnacknowledgedCompletedSession(session, acknowledgedStatuses)) {
+        acknowledgeSessionStatus(session);
+      }
+      break;
+    }
+  }, [activeSessionId, sessionGroups, acknowledgedStatuses]);
+
   const unacknowledgedCompletedCount = useMemo(
-    () => countUnacknowledgedCompletedSessions(sessionGroups, acknowledgedStatuses),
-    [sessionGroups, acknowledgedStatuses],
+    () => (badgeReady
+      ? countUnacknowledgedCompletedSessions(sessionGroups, acknowledgedStatuses, badgeBaseline)
+      : 0),
+    [badgeReady, sessionGroups, acknowledgedStatuses, badgeBaseline],
   );
   useEffect(() => {
     updateTaskbarBadge(unacknowledgedCompletedCount);
