@@ -11,12 +11,14 @@ import {
   ChevronRight,
   Check,
   CalendarClock,
+  Paperclip,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
   Plus,
   Search,
+  Square,
   Settings as SettingsIcon,
   Trash2,
   X,
@@ -536,7 +538,7 @@ export function App() {
   );
 
   const handleSendMessage = useCallback(
-    async (message, recovery = null) => {
+    async (message, recovery = null, attachments = []) => {
       const initialSessionId = recovery?.session.session_id || activeSessionIdRef.current;
       if ((!recovery && !message.trim()) || (initialSessionId && runningSessionIdsRef.current[initialSessionId])) {
         return;
@@ -619,7 +621,12 @@ export function App() {
 
       const nextMessages = recovery ? messagesForRecovery(recovery, assistantId) : [
         ...messagesRef.current,
-        { id: `user-${Date.now()}`, role: "user", content: message },
+        {
+          id: `user-${Date.now()}`,
+          role: "user",
+          content: message,
+          attachments: attachments.length ? attachments : undefined,
+        },
         {
           id: assistantId,
           role: "assistant",
@@ -647,6 +654,7 @@ export function App() {
             caseId: "chat",
             modelGroupName: pendingNewModelGroup || settings.default_model_group || undefined,
             scopeId: streamScopeId,
+            attachments: attachments.length ? attachments : undefined,
           },
           {
             onConnectionState: (state) => {
@@ -877,8 +885,17 @@ export function App() {
     // and places the input into the transcript.
     setPendingSteerings((items) => addPendingSteering(items, sessionId, { inputId, text: message }));
     if (activeSessionIdRef.current === sessionId) {
-      setNotice("指令已送达，将在下一处理边界生效。");
+      setNotice("指令已送达，将打断当前步骤并立即生效。");
     }
+  }, [api]);
+
+  const handleCancelTurn = useCallback(async () => {
+    const sessionId = activeSessionIdRef.current;
+    const execution = activeExecutionsRef.current.get(sessionId);
+    if (!execution || !runningSessionIdsRef.current[sessionId]) {
+      throw new Error("执行尚未连接或已经结束，无需取消。");
+    }
+    await api.cancelChatTurn(execution.executionId, { sessionId });
   }, [api]);
 
   const handleSaveSettings = useCallback(
@@ -1013,6 +1030,7 @@ export function App() {
         api={api}
         onSendMessage={handleSendMessage}
         onSteering={handleSteering}
+        onCancelTurn={handleCancelTurn}
         onApproval={handleApproval}
         projects={projects}
         onSelectProject={handleCreateSession}
@@ -1473,11 +1491,13 @@ export function computeEnteringMessageIds(previous, sessionId, messages) {
   return new Set(messages.slice(previous.ids.length).map((message) => message.id));
 }
 
-export function ChatPane({ activeSession, messages, activityCollapseToken, settings, status, running, steeringReady = false, approvals, pendingSteerings = [], api, onSendMessage, onSteering, onApproval, projects = [], onSelectProject, onChooseProject, onChangePermissions, pendingNewModelGroup = "", onChangeNewModelGroup = () => {}, pendingNewSessionScope = "", onChangeModel = () => {} }) {
+export function ChatPane({ activeSession, messages, activityCollapseToken, settings, status, running, steeringReady = false, approvals, pendingSteerings = [], api, onSendMessage, onSteering, onCancelTurn, onApproval, projects = [], onSelectProject, onChooseProject, onChangePermissions, pendingNewModelGroup = "", onChangeNewModelGroup = () => {}, pendingNewSessionScope = "", onChangeModel = () => {} }) {
   const [draft, setDraft] = useState("");
+  const [pendingAttachments, setPendingAttachments] = useState([]);
   const [configuring, setConfiguring] = useState(false);
   const [configError, setConfigError] = useState("");
   const [sending, setSending] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const sendingRef = useRef(false);
   const pendingSteeringRef = useRef(null);
   const empty = messages.length === 0;
@@ -1490,6 +1510,7 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
   }
   const transcriptRef = useRef(null);
   const composerRef = useRef(null);
+  const fileInputRef = useRef(null);
   const followTranscriptRef = useRef(true);
   const [awayFromLatest, setAwayFromLatest] = useState(false);
   const chatTitle = activeSession?.title || "选择或创建会话";
@@ -1548,8 +1569,28 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
       return;
     }
     setDraft("");
+    setPendingAttachments([]);
     followTranscriptRef.current = true;
-    onSendMessage(text);
+    onSendMessage(text, null, pendingAttachments);
+  }
+
+  async function pickFiles(event) {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+    if (!files.length) return;
+    const paths = files.map((file) => {
+      // Electron 32+ removed File.path; the preload bridges webUtils for it.
+      const path = window.laraDesktop?.pathForFile?.(file) || file.path || file.name;
+      return path;
+    });
+    setPendingAttachments((items) => {
+      const next = [...items];
+      for (const path of paths) {
+        if (!next.includes(path) && next.length < 10) next.push(path);
+      }
+      return next;
+    });
+    composerRef.current?.focus();
   }
 
   return (
@@ -1578,7 +1619,7 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
         {pendingSteerings.map((item) => (
           <article className="message user message-enter pending-steering" key={`pending-${item.inputId}`}>
             <div className="bubble">
-              <span className="pending-steering-label">{item.stale ? "未生效 · 本轮已结束" : "待生效 · 下一处理边界"}</span>
+              <span className="pending-steering-label">{item.stale ? "未生效 · 本轮已结束" : "待生效 · 即将打断当前步骤"}</span>
               {item.text}
             </div>
           </article>
@@ -1612,6 +1653,19 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
         {awayFromLatest && <button className="jump-latest" type="button" onClick={() => { followTranscriptRef.current = true; scrollTranscriptToLatest(transcriptRef.current); setAwayFromLatest(false); }}><ArrowDown size={14} />回到最新</button>}
         <div className="composer-surface">
         <div className="composer-box">
+          {pendingAttachments.length > 0 && (
+            <div className="attachment-chips">
+              {pendingAttachments.map((path) => (
+                <span className="attachment-chip" key={path} title={path}>
+                  <Paperclip size={12} aria-hidden="true" />
+                  {path.split(/[\\/]/).pop()}
+                  <button type="button" aria-label={`移除附件 ${path}`} onClick={() => setPendingAttachments((items) => items.filter((item) => item !== path))}>
+                    <X size={12} aria-hidden="true" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           <textarea
             ref={composerRef}
             aria-label="任务内容"
@@ -1647,7 +1701,18 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
           {activeSession && <ComposerMenu label="首选模型" title={`固定模型组：${activeSession.model_group_name || "未配置"}`} value={activeSession.selected_model_key || ""} disabled={running || configuring} onChange={(value) => void configure(() => onChangeModel(value))}
             options={(activeSession.selectable_models || []).map((model) => ({ value: model.model_key, label: model.model_key, description: `${model.provider} / ${model.model_id}` }))} />}
           <div className="composer-send-actions">
-            <span className="composer-hint">{running ? (steeringReady ? "Enter 追加指令 · 下一处理边界生效" : "正在连接执行，连接后可追加指令") : "Enter 发送 · Shift + Enter 换行"}</span>
+            <input ref={fileInputRef} type="file" multiple hidden aria-hidden="true" tabIndex={-1} onChange={(event) => void pickFiles(event)} />
+            {!running && <button className="attach" aria-label="添加附件" title="添加工作区文件作为附件（图片/视频原生识别，其他文件转 XML）" disabled={sending || configuring || pendingAttachments.length >= 10} type="button" onClick={() => fileInputRef.current?.click()}>
+              <Paperclip aria-hidden="true" />
+            </button>}
+            <span className="composer-hint">{running ? (steeringReady ? "Enter 追加指令 · 立即打断当前步骤" : "正在连接执行，连接后可追加指令") : "Enter 发送 · Shift + Enter 换行"}</span>
+            {running && onCancelTurn && <button className="stop" aria-label="取消当前任务" title="取消当前任务" disabled={cancelling} type="button" onClick={() => {
+              if (cancelling) return;
+              setCancelling(true);
+              Promise.resolve(onCancelTurn()).catch((err) => setConfigError(readableError(err))).finally(() => setCancelling(false));
+            }}>
+              <Square aria-hidden="true" />
+            </button>}
             <button className="send" aria-label={running ? (steeringReady ? "追加指令" : "正在连接") : "发送"} title={running ? (steeringReady ? "追加指令" : "正在连接") : "发送"} disabled={(running && !steeringReady) || sending || configuring || !draft.trim()} type="button" onClick={submit}>
               <ArrowUp aria-hidden="true" />
             </button>
@@ -1730,7 +1795,16 @@ const MessageRow = memo(function MessageRow({ message, entering = false, activit
             {message.content && <MarkdownContent content={message.content} />}
           </>
         ) : (
-          message.content
+          <>
+            {message.content}
+            {Array.isArray(message.attachments) && message.attachments.length > 0 && (
+              <span className="message-attachments">
+                {message.attachments.map((path) => (
+                  <code key={path} title={path}>{path.split(/[\\/]/).pop()}</code>
+                ))}
+              </span>
+            )}
+          </>
         )}
       </div>
     </article>
@@ -2585,8 +2659,9 @@ function renderTurnSegment(segment, idPrefix, timing = segment.find((message) =>
       return;
     }
     if (role === "tool") {
-      const activity = toolResultActivity(message);
-      sections = applyToolResultToSections(sections, activity);
+      for (const activity of toolMessageResultActivities(message)) {
+        sections = applyToolResultToSections(sections, activity);
+      }
     }
   });
   if (sections.length === 0 && !finalContent) {
@@ -2747,10 +2822,16 @@ export function projectLiveAssistantEvent(message, event, now = Date.now()) {
   }
 
   if (kind === "tool.result" || (kind === "lara.runtime.message" && payload.role === "tool")) {
-    const result = kind === "tool.result" ? toolResultActivity(payload, payload) : toolResultActivity(payload);
+    const activities = kind === "tool.result"
+      ? [toolResultActivity(payload, payload)]
+      : toolMessageResultActivities(payload);
+    let sections = message.sections || [];
+    for (const activity of activities) {
+      sections = applyToolResultToSections(sections, activity);
+    }
     return {
       ...message,
-      sections: applyToolResultToSections(message.sections || [], result),
+      sections,
     };
   }
 
@@ -2911,23 +2992,15 @@ function appendToolCallsSection(sections, calls) {
     return Array.isArray(sections) ? sections : [];
   }
   const nextSections = Array.isArray(sections) ? [...sections] : [];
-  let toolSectionIndex = nextSections.length - 1;
-  while (
-    toolSectionIndex >= 0 &&
-    nextSections[toolSectionIndex]?.type === "text" &&
-    nextSections[toolSectionIndex]?.title === "Thinking"
-  ) {
-    toolSectionIndex -= 1;
-  }
-  const previousToolSection = nextSections[toolSectionIndex];
-  if (previousToolSection?.type === "tools") {
-    const mergedSection = {
-      ...previousToolSection,
+  const lastSection = nextSections[nextSections.length - 1];
+  if (lastSection?.type === "tools") {
+    // Only batches rendered back to back share one group; thinking or text
+    // between batches keeps each group at its chronological position.
+    nextSections[nextSections.length - 1] = {
+      ...lastSection,
       status: "running",
-      calls: mergeToolCalls(previousToolSection.calls || [], safeCalls),
+      calls: mergeToolCalls(lastSection.calls || [], safeCalls),
     };
-    nextSections.splice(toolSectionIndex, 1);
-    nextSections.push(mergedSection);
     return nextSections;
   }
   nextSections.push({
@@ -3416,6 +3489,38 @@ function toolResultActivity(message, parsed = parseJsonObject(message?.content))
   };
 }
 
+// Persisted and runtime tool messages carry a `results` array; map each entry
+// onto the activity shape a live tool.result event produces so reloaded turns
+// match the streamed view call for call.
+function toolMessageResultActivities(message) {
+  const results = conversationToolMessageResults(message);
+  if (!results.length) {
+    return [toolResultActivity(message)];
+  }
+  return results.map((result) => {
+    const output = result.output;
+    const parsed = {
+      status: result.status,
+      tool_name: result.name,
+      ...(result.error ? { error: result.error } : {}),
+      ...(result.task ? { task: result.task } : {}),
+    };
+    let content = "";
+    if (typeof output === "string") {
+      content = output;
+    } else if (output && typeof output === "object") {
+      if (typeof output.preview === "string" && output.preview) {
+        parsed.preview = output.preview;
+      }
+      content = output;
+    }
+    return toolResultActivity(
+      { content, tool_call_id: result.call_id, model_tool_call_id: result.call_id },
+      parsed,
+    );
+  });
+}
+
 function toolCallState(toolCall) {
   const id = toolCallId(toolCall);
   const argumentsText = toolCallArguments(toolCall);
@@ -3558,7 +3663,7 @@ function shortPathLabel(value) {
 }
 
 function toolCallId(toolCall) {
-  return String(toolCall?.id || toolCall?.tool_call_id || "");
+  return String(toolCall?.id || toolCall?.tool_call_id || toolCall?.call_id || "");
 }
 
 function toolCallName(toolCall) {

@@ -177,6 +177,11 @@ export function createApiClient(options = {}) {
         ...options, method: "POST",
         body: { session_id: sessionId, input_id: inputId, message },
       }),
+    cancelChatTurn: (executionId, { sessionId }, options = {}) =>
+      jsonRequest(`/chat/executions/${encodeURIComponent(executionId)}/cancel`, {
+        ...options, method: "POST",
+        body: { session_id: sessionId },
+      }),
     updateSessionModel: (sessionId, selectedModelKey, { scopeId, ...options } = {}) =>
       jsonRequest(`/sessions/${encodeURIComponent(sessionId)}/model${scopeQuery(scopeId)}`, {
         ...options,
@@ -307,6 +312,9 @@ async function streamChatAttempt({ baseUrl, fetchImpl, request, onEvent, signal 
       turn_id: request.turnId || null,
       execution_id: request.executionId || null,
       after_sequence: Number.isFinite(request.afterSequence) ? request.afterSequence : null,
+      ...(Array.isArray(request.attachments) && request.attachments.length
+        ? { attachments: request.attachments }
+        : {}),
     }),
     signal,
   });

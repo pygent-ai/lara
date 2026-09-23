@@ -539,3 +539,22 @@ test("session group polls go conditional and 304 keeps the current payload", asy
   assert.equal(second, null);
   assert.equal(calls[1].headers["If-None-Match"], '"etag-1"');
 });
+
+test("streamChat forwards workspace attachment paths in the request body", async () => {
+  const calls = [];
+  const client = createApiClient({ fetchImpl: async (url, init) => {
+    calls.push(JSON.parse(init.body));
+    return new Response(
+      'event: execution.event\ndata: {"execution_id":"exec1","sequence":1,"kind":"lara.chat.started","data":{}}\n\n' +
+      'event: execution.event\ndata: {"execution_id":"exec1","sequence":2,"kind":"execution.completed","data":{}}\n\n',
+      { status: 200, headers: { "Content-Type": "text/event-stream" } },
+    );
+  } });
+  await client.streamChat(
+    { message: "check this", attachments: ["shots/a.png", "logs/b.log"] },
+    { onEvent: () => {} },
+  );
+  assert.deepEqual(calls[0].attachments, ["shots/a.png", "logs/b.log"]);
+  await client.streamChat({ message: "plain" }, { onEvent: () => {} });
+  assert.equal("attachments" in calls[1], false);
+});

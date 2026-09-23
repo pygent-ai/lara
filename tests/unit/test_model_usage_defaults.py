@@ -90,6 +90,7 @@ async def test_start_turn_admits_persisted_session_preference(tmp_path):
     handle = SimpleNamespace(execution_id="execution-1")
     service = LaraRuntimeService.__new__(LaraRuntimeService)
     service.config = config
+    service._turn_contexts = {}
     service.initialize = AsyncMock()
     service.new_agent = Mock(return_value=agent)
     service._prepare_turn = AsyncMock(

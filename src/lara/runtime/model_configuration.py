@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncIterator, Iterator, Mapping
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
 import httpx
+from pygent import MediaSource
 from pygent.core import FrozenJsonObject
 from pygent.llm import (
     AnthropicMessagesClient,
@@ -33,6 +34,7 @@ from pygent.llm import (
 
 from lara.credentials import list_user_credential_names, lookup_credential
 
+from .attachments import MEDIA_MAX_BYTES
 from .agent.model_invoker import LaraModelInvoker
 
 
@@ -128,8 +130,33 @@ def preferred_models(
     )
 
 
+def workspace_media_resolver(
+    workspace_root: str | Path,
+) -> Callable[[MediaSource], bytes]:
+    """Resolve resource media sources to workspace-local file bytes."""
+
+    root = Path(workspace_root).resolve()
+
+    def resolve(source: MediaSource) -> bytes:
+        uri = source.uri
+        if not uri:
+            raise ValueError("resource media source requires a uri")
+        path = Path(uri)
+        if not path.is_absolute():
+            path = root / path
+        resolved = path.resolve()
+        if resolved != root and root not in resolved.parents:
+            raise ValueError(f"media resource escapes the workspace: {uri}")
+        return resolved.read_bytes()
+
+    return resolve
+
+
 def build_model_invoker(
-    config: ModelConfig, *, credential_environ: Mapping[str, str]
+    config: ModelConfig,
+    *,
+    credential_environ: Mapping[str, str],
+    media_resolver: Callable[[MediaSource], bytes] | None = None,
 ) -> LaraModelInvoker:
     protocols = {entry.spec.protocol for entry in config.models.values()}
     unsupported = protocols - set(CLIENT_FACTORIES)
@@ -140,9 +167,12 @@ def build_model_invoker(
             media_transport=MediaTransportCapabilities(
                 enabled=True,
                 modalities=("image", "video"),
-                source_kinds=("inline",),
-                max_media_bytes=20 * 1024 * 1024,
+                source_kinds=(
+                    ("inline", "resource") if media_resolver else ("inline",)
+                ),
+                max_media_bytes=MEDIA_MAX_BYTES,
             ),
+            media_resolver=media_resolver,
         ),
     }
     for factory in (
@@ -161,6 +191,7 @@ def build_model_invoker(
     return LaraModelInvoker(
         adapters={protocol: adapters[protocol] for protocol in protocols},
         clients=clients,
+        media_resolver=media_resolver,
     )
 
 

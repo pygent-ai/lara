@@ -19,6 +19,7 @@ from lara.schema import (
     RuntimeApprovalConfig,
     RuntimeCapacityConfig,
     RuntimeDurabilityConfig,
+    RuntimeSteeringConfig,
     default_cli_bash_presets,
 )
 
@@ -128,6 +129,9 @@ def load_run_config(
         ),
         runtime_durability=RuntimeDurabilityConfig(
             **(_dig(config_data, "runtime.durability") or {})
+        ),
+        runtime_steering=RuntimeSteeringConfig(
+            **(_dig(config_data, "runtime.steering") or {})
         ),
         runtime_capacity=RuntimeCapacityConfig(
             **(_dig(config_data, "runtime.capacity") or {})
@@ -275,13 +279,16 @@ def _validate_config_shape(data: dict[str, Any]) -> None:
                         f"cli.bash.presets[{index}]",
                     )
     _validate_mapping(
-        data.get("runtime"), {"durability", "capacity", "approvals"}, "runtime"
+        data.get("runtime"),
+        {"durability", "steering", "capacity", "approvals"},
+        "runtime",
     )
     runtime = data.get("runtime")
     if isinstance(runtime, dict):
         _validate_mapping(
             runtime.get("durability"), {"mode", "history_path"}, "runtime.durability"
         )
+        _validate_mapping(runtime.get("steering"), {"mode"}, "runtime.steering")
         _validate_mapping(
             runtime.get("capacity"), {"scope", "coordinator_path"}, "runtime.capacity"
         )
