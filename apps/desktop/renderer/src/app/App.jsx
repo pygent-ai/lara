@@ -36,6 +36,7 @@ import { loadWorkbenchPreferences, saveWorkbenchPreferences } from "./workbenchP
 import { DEFAULT_PANEL_WIDTHS, PANEL_LIMITS, normalizePanelWidths, fitPanelWidths } from "./panelWidths.js";
 import { projectPathKey } from "../features/projects/projectPaths.js";
 import { activityHeaderText, runTimingFields } from "./runTiming.js";
+import { dataTransferHasFiles, filesFromDataTransfer } from "./pasteFiles.js";
 import {
   adaptLayoutToCompactViewport,
   COMPACT_LAYOUT_QUERY,
@@ -1498,6 +1499,8 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
   const [configError, setConfigError] = useState("");
   const [sending, setSending] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [uploadingCount, setUploadingCount] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
   const sendingRef = useRef(false);
   const pendingSteeringRef = useRef(null);
   const empty = messages.length === 0;
@@ -1593,6 +1596,57 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
     composerRef.current?.focus();
   }
 
+  // Clipboard and drag-drop files have no workspace path, so their bytes go
+  // through the upload API and land inside the workspace's .lara/uploads.
+  async function uploadFiles(files) {
+    if (sendingRef.current || configuring) return;
+    const room = 10 - pendingAttachments.length;
+    if (room <= 0) {
+      setConfigError("附件数量已达上限（10 个）");
+      return;
+    }
+    const accepted = files.slice(0, room);
+    setConfigError("");
+    setUploadingCount((count) => count + accepted.length);
+    const uploaded = [];
+    try {
+      for (const file of accepted) {
+        uploaded.push(await api.uploadAttachment({ file, scopeId: selectedScope }));
+      }
+    } catch (err) {
+      setConfigError(readableError(err));
+    } finally {
+      setUploadingCount((count) => Math.max(0, count - accepted.length));
+    }
+    if (uploaded.length) {
+      setPendingAttachments((items) => {
+        const next = [...items];
+        for (const item of uploaded) {
+          if (!next.includes(item.path) && next.length < 10) next.push(item.path);
+        }
+        return next;
+      });
+      composerRef.current?.focus();
+    }
+  }
+
+  function handleComposerPaste(event) {
+    const files = filesFromDataTransfer(event.clipboardData);
+    if (files.length) {
+      event.preventDefault();
+      void uploadFiles(files);
+    }
+  }
+
+  function handleComposerDrop(event) {
+    setDragOver(false);
+    const files = filesFromDataTransfer(event.dataTransfer);
+    if (files.length) {
+      event.preventDefault();
+      void uploadFiles(files);
+    }
+  }
+
   return (
     <section className={`chat${empty ? " chat-empty" : ""}`} aria-label="对话">
       <header className="chat-header">
@@ -1652,7 +1706,11 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
 
         {awayFromLatest && <button className="jump-latest" type="button" onClick={() => { followTranscriptRef.current = true; scrollTranscriptToLatest(transcriptRef.current); setAwayFromLatest(false); }}><ArrowDown size={14} />回到最新</button>}
         <div className="composer-surface">
-        <div className="composer-box">
+        <div className={`composer-box${dragOver ? " drag-over" : ""}`}
+          onDragOver={(event) => { if (dataTransferHasFiles(event.dataTransfer)) { event.preventDefault(); setDragOver(true); } }}
+          onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setDragOver(false); }}
+          onDrop={handleComposerDrop}
+        >
           {pendingAttachments.length > 0 && (
             <div className="attachment-chips">
               {pendingAttachments.map((path) => (
@@ -1673,6 +1731,7 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
             placeholder={running ? (steeringReady ? "追加指令，调整当前任务方向…" : "正在连接执行，可以先输入指令…") : "描述任务，或继续追问…"}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
+            onPaste={handleComposerPaste}
             onKeyDown={(event) => {
               if (shouldSubmitComposer(event)) {
                 event.preventDefault();
@@ -1705,7 +1764,7 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
             {!running && <button className="attach" aria-label="添加附件" title="添加工作区文件作为附件（图片/视频原生识别，其他文件转 XML）" disabled={sending || configuring || pendingAttachments.length >= 10} type="button" onClick={() => fileInputRef.current?.click()}>
               <Paperclip aria-hidden="true" />
             </button>}
-            <span className="composer-hint">{running ? (steeringReady ? "Enter 追加指令 · 立即打断当前步骤" : "正在连接执行，连接后可追加指令") : "Enter 发送 · Shift + Enter 换行"}</span>
+            <span className="composer-hint">{uploadingCount > 0 ? `正在上传附件…（${uploadingCount}）` : running ? (steeringReady ? "Enter 追加指令 · 立即打断当前步骤" : "正在连接执行，连接后可追加指令") : "Enter 发送 · Shift + Enter 换行 · 可粘贴或拖入文件"}</span>
             {running && onCancelTurn && <button className="stop" aria-label="取消当前任务" title="取消当前任务" disabled={cancelling} type="button" onClick={() => {
               if (cancelling) return;
               setCancelling(true);
@@ -1713,7 +1772,7 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
             }}>
               <Square aria-hidden="true" />
             </button>}
-            <button className="send" aria-label={running ? (steeringReady ? "追加指令" : "正在连接") : "发送"} title={running ? (steeringReady ? "追加指令" : "正在连接") : "发送"} disabled={(running && !steeringReady) || sending || configuring || !draft.trim()} type="button" onClick={submit}>
+            <button className="send" aria-label={running ? (steeringReady ? "追加指令" : "正在连接") : "发送"} title={running ? (steeringReady ? "追加指令" : "正在连接") : "发送"} disabled={(running && !steeringReady) || sending || configuring || uploadingCount > 0 || !draft.trim()} type="button" onClick={submit}>
               <ArrowUp aria-hidden="true" />
             </button>
           </div>

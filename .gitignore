@@ -35,3 +35,6 @@ apps/desktop/node_modules/
 apps/desktop/.vite/
 apps/desktop/*.log
 apps/desktop/release/
+# local debug residue
+/.scratch-*.py
+/repro-journal.sqlite3
