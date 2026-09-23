@@ -48,6 +48,10 @@ import {
   loadAcknowledgedSessionStatuses,
   sessionStatusIdentity,
 } from "./sessionStatusState.js";
+import {
+  countUnacknowledgedCompletedSessions,
+  updateTaskbarBadge,
+} from "./taskbarBadge.js";
 
 function deferredPanel(load, exportName) {
   const Component = lazy(() => load().then((module) => ({ default: module[exportName] })));
@@ -1145,6 +1149,17 @@ export const SessionSidebar = memo(function SessionSidebar({
         .filter((group) => group.sessions.length)
     : sessionGroups;
   const [acknowledgedStatuses, setAcknowledgedStatuses] = useState(loadAcknowledgedSessionStatuses);
+
+  // Mirror the sidebar status dots on the taskbar icon: finished sessions the
+  // user has not opened yet show as a count, so completions stay visible
+  // while the window is in the background or minimized.
+  const unacknowledgedCompletedCount = useMemo(
+    () => countUnacknowledgedCompletedSessions(sessionGroups, acknowledgedStatuses),
+    [sessionGroups, acknowledgedStatuses],
+  );
+  useEffect(() => {
+    updateTaskbarBadge(unacknowledgedCompletedCount);
+  }, [unacknowledgedCompletedCount]);
 
   function toggleGroup(scopeId) {
     setCollapsedGroups((current) => ({ ...current, [scopeId]: !current[scopeId] }));
