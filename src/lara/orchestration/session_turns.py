@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 
 from lara.schema import RunConfig
@@ -41,6 +41,7 @@ class SessionTurnService:
         message_data: dict[str, object] | None = None,
         session_title: str | None = None,
         model_group_name: str | None = None,
+        attachments: Sequence[str] = (),
     ) -> ManagedSessionTurn:
         Path(config.workspace_root).mkdir(parents=True, exist_ok=True)
         lease = await self._acquire_runtime(config=config, manager=manager)
@@ -67,6 +68,7 @@ class SessionTurnService:
                     message_kind=message_kind,
                     message_data=dict(message_data or {}),
                     session_title=session_title,
+                    attachments=tuple(attachments),
                 ),
             )
         except BaseException:

@@ -91,6 +91,10 @@ agents:
         backoff_multiplier: 2
 
 runtime:
+  steering:
+    # immediate: steering interrupts the in-flight model/tool step (turns run in memory, no per-turn crash recovery)
+    # wait: steering applies at the next processing boundary; turns stay durable and recoverable
+    mode: immediate
   approvals:
     enabled: true
     timeout_seconds: 300

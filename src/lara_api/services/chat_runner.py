@@ -16,6 +16,7 @@ from lara.orchestration import (
     SessionExecutionCoordinator,
     SessionTurnService,
 )
+from lara.runtime.attachments import resolve_attachments
 from lara.schema import CaseRunRef
 from lara_api.container import ApiContext
 from lara_api.models.events import ExecutionEvent
@@ -326,6 +327,10 @@ class ChatRunRegistry:
             request.scope_id,
         )
         manager = service.manager
+        if request.attachments:
+            resolve_attachments(
+                request.attachments, manager.config.workspace_root
+            )
         turn_service = SessionTurnService(
             coordinator=self.coordinator,
             acquire_runtime=context.acquire_runtime,
@@ -338,6 +343,7 @@ class ChatRunRegistry:
             case_id=request.case_id,
             turn_id=request.turn_id,
             model_group_name=request.model_group_name,
+            attachments=request.attachments,
         )
         await turn.wait_ready()
         return ActiveChatRun(turn)
@@ -378,6 +384,22 @@ class ChatRunRegistry:
             execution_id, input_id=input_id, message=message,
             case_run_id=active.run_ref.case_run_id,
         )
+
+    async def cancel_turn(
+        self, context: ApiContext, execution_id: str, *, session_id: str,
+    ) -> bool:
+        active = await self.coordinator.find_execution(execution_id)
+        if active is not None:
+            if active.run_ref is None or active.run_ref.session_id != session_id:
+                raise LookupError("当前会话没有对应的运行中执行，请等待连接恢复后重试。")
+            return await active.runtime_service.cancel_turn(execution_id)
+        lease = await context.acquire_runtime()
+        try:
+            return await lease.runtime.runtime_service.cancel_turn(execution_id)
+        except KeyError as exc:
+            raise LookupError(f"未知执行：{execution_id}") from exc
+        finally:
+            await lease.release()
 
     async def close(self) -> None:
         await self.coordinator.close()

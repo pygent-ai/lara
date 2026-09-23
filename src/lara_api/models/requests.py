@@ -39,6 +39,7 @@ class ChatTurnRequest(BaseModel):
     execution_id: str | None = None
     after_sequence: int | None = None
     log_model_text_deltas: bool = False
+    attachments: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_start_or_resume(self) -> "ChatTurnRequest":
@@ -54,6 +55,10 @@ class ChatSteeringRequest(BaseModel):
     session_id: str = Field(min_length=1)
     input_id: str = Field(min_length=1, max_length=128)
     message: str = Field(min_length=1)
+
+class ChatCancelRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    session_id: str = Field(min_length=1)
 
 
 class ModelRetrySettingsRequest(BaseModel):

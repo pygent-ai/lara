@@ -153,6 +153,7 @@ class SessionExecutionCoordinator:
                     interactive_approvals=turn.command.interactive_approvals,
                     message_kind=turn.command.message_kind,
                     message_data=turn.command.message_data,
+                    attachments=turn.command.attachments,
                 )
             else:
                 turn.execution_handle = await turn.runtime_service.recover_turn(

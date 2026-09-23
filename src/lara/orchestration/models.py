@@ -15,6 +15,7 @@ class TurnCommand:
     message_kind: str = "lara.chat.turn"
     message_data: dict[str, object] = field(default_factory=dict)
     session_title: str | None = None
+    attachments: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.session_id:

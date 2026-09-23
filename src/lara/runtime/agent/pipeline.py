@@ -8,6 +8,7 @@ from typing import Any
 
 from pygent import (
     AIMessage,
+    MediaBlock,
     ModelCallLayer,
     Module,
     ToolAuthorizationDecision,
@@ -16,7 +17,6 @@ from pygent import (
     ToolCallLayer,
     ToolDefinition,
     ToolMessage,
-    ToolResultMedia,
     freeze_json_object,
     thaw_json,
 )
@@ -544,7 +544,7 @@ class ToolAuditModule(Module[ToolMessage, ToolMessage]):
                         content=(
                             ()
                             if result.name == "read"
-                            and not any(isinstance(block, ToolResultMedia) for block in result.content)
+                            and not any(isinstance(block, MediaBlock) for block in result.content)
                             else result.content
                         ),
                     )

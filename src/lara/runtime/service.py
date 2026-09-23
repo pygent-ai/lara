@@ -6,6 +6,7 @@ import json
 import os
 import time
 import warnings
+from collections.abc import Sequence
 from dataclasses import replace
 from html import escape
 from pathlib import Path
@@ -68,6 +69,12 @@ from pygent.tool.mcp import (
 
 from lara.config import load_run_config
 from lara.core.io import aclose_if_supported, plain_object, read_json, write_json
+from lara.runtime.attachments import (
+    ResolvedAttachment,
+    build_media_blocks,
+    render_attachments_xml,
+    resolve_attachments,
+)
 from lara.runtime.bash_tasks import BashTaskObservations
 from lara.runtime.reminders import ReminderService
 from lara.schema import AgentSession, CaseRunRef, RunConfig
@@ -106,6 +113,10 @@ RECOVERY_CLAIM_WAIT_SECONDS = 31.0
 # Pygent agent graphs declare requires_finite_deadline=True, so an unlimited
 # deadline is rejected at admission; this ceiling is the practical maximum.
 TURN_DEADLINE_SECONDS = 24 * 60 * 60
+
+# Non-durable (interruptible) turns resolve their context from this registry;
+# durable turns keep reading the SQLite history record.
+MAX_TRACKED_TURN_CONTEXTS = 256
 PROJECTION_OPERATION_METADATA_KEY = "projection_replacement_operation"
 PROJECTION_INPUT_ID_METADATA_KEY = "projection_replacement_input_id"
 PROJECTION_READY_INPUT_ID_METADATA_KEY = "projection_replacement_ready_input_id"
@@ -229,15 +240,7 @@ class _DiffExecutor:
         del spec
         if context.execution_id is None:
             raise RuntimeError("managed diff execution requires an execution id")
-        record = await self.service.history.get_execution(context.execution_id)
-        if record is None:
-            raise RuntimeError("managed diff execution record is unavailable")
-        _, execution_context = invocation_from_dict(
-            record.input,
-            registry=self.service.runtime.context_codec_registry,
-        )
-        if not isinstance(execution_context, LaraContext):
-            raise TypeError("managed diff execution requires LaraContext")
+        execution_context = await self.service._turn_context(context.execution_id)
         diff = DiffTool(
             case_run_ref=execution_context.case_run_ref,
             workspace_root=self.service.config.workspace_root,
@@ -366,12 +369,19 @@ class LaraRuntimeService:
                 capacity_key="lara-api-tool",
                 scope=scope,
             ),
-            durability=DurabilityPolicy(DurabilityMode(config.runtime_durability.mode)),
+            durability=DurabilityPolicy(
+                DurabilityMode(
+                    DurabilityMode.DISABLED.value
+                    if config.runtime_steering.mode == "immediate"
+                    else config.runtime_durability.mode
+                )
+            ),
         )
         self.external_tools: tuple[ToolSpec, ...] = visible_agent_collaboration_specs(
             config,
             collaboration_available=collaboration is not None,
         )
+        self._turn_contexts: dict[str, LaraContext] = {}
         self.warnings: list[str] = []
         self._initialized = False
         self._initializing_task: asyncio.Task[None] | None = None
@@ -499,19 +509,37 @@ class LaraRuntimeService:
             )
         raise ValueError(f"unsupported Agent collaboration tool {name!r}")
 
-    async def _agent_tool_context(self, context: ToolExecutionContext) -> LaraContext:
-        if context.execution_id is None:
-            raise RuntimeError("Agent collaboration requires an execution id")
-        record = await self.history.get_execution(context.execution_id)
+    def _track_turn_context(self, execution_id: str, context: LaraContext) -> None:
+        """Remember one execution context for non-durable (interruptible) turns.
+
+        Durable turns resolve their context from the SQLite history record;
+        interruptible turns have no history row, so tool executors read the
+        context captured at start here.
+        """
+
+        self._turn_contexts[execution_id] = context
+        while len(self._turn_contexts) > MAX_TRACKED_TURN_CONTEXTS:
+            self._turn_contexts.pop(next(iter(self._turn_contexts)), None)
+
+    async def _turn_context(self, execution_id: str) -> LaraContext:
+        tracked = self._turn_contexts.get(execution_id)
+        if tracked is not None:
+            return tracked
+        record = await self.history.get_execution(execution_id)
         if record is None:
-            raise RuntimeError("Agent collaboration execution record is unavailable")
+            raise RuntimeError(f"execution {execution_id!r} has no resolvable context")
         _, decoded = invocation_from_dict(
             record.input,
             registry=self.runtime.context_codec_registry,
         )
         if not isinstance(decoded, LaraContext):
-            raise TypeError("Agent collaboration requires LaraContext")
+            raise TypeError("execution context is not a LaraContext")
         return decoded
+
+    async def _agent_tool_context(self, context: ToolExecutionContext) -> LaraContext:
+        if context.execution_id is None:
+            raise RuntimeError("Agent collaboration requires an execution id")
+        return await self._turn_context(context.execution_id)
 
     async def _agent_collaboration_status(
         self,
@@ -815,6 +843,7 @@ class LaraRuntimeService:
         interactive_approvals: bool,
         message_kind: str = "lara.chat.turn",
         message_data: dict[str, object] | None = None,
+        attachments: Sequence[str] = (),
         deadline: float | None = None,
     ) -> Any:
         from pygent.runtime import ExecutionOptions
@@ -833,6 +862,7 @@ class LaraRuntimeService:
             turn_id=turn_id,
             message_kind=message_kind,
             message_data=message_data,
+            attachments=attachments,
         )
         bound = await self.bind(agent, agent)
         try:
@@ -865,23 +895,43 @@ class LaraRuntimeService:
             run_ref.session_id, turn_id, handle.execution_id
         )
         self._record_execution_id(run_ref, handle.execution_id)
+        self._track_turn_context(handle.execution_id, turn_context)
         return handle
 
     async def send_steering(
         self, execution_id: str, *, input_id: str, message: str, case_run_id: str,
     ) -> Any:
-        from pygent.agent import StandaloneUserMessage
+        from pygent.agent import StandaloneUserMessage, SteeringMode
 
         handle = await self.runtime.get_execution_handle(execution_id)
         return await handle.send_input(
             input_id=input_id,
             kind=REACT_PROJECTION_OPERATION_KIND,
-            value=encode_react_projection_operation(StandaloneUserMessage(UserMessage(
-                content=message,
-                kind="lara.user.steering",
-                data={"input_id": input_id, "case_run_id": case_run_id},
-            ))),
+            value=encode_react_projection_operation(
+                StandaloneUserMessage(
+                    UserMessage(
+                        content=message,
+                        kind="lara.user.steering",
+                        data={"input_id": input_id, "case_run_id": case_run_id},
+                    ),
+                    mode=(
+                        SteeringMode.IMMEDIATE
+                        if self.config.runtime_steering.mode == "immediate"
+                        else SteeringMode.WAIT
+                    ),
+                )
+            ),
         )
+
+    async def cancel_turn(self, execution_id: str) -> bool:
+        """Request cancellation of one running execution.
+
+        Returns False when the execution already reached a terminal state.
+        """
+
+        await self.initialize()
+        handle = await self.runtime.get_execution_handle(execution_id)
+        return await handle.cancel()
 
     async def recover_turn(
         self,
@@ -931,6 +981,7 @@ class LaraRuntimeService:
                     registry=self.runtime.context_codec_registry,
                 )
                 context = cast(LaraContext, decoded_context)
+                self._track_turn_context(execution_id, context)
                 await self._deliver_projection_replacement(handle, context)
                 return handle
             except ExecutionAdmissionError as exc:
@@ -1054,6 +1105,7 @@ class LaraRuntimeService:
             "turn-0001",
             handle.execution_id,
         )
+        self._track_turn_context(handle.execution_id, turn_context)
         output, _ = await handle.result()
         result = plain_object(plain_object(output.data).get("result"))
         result["event_count"] = len(store.list_by_run())
@@ -1079,6 +1131,7 @@ class LaraRuntimeService:
         carry_context: bool = True,
         message_kind: str = "lara.chat.turn",
         message_data: dict[str, object] | None = None,
+        attachments: Sequence[str] = (),
     ) -> tuple[UserMessage, LaraContext]:
         if session is None:
             session = manager.load(run_ref.session_id)
@@ -1100,17 +1153,23 @@ class LaraRuntimeService:
                 Path(session.session_dir) / "raw-history" / "events.jsonl"
             ),
         )
+        resolved_attachments: tuple[ResolvedAttachment, ...] = ()
+        if message_kind != "lara.automation.trigger" and attachments:
+            resolved_attachments = resolve_attachments(
+                attachments, config.workspace_root
+            )
         if message_kind == "lara.automation.trigger":
             wrapped = message
         else:
-            wrapped = "\n".join(
-                (
-                    "<user-context>",
-                    f"  <user-identity>{escape(config.user_identity or 'default', quote=False)}</user-identity>",
-                    f"  <user-message>{escape(message, quote=False)}</user-message>",
-                    "</user-context>",
-                )
-            )
+            lines = [
+                "<user-context>",
+                f"  <user-identity>{escape(config.user_identity or 'default', quote=False)}</user-identity>",
+                f"  <user-message>{escape(message, quote=False)}</user-message>",
+            ]
+            if resolved_attachments:
+                lines.append(render_attachments_xml(resolved_attachments))
+            lines.append("</user-context>")
+            wrapped = "\n".join(lines)
         reminder = await self.reminders.claim_initial(session.session_id, turn_id)
         dynamic_reminder = await self.reminders.collect_pending(session.session_id)
         if dynamic_reminder:
@@ -1128,8 +1187,21 @@ class LaraRuntimeService:
             content=wrapped,
             kind=message_kind,
             data=freeze_json_object(
-                {"raw_content": message, **dict(message_data or {})}
+                {
+                    "raw_content": message,
+                    **(
+                        {
+                            "attachments": [
+                                item.relative for item in resolved_attachments
+                            ]
+                        }
+                        if resolved_attachments
+                        else {}
+                    ),
+                    **dict(message_data or {}),
+                }
             ),
+            media=build_media_blocks(resolved_attachments),
         )
         metadata: dict[str, Any] = {
             "session_id": run_ref.session_id,

@@ -116,9 +116,9 @@ test("running chat allows editing and offers steering", () => {
   const textarea = html.match(/<textarea[^>]*>/)[0];
   assert.doesNotMatch(textarea, /disabled/);
   assert.match(html, /aria-label="追加指令"/);
-  assert.match(html, /下一处理边界生效/);
+  assert.match(html, /立即打断当前步骤/);
   // A sent steering input stays visibly pending until the runtime reports its boundary.
-  assert.match(html, /待生效 · 下一处理边界/);
+  assert.match(html, /待生效 · 即将打断当前步骤/);
   assert.match(html, /未生效 · 本轮已结束/);
   assert.match(html, /focus on tests/);
   assert.match(html, /use Chinese/);
@@ -989,7 +989,7 @@ test("assistant text keeps sequential tool calls in separate groups", () => {
   }
 });
 
-test("hidden reasoning does not split otherwise adjacent tool calls", () => {
+test("reasoning-only rounds keep tool batches in chronological order", () => {
   const [, message] = appModule.historyToMessages([
     { role: "user", content: "Inspect." },
     { role: "assistant", content: "", tool_calls: [{ id: "call-a", function: { name: "read", arguments: {} } }] },
@@ -998,11 +998,47 @@ test("hidden reasoning does not split otherwise adjacent tool calls", () => {
     { role: "assistant", content: "", tool_calls: [{ id: "call-b", function: { name: "glob", arguments: {} } }] },
   ]);
 
-  assert.equal(message.sections.filter((section) => section.type === "tools").length, 1);
   assert.deepEqual(
-    message.sections.find((section) => section.type === "tools").calls.map((call) => call.id),
-    ["call-a", "call-b"],
+    message.sections.map((section) => section.type),
+    ["tools", "text", "tools"],
   );
+  assert.deepEqual(message.sections[0].calls.map((call) => call.id), ["call-a"]);
+  assert.deepEqual(message.sections[2].calls.map((call) => call.id), ["call-b"]);
+});
+
+test("reloaded multi-round turns render chronologically with persisted result shapes", () => {
+  const restored = appModule.historyToMessages([
+    { role: "user", content: "Inspect." },
+    {
+      role: "assistant", content: "",
+      metadata: { reasoning_content: "first round" },
+      tool_calls: [
+        { call_id: "call-a", name: "bash", arguments: { command: "a" } },
+        { call_id: "call-b", name: "read", arguments: { path: "b" } },
+      ],
+    },
+    { role: "tool", content: "", results: [
+      { call_id: "call-a", name: "bash", status: "succeeded", output: "out-a" },
+      { call_id: "call-b", name: "read", status: "succeeded", output: "out-b" },
+    ] },
+    {
+      role: "assistant", content: "checking next.",
+      metadata: { reasoning_content: "second round" },
+      tool_calls: [{ call_id: "call-c", name: "grep", arguments: { pattern: "x" } }],
+    },
+    { role: "tool", content: "", results: [{ call_id: "call-c", name: "grep", status: "succeeded", output: "out-c" }] },
+    { role: "assistant", content: "Final answer." },
+  ]);
+
+  assert.equal(restored.length, 2);
+  const message = restored[1];
+  assert.deepEqual(
+    message.sections.map((section) => (section.type === "tools"
+      ? `tools:${section.calls.map((call) => `${call.id}${call.result ? "+result" : ""}`).join(",")}`
+      : section.title)),
+    ["Thinking", "tools:call-a+result,call-b+result", "Thinking", "Assistant content", "tools:call-c+result"],
+  );
+  assert.equal(message.content, "Final answer.");
 });
 
 test("a tool failure stays local when the agent execution recovers", () => {

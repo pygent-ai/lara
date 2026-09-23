@@ -77,6 +77,25 @@ class RuntimeDurabilityConfig:
 
 
 @dataclass(slots=True)
+class RuntimeSteeringConfig:
+    """Steering delivery mode for interactive agent turns.
+
+    ``immediate`` lets a steering message interrupt the in-flight model or
+    tool step so it becomes the next model input as soon as possible. Pygent
+    only provides in-flight interrupts on non-durable executions, so this
+    mode runs interactive turns in memory and turns off per-turn crash
+    recovery. ``wait`` keeps durable, recoverable turns; steering then
+    applies at the next processing boundary.
+    """
+
+    mode: Literal["wait", "immediate"] = "immediate"
+
+    def __post_init__(self) -> None:
+        if self.mode not in {"wait", "immediate"}:
+            raise ValueError("runtime steering mode is invalid")
+
+
+@dataclass(slots=True)
 class RuntimeCapacityConfig:
     scope: Literal["runtime_instance", "deployment"] = "runtime_instance"
     coordinator_path: str = "runtime/capacity-v1.sqlite3"
@@ -247,6 +266,9 @@ class RunConfig:
     runtime_durability: RuntimeDurabilityConfig = field(
         default_factory=RuntimeDurabilityConfig
     )
+    runtime_steering: RuntimeSteeringConfig = field(
+        default_factory=RuntimeSteeringConfig
+    )
     runtime_capacity: RuntimeCapacityConfig = field(
         default_factory=RuntimeCapacityConfig
     )
@@ -315,6 +337,7 @@ class RunConfig:
             )
         for name, cls in (
             ("runtime_durability", RuntimeDurabilityConfig),
+            ("runtime_steering", RuntimeSteeringConfig),
             ("runtime_capacity", RuntimeCapacityConfig),
             ("runtime_approvals", RuntimeApprovalConfig),
             ("delegation", DelegationConfig),

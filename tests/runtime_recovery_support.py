@@ -63,6 +63,9 @@ def recovery_service(
     config = native_runtime_config(workspace)
     config.eternal_conversation.enabled = False
     config.runtime_approvals.enabled = False
+    # Recovery exercises the durable binding; steering interrupts only
+    # exist on non-durable executions.
+    config.runtime_steering.mode = "wait"
     if force_compression:
         config.context_window = 40_000
         config.context_compression_trigger_ratio = 0.8

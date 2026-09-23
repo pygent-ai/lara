@@ -24,9 +24,14 @@ class _Runtime:
     def __init__(self) -> None:
         self.closed: list[bool] = []
         self.approvals: list[tuple[str, bool, str]] = []
+        self.cancelled: list[str] = []
 
     async def close(self, *, cancel: bool) -> None:
         self.closed.append(cancel)
+
+    async def cancel_turn(self, execution_id: str) -> bool:
+        self.cancelled.append(execution_id)
+        return True
 
     async def deliver_approval(
         self,
@@ -169,6 +174,43 @@ async def test_active_approval_uses_the_turn_runtime() -> None:
     assert old_runtime.closed == []
     assert old_runtime.approvals == [("case-1:call-1", True, "approved")]
     assert new_runtime.approvals == []
+
+@pytest.mark.asyncio
+async def test_cancel_turn_prefers_the_active_turn_and_falls_back_to_runtime() -> None:
+    registry = ChatRunRegistry()
+    active_runtime = _Runtime()
+    fallback_runtime = _Runtime()
+    active = ManagedSessionTurn(
+        lease=_Lease(SimpleNamespace(), active_runtime),
+        command=TurnCommand(session_id="session-1", message="hello"),
+        run_ref=SimpleNamespace(case_run_id="case-1", session_id="session-1"),
+        execution_handle=SimpleNamespace(execution_id="execution-1"),
+        state=TurnState.RUNNING,
+    )
+    registry.coordinator._managed_runs[id(active)] = active
+    registry.coordinator._runs["execution-1"] = active
+    registry.coordinator._case_runs["case-1"] = active
+    context = SimpleNamespace(
+        acquire_runtime=lambda: _async_value(_Lease(SimpleNamespace(), fallback_runtime))
+    )
+
+    cancelled = await registry.cancel_turn(
+        context, "execution-1", session_id="session-1"
+    )
+    assert cancelled is True
+    assert active_runtime.cancelled == ["execution-1"]
+    assert fallback_runtime.cancelled == []
+
+    # An execution without an active turn (for example a durable orphan
+    # left by a restart) still accepts a cancellation request.
+    delivered = await registry.cancel_turn(
+        context, "execution-orphan", session_id="session-1"
+    )
+    assert delivered is True
+    assert fallback_runtime.cancelled == ["execution-orphan"]
+
+    with pytest.raises(LookupError):
+        await registry.cancel_turn(context, "execution-1", session_id="session-2")
 
 
 @pytest.mark.asyncio

@@ -8,7 +8,12 @@ from types import SimpleNamespace
 
 import pytest
 from pygent import AIMessage, Context, Module, ToolCall, UserMessage, thaw_json
-from pygent.agent import ReplaceMessageProjection, decode_react_projection_operation
+from pygent.agent import (
+    StandaloneUserMessage,
+    SteeringMode,
+    ReplaceMessageProjection,
+    decode_react_projection_operation,
+)
 from pygent.core import EffectSafety, ExecutionRequirements, RecoverySafety
 from pygent.llm import ModelConfig
 from pygent.runtime import ExecutionOptions
@@ -106,7 +111,9 @@ def test_current_pygent_rejects_removed_mcp_sse_transport() -> None:
 @pytest.mark.asyncio
 async def test_runtime_admits_concurrent_executions_without_application_delay() -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        service = LaraRuntimeService(load_run_config(workspace_root=Path(tmp)))
+        config = load_run_config(workspace_root=Path(tmp))
+        config.runtime_steering.mode = "wait"
+        service = LaraRuntimeService(config)
         try:
             await service.initialize()
             bound = service.binding.bind(_DurableEcho())
@@ -148,6 +155,7 @@ async def test_runtime_admits_concurrent_executions_without_application_delay() 
 async def test_runtime_replays_completed_execution_through_pygent_handle() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         config = load_run_config(workspace_root=Path(tmp))
+        config.runtime_steering.mode = "wait"
         service = LaraRuntimeService(config)
         try:
             await service.initialize()
@@ -179,7 +187,10 @@ async def test_runtime_replays_completed_execution_through_pygent_handle() -> No
 @pytest.mark.asyncio
 async def test_runtime_allows_managed_graph_beyond_old_64_child_limit() -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        service = LaraRuntimeService(load_run_config(workspace_root=Path(tmp)))
+        config = load_run_config(workspace_root=Path(tmp))
+        # The graph declares durability.sqlite; keep the durable binding.
+        config.runtime_steering.mode = "wait"
+        service = LaraRuntimeService(config)
         try:
             await service.initialize()
             result, _ = await service.binding.bind(_WideManagedGraph(96)).invoke(
@@ -197,6 +208,10 @@ async def test_standard_read_tool_advertises_its_workspace_sandbox() -> None:
         root = Path(tmp)
         (root / "sample.txt").write_text("sandbox-ready", encoding="utf-8")
         config = load_run_config(workspace_root=root)
+        # The diff executor resolves its context from the durable history
+        # record; this direct bind().invoke() path never goes through the
+        # turn entry points that track non-durable contexts.
+        config.runtime_steering.mode = "wait"
         manager = SessionManager(config)
         session = manager.create(case_id="sandbox", mode="agent")
         run_ref = manager.start_case_run(
@@ -343,6 +358,7 @@ async def test_complete_lara_graph_is_eligible_for_pygent_module_boundary_recove
     with tempfile.TemporaryDirectory() as tmp:
         config = load_run_config(workspace_root=Path(tmp))
         assert config.resolved_agent is not None
+        config.runtime_steering.mode = "wait"
         service = LaraRuntimeService(config)
         try:
             agent = service.new_agent(interactive_approvals=True)
@@ -464,6 +480,8 @@ async def test_eternal_turn_keeps_unbounded_session_history_out_of_pygent_invoca
 ):
     with tempfile.TemporaryDirectory() as tmp:
         config = load_run_config(workspace_root=Path(tmp))
+        # _DurableEcho requires durability.sqlite; keep the durable binding.
+        config.runtime_steering.mode = "wait"
         config.eternal_conversation.enabled = True
         manager = SessionManager(config)
         session_ref = manager.create(case_id="large-native", mode="chat")
@@ -544,3 +562,91 @@ async def test_projection_delivery_failure_cancels_started_execution():
             execution=None,
         )
     assert calls == ["cancelled"]
+
+@pytest.mark.asyncio
+async def test_default_steering_mode_runs_turns_interruptible() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        config = load_run_config(workspace_root=Path(tmp))
+        assert config.runtime_steering.mode == "immediate"
+        service = LaraRuntimeService(config)
+        try:
+            agent = service.new_agent(interactive_approvals=False)
+            report = service.binding.bind(agent).durability
+            assert "durability.sqlite" not in report.effective_capabilities
+        finally:
+            await service.close()
+
+
+@pytest.mark.asyncio
+async def test_wait_steering_mode_keeps_turns_durable() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        config = load_run_config(workspace_root=Path(tmp))
+        config.runtime_steering.mode = "wait"
+        service = LaraRuntimeService(config)
+        try:
+            agent = service.new_agent(interactive_approvals=False)
+            report = service.binding.bind(agent).durability
+            assert "durability.sqlite" in report.effective_capabilities
+        finally:
+            await service.close()
+
+
+@pytest.mark.asyncio
+async def test_send_steering_encodes_the_configured_delivery_mode() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        for mode, expected in (("immediate", SteeringMode.IMMEDIATE), ("wait", SteeringMode.WAIT)):
+            config = load_run_config(workspace_root=Path(tmp))
+            config.runtime_steering.mode = mode
+            service = LaraRuntimeService(config)
+            try:
+                captured = {}
+
+                class _Handle:
+                    async def send_input(self, *, input_id, kind, value):
+                        captured.update(
+                            input_id=input_id, kind=kind, value=value
+                        )
+                        return SimpleNamespace(status="accepted", input_id=input_id)
+
+                async def get_execution_handle(execution_id):
+                    captured["execution_id"] = execution_id
+                    return _Handle()
+
+                service.runtime.get_execution_handle = get_execution_handle
+                receipt = await service.send_steering(
+                    "execution-1",
+                    input_id="input-1",
+                    message="先停下，改看测试",
+                    case_run_id="run-1",
+                )
+                assert receipt.status == "accepted"
+                operation = decode_react_projection_operation(
+                    thaw_json(captured["value"])
+                )
+                assert isinstance(operation, StandaloneUserMessage)
+                assert operation.mode is expected
+            finally:
+                await service.close()
+
+
+@pytest.mark.asyncio
+async def test_cancel_turn_delegates_to_the_execution_handle() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        service = LaraRuntimeService(load_run_config(workspace_root=Path(tmp)))
+        try:
+            requested = []
+
+            class _Handle:
+                async def cancel(self):
+                    requested.append("execution-1")
+                    return True
+
+            async def get_execution_handle(execution_id):
+                assert execution_id == "execution-1"
+                return _Handle()
+
+            service.runtime.get_execution_handle = get_execution_handle
+            assert await service.cancel_turn("execution-1") is True
+            assert requested == ["execution-1"]
+        finally:
+            await service.close()
