@@ -2864,6 +2864,7 @@ input:focus,
 .composer { position:relative; flex-shrink:0; padding:16px clamp(20px, 4vw, 52px) 18px; background:var(--surface); border-top:0; }
 .composer-box { max-width:840px; margin:0 auto; min-height:104px; padding:16px; gap:12px; border:1px solid #cdd3dd; border-radius:16px; background:var(--surface); box-shadow:0 3px 14px rgba(25,40,65,.05); }
 .composer-box:focus-within { border-color:var(--accent); box-shadow:0 0 0 3px rgba(47,125,225,.09); }
+.composer-box.drag-over { border-color:var(--accent); box-shadow:0 0 0 3px rgba(47,125,225,.16); }
 .composer-box textarea { min-height:64px; max-height:200px; line-height:1.65; font-size:15px; padding:0; }
 .composer-surface .stop { width:32px; min-width:32px; height:32px; padding:0; display:inline-flex; align-items:center; justify-content:center; border:0; border-radius:10px; color:white; background:#c0392b; cursor:pointer; }
 .composer-surface .stop:hover { background:#a93226; }

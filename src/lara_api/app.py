@@ -18,6 +18,7 @@ from lara_api.routers import (
     terminal,
     tool_results,
     traces,
+    uploads,
     workspace,
 )
 from lara_api.services.chat_runner import ChatRunRegistry
@@ -69,6 +70,7 @@ def create_app(
     app.include_router(runtime.router)
     app.include_router(tool_results.router)
     app.include_router(traces.router)
+    app.include_router(uploads.router)
     app.include_router(settings.router)
     app.include_router(workspace.router)
     app.include_router(terminal.router)

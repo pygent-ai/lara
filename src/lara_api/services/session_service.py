@@ -224,6 +224,29 @@ def _apply_session_order(
     return ordered + [record for record in records if record.session_id not in placed]
 
 
+def workspace_root_for_scope(context: ApiContext, scope_id: str | None) -> str:
+    """Resolve the workspace root a scope's uploads and turns belong to."""
+
+    if not scope_id or scope_id == active_project_scope_id(
+        context.config.workspace_root
+    ):
+        return str(context.config.workspace_root)
+    scope = next(
+        (
+            item
+            for item in build_session_scopes(
+                context.project_state,
+                active_workspace_root=context.config.workspace_root,
+            )
+            if item.scope_id == scope_id
+        ),
+        None,
+    )
+    if scope is None:
+        raise ValueError(f"Unknown session scope: {scope_id}")
+    return str(context.config_for_scope(scope).workspace_root)
+
+
 def session_service_for_scope(
     context: ApiContext,
     scope_id: str | None,

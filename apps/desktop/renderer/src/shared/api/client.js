@@ -41,6 +41,24 @@ export function createApiClient(options = {}) {
   return {
     baseUrl,
     getHealth: (options = {}) => jsonRequest("/health", options),
+    uploadAttachment: async ({ file, scopeId } = {}) => {
+      if (typeof file === "undefined" || file === null) {
+        throw new Error("uploadAttachment requires a file");
+      }
+      const form = new FormData();
+      form.append("file", file, file.name || "clipboard");
+      if (scopeId) form.append("scope_id", scopeId);
+      const response = await fetchImpl(`${baseUrl}/uploads`, {
+        method: "POST",
+        body: form,
+      });
+      if (!response.ok) {
+        const error = new Error(await responseErrorText(response));
+        error.status = response.status;
+        throw error;
+      }
+      return response.json();
+    },
     getSettings: (options = {}) => jsonRequest("/settings", options),
     getModelCatalogs: (options = {}) => jsonRequest("/settings/model-catalogs", options),
     discoverModels: (request, options = {}) =>
