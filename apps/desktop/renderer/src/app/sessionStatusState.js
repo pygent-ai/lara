@@ -7,13 +7,13 @@ export function sessionStatusIdentity(session) {
   ].join(":");
 }
 
-export function loadAcknowledgedSessionStatuses(storage = browserStorage()) {
+export function loadStoredSessionStatuses(key, storage = browserStorage()) {
   if (!storage) {
     return {};
   }
 
   try {
-    const parsed = JSON.parse(storage.getItem(ACKNOWLEDGED_SESSION_STATUSES_KEY) || "{}");
+    const parsed = JSON.parse(storage.getItem(key) || "{}");
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return {};
     }
@@ -25,6 +25,32 @@ export function loadAcknowledgedSessionStatuses(storage = browserStorage()) {
   } catch {
     return {};
   }
+}
+
+export function hasStoredSessionStatuses(key, storage = browserStorage()) {
+  if (!storage) {
+    return false;
+  }
+  try {
+    return storage.getItem(key) !== null;
+  } catch {
+    return false;
+  }
+}
+
+export function storeSessionStatuses(key, statuses, storage = browserStorage()) {
+  if (!storage) {
+    return;
+  }
+  try {
+    storage.setItem(key, JSON.stringify(statuses));
+  } catch {
+    // Read markers are optional UI state; storage failures must not block navigation.
+  }
+}
+
+export function loadAcknowledgedSessionStatuses(storage = browserStorage()) {
+  return loadStoredSessionStatuses(ACKNOWLEDGED_SESSION_STATUSES_KEY, storage);
 }
 
 export function acknowledgeStoredSessionStatus(current, session, storage = browserStorage()) {
@@ -42,14 +68,7 @@ export function acknowledgeStoredSessionStatus(current, session, storage = brows
 }
 
 export function persistAcknowledgedSessionStatuses(statuses, storage = browserStorage()) {
-  if (!storage) {
-    return;
-  }
-  try {
-    storage.setItem(ACKNOWLEDGED_SESSION_STATUSES_KEY, JSON.stringify(statuses));
-  } catch {
-    // Read markers are optional UI state; storage failures must not block navigation.
-  }
+  storeSessionStatuses(ACKNOWLEDGED_SESSION_STATUSES_KEY, statuses, storage);
 }
 
 function browserStorage() {
