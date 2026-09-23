@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 contextBridge.exposeInMainWorld("__LARA_API_BASE_URL__", process.env.LARA_API_BASE_URL || "http://127.0.0.1:8765");
 
@@ -6,4 +6,5 @@ contextBridge.exposeInMainWorld("laraDesktop", {
   chooseProjectDirectory: (defaultPath) => ipcRenderer.invoke("project:choose-directory", defaultPath),
   getBackendStatus: () => ipcRenderer.invoke("backend:status"),
   setBadgeCount: (count, dataUrl) => ipcRenderer.invoke("badge:set-count", count, dataUrl),
+  pathForFile: (file) => webUtils.getPathForFile(file),
 });

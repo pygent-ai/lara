@@ -2865,7 +2865,10 @@ input:focus,
 .composer-box { max-width:840px; margin:0 auto; min-height:104px; padding:16px; gap:12px; border:1px solid #cdd3dd; border-radius:16px; background:var(--surface); box-shadow:0 3px 14px rgba(25,40,65,.05); }
 .composer-box:focus-within { border-color:var(--accent); box-shadow:0 0 0 3px rgba(47,125,225,.09); }
 .composer-box textarea { min-height:64px; max-height:200px; line-height:1.65; font-size:15px; padding:0; }
-.composer-surface .send { width:32px; min-width:32px; height:32px; padding:0; }
+.composer-surface .stop { width:32px; min-width:32px; height:32px; padding:0; display:inline-flex; align-items:center; justify-content:center; border:0; border-radius:10px; color:white; background:#c0392b; cursor:pointer; }
+.composer-surface .stop:hover { background:#a93226; }
+.composer-surface .stop:disabled { opacity:0.6; cursor:default; }
+.composer-surface .stop svg { width:14px; height:14px; }.composer-surface .send { width:32px; min-width:32px; height:32px; padding:0; }
 .send:disabled { background:#e7ebf0; color:#677387; opacity:1; }
 .composer-context { max-width:840px; margin:10px auto 0; display:flex; align-items:center; flex-wrap:wrap; gap:8px 14px; font-size:12px; color:var(--muted); }
 .composer-context > span { display:inline-flex; align-items:center; gap:5px; min-width:0; overflow-wrap:anywhere; }
@@ -3031,3 +3034,17 @@ input:focus,
 
 .workbench-content { display:contents; }
 .workbench-content[hidden] { display:none; }
+
+/* User attachments: composer attach action, pending chips, transcript chips */
+.composer-surface .attach { width:32px; min-width:32px; height:32px; padding:0; display:inline-flex; align-items:center; justify-content:center; border:1px solid #cdd3dd; border-radius:10px; color:#4a5568; background:var(--surface); cursor:pointer; }
+.composer-surface .attach:hover { border-color:var(--accent); color:var(--accent); }
+.composer-surface .attach:disabled { opacity:0.5; cursor:default; }
+.composer-surface .attach svg { width:15px; height:15px; }
+.attachment-chips { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:6px; }
+.attachment-chip { display:inline-flex; align-items:center; gap:4px; max-width:240px; padding:3px 8px; border:1px solid #cdd3dd; border-radius:999px; background:var(--surface); color:#4a5568; font-size:12px; }
+.attachment-chip { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.attachment-chip svg { flex:0 0 auto; }
+.attachment-chip button { display:inline-flex; align-items:center; padding:0; border:0; background:transparent; color:#677387; cursor:pointer; }
+.attachment-chip button:hover { color:#c0392b; }
+.message-attachments { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+.message-attachments code { max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:2px 8px; border-radius:6px; background:rgba(127,127,127,.18); font-size:12px; }

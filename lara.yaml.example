@@ -1,4 +1,8 @@
 runtime:
+  steering:
+    # immediate: steering interrupts the in-flight step (turns run in memory, no per-turn crash recovery)
+    # wait: steering applies at the next boundary; turns stay durable and recoverable
+    mode: immediate
   durability:
     mode: preferred
     history_path: runtime/executions-v1.sqlite3

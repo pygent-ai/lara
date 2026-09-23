@@ -4,7 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from lara_api.dependencies import ApiContext, get_api_context
-from lara_api.models.requests import ChatSteeringRequest, ChatTurnRequest, ToolApprovalRequest
+from lara_api.models.requests import (
+    ChatCancelRequest,
+    ChatSteeringRequest,
+    ChatTurnRequest,
+    ToolApprovalRequest,
+)
 from lara_api.services.chat_runner import stream_chat_turn
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -52,3 +57,19 @@ async def deliver_steering(
     if receipt.status == "execution_finished":
         raise HTTPException(status_code=409, detail="当前执行已结束，无法追加指令；请作为新消息发送。")
     return {"execution_id": execution_id, "input_id": receipt.input_id, "status": receipt.status}
+
+@router.post("/executions/{execution_id}/cancel")
+async def cancel_execution(
+    execution_id: str,
+    request: ChatCancelRequest,
+    context: ApiContext = Depends(get_api_context),
+) -> dict[str, object]:
+    try:
+        cancelled = await context.chat_registry.cancel_turn(
+            context, execution_id, session_id=request.session_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if not cancelled:
+        raise HTTPException(status_code=409, detail="当前执行已结束，无需取消。")
+    return {"execution_id": execution_id, "cancelled": True}

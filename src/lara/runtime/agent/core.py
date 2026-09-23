@@ -35,6 +35,7 @@ from lara.runtime.reminders import ReminderService
 from lara.runtime.model_configuration import (
     CredentialEnvironment,
     build_model_invoker,
+    workspace_media_resolver,
 )
 from lara.schema import ResolvedAgentConfig, RunConfig
 from lara.sessions import SessionManager
@@ -178,6 +179,7 @@ class LaraAgent(Agent[UserMessage, AIMessage]):
                 self.llm = build_model_invoker(
                     native,
                     credential_environ=CredentialEnvironment(config.user_lara_root),
+                    media_resolver=workspace_media_resolver(self.workspace_root),
                 )
             except LookupError:
                 self.llm = None
