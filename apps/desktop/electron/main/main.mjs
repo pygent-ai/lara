@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from "electron";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,6 +13,7 @@ import {
   stopBackendProcess,
   waitForBackend,
 } from "./backendProcess.mjs";
+import { applyBadgeOverlay } from "./badge.mjs";
 import { registerSingleInstance } from "./singleInstance.mjs";
 import { launchDesktop } from "./startup.mjs";
 
@@ -125,6 +126,15 @@ async function createWindow() {
 
 if (ownsSingleInstance) {
   ipcMain.handle("backend:status", () => backendStatus);
+  ipcMain.handle("badge:set-count", (_event, count, dataUrl) =>
+    applyBadgeOverlay({
+      window: mainWindow,
+      count,
+      dataUrl,
+      createImage: (url) => nativeImage.createFromDataURL(url),
+      platform: process.platform,
+    }),
+  );
   ipcMain.handle("project:choose-directory", async (_event, defaultPath) => {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ["openDirectory", "createDirectory"],

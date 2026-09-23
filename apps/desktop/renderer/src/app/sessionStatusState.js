@@ -60,7 +60,7 @@ function browserStorage() {
   }
 }
 
-function sessionStatusKind(status) {
+export function sessionStatusKind(status) {
   const value = String(status || "").toLowerCase();
   if (value.includes("run")) {
     return "running";

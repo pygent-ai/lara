@@ -5,4 +5,5 @@ contextBridge.exposeInMainWorld("__LARA_API_BASE_URL__", process.env.LARA_API_BA
 contextBridge.exposeInMainWorld("laraDesktop", {
   chooseProjectDirectory: (defaultPath) => ipcRenderer.invoke("project:choose-directory", defaultPath),
   getBackendStatus: () => ipcRenderer.invoke("backend:status"),
+  setBadgeCount: (count, dataUrl) => ipcRenderer.invoke("badge:set-count", count, dataUrl),
 });
