@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from pygent import ToolResult
 from pygent.core import independent_execution
@@ -18,6 +18,14 @@ from .context import LaraContext
 from .file_effect_models import DeferredFileEffectBatch, DeferredFileEffectJob
 from .file_effects import FileEffectBaselineStore, process_file_effect_batch
 from .tools import FileEffectTracker, SnapshotBudgetExceeded, ToolObserver
+
+_TOOL_TASK_EVENT_TYPES = {
+    "tool.task.started": "runtime.tool_task.started",
+    "tool.task.completed": "runtime.tool_task.completed",
+    "tool.task.failed": "runtime.tool_task.failed",
+    "tool.task.cancelled": "runtime.tool_task.cancelled",
+    "tool.task.unknown": "runtime.tool_task.unknown",
+}
 
 
 class BashTaskObservations:
@@ -70,6 +78,42 @@ class BashTaskObservations:
         if self.directory.exists():
             for path in self.directory.glob("*.json"):
                 self._start(path)
+
+    async def on_tool_task_event(self, kind: str, data: Mapping[str, Any]) -> None:
+        """Trace pygent ToolTask lifecycle events into the owning case run.
+
+        Serves as the DurableToolTaskManager emit sink. A fresh start emits
+        ``started`` before the observation record exists, so only recovery
+        relaunches (flagged by pygent) record a started event; terminal events
+        always attribute through the persisted task mapping. Unattributable
+        tasks are skipped — the guarded sink in pygent ignores sink failures,
+        but tracing must not depend on that.
+        """
+        if self._closed:
+            return
+        event_type = _TOOL_TASK_EVENT_TYPES.get(kind)
+        task_id = str(data.get("task_id", ""))
+        if event_type is None or not task_id:
+            return
+        if kind == "tool.task.started" and not data.get("recovery"):
+            return
+        record = self._observation_record(task_id)
+        if record is None:
+            return
+        store = EventStore(CaseRunRef.from_dict(record["case_run_ref"]))
+        store.append(
+            event_type,
+            actor="system",
+            payload=dict(data),
+            turn_id=record.get("turn_id"),
+        )
+
+    def _observation_record(self, task_id: str) -> dict[str, Any] | None:
+        identity = hashlib.sha256(task_id.encode()).hexdigest()
+        path = self.directory / f"{identity}.json"
+        if not path.exists():
+            return None
+        return read_json(path)
 
     def _start(self, path: Path) -> None:
         existing = self._observers.get(path)
