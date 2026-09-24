@@ -813,9 +813,25 @@ button:focus-visible {
 }
 
 .markdown-content p,
-.markdown-content li,
 .markdown-content blockquote {
   white-space: pre-wrap;
+}
+
+/* react-markdown emits stray "\n" text nodes between an item's blocks and
+   wraps loose items in <p>; li must stay normal-width so those newlines
+   collapse instead of stranding the marker on an empty pre-wrap line, and
+   block children need explicit spacing because UA margins are not reset
+   for anything below .markdown-content's direct children. */
+.markdown-content li > p,
+.markdown-content li > ul,
+.markdown-content li > ol,
+.markdown-content li > pre,
+.markdown-content li > blockquote {
+  margin: 0;
+}
+
+.markdown-content li > * + * {
+  margin-top: 6px;
 }
 
 .markdown-content ul,
