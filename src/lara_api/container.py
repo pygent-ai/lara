@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import RLock
@@ -262,8 +263,12 @@ class ApiContext:
             return RunConfig(
                 workspace_root=scope.runtime_workspace_root,
                 lara_root=scope.lara_root,
-                agent_alias=self.agent_alias or "default",
+                agent_alias=self.agent_alias or self.config.agent_alias,
                 resolved_agent=self.config.resolved_agent,
+                model_config_mapping=deepcopy(self.config.model_config_mapping),
+                model_configuration_status=self.config.model_configuration_status,
+                model_configuration_error=self.config.model_configuration_error,
+                user_lara_root=self.config.user_lara_root,
                 runtime_approvals=self.config.runtime_approvals,
                 max_steps=self.max_steps if self.max_steps is not None else -1,
                 context_window=self.context_window,

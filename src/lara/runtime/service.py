@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from dataclasses import replace
 from html import escape
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Mapping, cast
 
 from pygent import (
     AIMessage,
@@ -331,11 +331,13 @@ class LaraRuntimeService:
         )
         for spec in AGENT_COLLABORATION_TOOL_SPECS:
             self.runtime.register_tool(spec, collaboration_executor)
-        self.task_manager = DurableToolTaskManager(self.history, self.executor_registry)
-        self.runtime.attach_tool_task_manager(self.task_manager)
         self.bash_tasks = BashTaskObservations(
             config, self.runtime, history_path.with_suffix(".bash-observations"),
         )
+        self.task_manager = DurableToolTaskManager(
+            self.history, self.executor_registry, emit=self._on_tool_task_event,
+        )
+        self.runtime.attach_tool_task_manager(self.task_manager)
         self.model_resolver = LaraModelResourceResolver()
         self.runtime.register_model_resource_resolver(self.model_resolver)
         scope = (
@@ -631,6 +633,11 @@ class LaraRuntimeService:
             message.target_session_id,
         }:
             raise PermissionError("Agent message is outside this collaboration")
+
+    async def _on_tool_task_event(self, kind: str, data: Mapping[str, Any]) -> None:
+        # Delegate through self.bash_tasks so a replaced observation instance
+        # (restore path) is still the event target.
+        await self.bash_tasks.on_tool_task_event(kind, data)
 
     async def initialize(self) -> None:
         if self._closed:

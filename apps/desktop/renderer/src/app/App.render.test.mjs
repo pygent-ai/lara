@@ -83,6 +83,40 @@ test("assistant markdown supports gfm tables, tilde fences, and safe links", () 
   assert.doesNotMatch(html, /<script>/);
 });
 
+test("assistant markdown keeps CJK bold around a URL instead of swallowing it", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.MarkdownContent, {
+    content: "服务已重启，浏览器应已自动弹出：\n\n**地址：http://127.0.0.1:8766**（已确认 HTTP 200）",
+  }));
+
+  assert.match(
+    html,
+    /<strong>地址：<a href="http:\/\/127\.0\.0\.1:8766"[^>]*>http:\/\/127\.0\.0\.1:8766<\/a><\/strong>（已确认 HTTP 200）<\/p>/,
+  );
+  assert.doesNotMatch(html, /\*\*/);
+});
+
+test("autolink boundaries keep CJK punctuation, markup, and code spans out of URLs", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.MarkdownContent, {
+    content: [
+      "详见 http://127.0.0.1:8766（第2条），或 www.example.com。",
+      "",
+      "平衡括号保留 http://a.com/a_(b)，不平衡裁剪 http://a.com/x)，句点裁剪 http://b.com/y.",
+      "",
+      "联系 admin@example.com；代码 `http://c.com/z（不转链接）` 保持原样。",
+    ].join("\n"),
+  }));
+
+  assert.match(html, /href="http:\/\/127\.0\.0\.1:8766"/);
+  assert.match(html, /8766<\/a>（第2条）/);
+  assert.match(html, /href="http:\/\/www\.example\.com"/);
+  assert.match(html, /href="http:\/\/a\.com\/a_\(b\)"/);
+  assert.match(html, /href="http:\/\/a\.com\/x"/);
+  assert.match(html, /href="http:\/\/b\.com\/y"/);
+  assert.match(html, /href="mailto:admin@example\.com"/);
+  assert.match(html, /http:\/\/c\.com\/z（不转链接）</);
+  assert.doesNotMatch(html, /href="[^"]*（[^"]*"/);
+});
+
 test("assistant markdown renders an incomplete streaming fence as code", () => {
   const html = renderToStaticMarkup(React.createElement(appModule.MarkdownContent, {
     content: "```js\nconsole.log('streaming')",
