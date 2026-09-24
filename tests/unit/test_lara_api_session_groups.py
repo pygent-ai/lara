@@ -15,8 +15,9 @@ from lara.sessions import SessionManager
 from lara.tracing.events import EventStore
 from lara_api.app import create_app
 from lara_api.dependencies import ApiContext
-from lara_api.services.session_service import SessionService, _first_user_message_from_events
+from lara_api.services.session_service import SessionService, _first_user_message_from_events, session_service_for_scope
 from tests.unit.test_session_manager import native_run_config
+from tests.unit.test_model_configuration import native_runtime_config
 
 
 def test_session_groups_are_partitioned_by_remembered_project(tmp_path: Path) -> None:
@@ -44,13 +45,14 @@ def test_session_groups_are_partitioned_by_remembered_project(tmp_path: Path) ->
     assert [record.title for record in groups[scope_b].sessions] == ["Project B chat"]
 
 
-def test_conversation_scope_can_create_and_load_a_chat(tmp_path: Path) -> None:
+def test_conversation_scope_can_create_and_load_a_chat(tmp_path: Path, monkeypatch) -> None:
     from lara_api.models.requests import CreateSessionRequest
     from lara_api.routers.sessions import create_session, delete_session, get_session
     from lara_api.services.session_service import session_groups_response
 
     project = tmp_path / "project"
     project.mkdir()
+    monkeypatch.setattr("lara_api.services.project_state.Path.home", lambda: tmp_path)
     config = RunConfig(workspace_root=str(project))
     context = ApiContext(workspace_root=str(project), state_path=str(tmp_path / "state.json"), _config=config)
 
@@ -67,6 +69,40 @@ def test_conversation_scope_can_create_and_load_a_chat(tmp_path: Path) -> None:
     assert delete_session(created.session_id, scope_id="conversation", context=context).deleted is True
     groups = {group.scope.scope_id: group for group in session_groups_response(context).groups}
     assert groups["conversation"].sessions == []
+
+
+def test_existing_conversation_scope_can_select_new_group_model(tmp_path: Path, monkeypatch) -> None:
+    from lara_api.models.requests import CreateSessionRequest, UpdateSessionModelRequest
+    from lara_api.routers.sessions import create_session, get_session, update_session_model
+
+    monkeypatch.setattr("lara_api.services.project_state.Path.home", lambda: tmp_path)
+    initial = native_runtime_config(tmp_path, group=("main",))
+    context = ApiContext(
+        workspace_root=str(tmp_path),
+        state_path=str(tmp_path / "state.json"),
+        _config=initial,
+    )
+    created = asyncio.run(
+        create_session(CreateSessionRequest(scope_id="conversation"), context=context)
+    )
+    assert created.selected_model_key == "main"
+
+    context._config = native_runtime_config(tmp_path, group=("main", "new"))
+    detail = get_session(created.session_id, scope_id="conversation", context=context)
+    assert [model.model_key for model in detail.selectable_models] == ["main", "new"]
+
+    changed = asyncio.run(
+        update_session_model(
+            created.session_id,
+            UpdateSessionModelRequest(selected_model_key="new"),
+            scope_id="conversation",
+            context=context,
+        )
+    )
+    assert changed.selected_model_key == "new"
+    assert session_service_for_scope(context, "conversation").manager.model_selection(
+        created.session_id
+    ) == ("coding", "new")
 
 
 def test_create_session_chooses_fixed_group_and_returns_children(

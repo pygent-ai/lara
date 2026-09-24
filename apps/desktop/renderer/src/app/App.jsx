@@ -45,7 +45,7 @@ import {
   toggleTrace,
 } from "./layoutState.js";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import remarkGfmNoAutolink from "./remarkGfmNoAutolink.js";
 import {
   acknowledgeStoredSessionStatus,
   loadAcknowledgedSessionStatuses,
@@ -1876,7 +1876,7 @@ const MessageRow = memo(function MessageRow({ message, entering = false, activit
 export function MarkdownContent({ content }) {
   const body = useMemo(
     () => (
-      <ReactMarkdown components={MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]}>
+      <ReactMarkdown components={MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfmNoAutolink]}>
         {String(content || "")}
       </ReactMarkdown>
     ),

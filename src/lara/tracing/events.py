@@ -49,6 +49,11 @@ LARA_EVENT_TYPES = DESIGN_EVENT_TYPES | frozenset(
         "runtime.error",
         "runtime.file_scan.incomplete",
         "runtime.cancelled",
+        "runtime.tool_task.started",
+        "runtime.tool_task.completed",
+        "runtime.tool_task.failed",
+        "runtime.tool_task.cancelled",
+        "runtime.tool_task.unknown",
         "error",
     }
 )

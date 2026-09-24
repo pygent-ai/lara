@@ -8,6 +8,7 @@ This directory contains project-level documentation. Package-local README files 
 - [API](api/README.md): local FastAPI service routes, SSE events, and generated OpenAPI contract.
 - [CLI](cli/lara-session.md): session, chat, and Agent-collaboration commands.
 - [Guides](guides/development-guide.md): development workflow and operational guides.
+- [Pygent 0.3.23 performance report](guides/pygent-0.3.23-performance-report.md): reproducible serial, 200-agent and 1,000-agent version A/B methodology and findings.
 - [Architecture](architecture/repository-layout.md): active repository layout and runtime boundaries.
 - [Design](design/agent/agent-context-architecture-zh.md): design notes for agent context, prompt composition, runtime behavior, self-optimization, and pygent runtime requirements.
 - [Lara Foreground ReAct Agent Capability Baseline](design/agent/foreground-react-agent-capability-and-pygent-requirements-zh.md): proposed foreground Agent behavior, prompt/input placement, runtime steering semantics, and the minimal Pygent framework capabilities required to support it.

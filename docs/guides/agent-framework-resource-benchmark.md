@@ -1,5 +1,7 @@
 # Agent framework resource benchmark
 
+> 最新的 Pygent 同机版本 A/B：Pygent 0.3.23 相对 0.3.12 在串行、200 并发和 1,000 并发的 direct、Runtime disabled、Runtime preferred 三种模式下均完成全部请求，但 CPU、时延和 RSS 均出现回退。测试方法、完整数据和 profile/SQLite 归因见 [Pygent 0.3.23 性能复测报告](./pygent-0.3.23-performance-report.md)。本页跨框架排名没有用单框架的新数据局部替换；更新排名需要所有框架同批重跑。
+
 The benchmark separates lightweight agent loops, durable execution runtimes, and service/deployment runtimes. The durable lane enables official persistence for Pygent, LangGraph, Mastra, OpenAI Agents + DBOS, and Vercel WorkflowAgent. AgentScope Runtime, Agno AgentOS, and Hayhooks are reported in a separate service lane because HTTP/session/deployment management is not the same guarantee as replayable step execution. Runtime-enabled and runtime-disabled modes are never mixed into one overall rank.
 
 ![Agent 框架分赛道公平排名与测试方法](assets/agent-framework-ranking-2026-08-13.svg)
