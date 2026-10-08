@@ -59,6 +59,14 @@ export function createApiClient(options = {}) {
       }
       return response.json();
     },
+    // Direct <img src> URL for stored-upload previews (thumbnails/icons).
+    uploadContentUrl: (scopeId, path) =>
+      `${baseUrl}/uploads/content?scope_id=${encodeURIComponent(scopeId || "")}&path=${encodeURIComponent(path)}`,
+    deleteUpload: (scopeId, path, options = {}) =>
+      jsonRequest(`/uploads?scope_id=${encodeURIComponent(scopeId || "")}&path=${encodeURIComponent(path)}`, {
+        ...options,
+        method: "DELETE",
+      }),
     getSettings: (options = {}) => jsonRequest("/settings", options),
     getModelCatalogs: (options = {}) => jsonRequest("/settings/model-catalogs", options),
     discoverModels: (request, options = {}) =>

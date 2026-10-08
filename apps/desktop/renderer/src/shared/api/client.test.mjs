@@ -210,6 +210,28 @@ test("api client lists and opens project files by scope", async () => {
   assert.equal(calls[1], "http://127.0.0.1:8765/workspace/file?scope_id=project%3AC%3A%2FProjects%2Flara&path=README.md");
 });
 
+test("stored uploads expose a preview URL and a scoped delete", async () => {
+  const calls = [];
+  const client = createApiClient({
+    baseUrl: "http://127.0.0.1:8765",
+    fetchImpl: async (url, init) => {
+      calls.push({ url, method: init?.method });
+      return new Response(null, { status: 204 });
+    },
+  });
+
+  assert.equal(
+    client.uploadContentUrl("project:C:/Projects/lara", ".lara/uploads/abc-image.png"),
+    "http://127.0.0.1:8765/uploads/content?scope_id=project%3AC%3A%2FProjects%2Flara&path=.lara%2Fuploads%2Fabc-image.png",
+  );
+
+  const response = await client.deleteUpload("project:C:/Projects/lara", ".lara/uploads/abc-image.png");
+
+  assert.equal(calls[0].method, "DELETE");
+  assert.equal(calls[0].url, "http://127.0.0.1:8765/uploads?scope_id=project%3AC%3A%2FProjects%2Flara&path=.lara%2Fuploads%2Fabc-image.png");
+  assert.equal(response, null);
+});
+
 test("api client executes and resets a scoped PowerShell session", async () => {
   const calls = [];
   const client = createApiClient({

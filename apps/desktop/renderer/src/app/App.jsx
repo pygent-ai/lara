@@ -11,6 +11,8 @@ import {
   ChevronRight,
   Check,
   CalendarClock,
+  Film,
+  Music,
   Paperclip,
   PanelLeftClose,
   PanelLeftOpen,
@@ -25,6 +27,7 @@ import {
 } from "lucide-react";
 
 import { createApiClient } from "../shared/api/client.js";
+import { attachmentFileName, attachmentMediaType, isUploadedAttachment } from "../shared/media/mediaTypes.js";
 import { createSessionGroupSync, startBackgroundRefresh } from "./sessionGroupSync.js";
 import {
   CONTEXT_SNAPSHOT_LIMIT,
@@ -1638,6 +1641,19 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
     }
   }
 
+  // Removing a pending chip also deletes the stored upload, so pasted media
+  // does not keep piling up inside the project's .lara/uploads. Files picked
+  // from the workspace are only referenced, never deleted here.
+  async function removePendingAttachment(path) {
+    setPendingAttachments((items) => items.filter((item) => item !== path));
+    if (!isUploadedAttachment(path)) return;
+    try {
+      await api.deleteUpload(selectedScope, path);
+    } catch (err) {
+      setConfigError(readableError(err));
+    }
+  }
+
   function handleComposerDrop(event) {
     setDragOver(false);
     const files = filesFromDataTransfer(event.dataTransfer);
@@ -1668,7 +1684,7 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
         setAwayFromLatest(!followTranscriptRef.current);
       }}>
         {messages.map((message) => (
-          <MessageRow key={message.id} message={message} entering={enteringMessageIds.has(message.id)} activityCollapseToken={activityCollapseToken} api={api} />
+          <MessageRow key={message.id} message={message} entering={enteringMessageIds.has(message.id)} activityCollapseToken={activityCollapseToken} api={api} scopeId={selectedScope} />
         ))}
         {pendingSteerings.map((item) => (
           <article className="message user message-enter pending-steering" key={`pending-${item.inputId}`}>
@@ -1714,10 +1730,10 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
           {pendingAttachments.length > 0 && (
             <div className="attachment-chips">
               {pendingAttachments.map((path) => (
-                <span className="attachment-chip" key={path} title={path}>
-                  <Paperclip size={12} aria-hidden="true" />
-                  {path.split(/[\\/]/).pop()}
-                  <button type="button" aria-label={`移除附件 ${path}`} onClick={() => setPendingAttachments((items) => items.filter((item) => item !== path))}>
+                <span className={`attachment-chip${attachmentMediaType(path) === "file" ? "" : " attachment-chip-media"}`} key={path} title={path}>
+                  <AttachmentPreview api={api} scopeId={selectedScope} path={path} variant="chip" />
+                  {attachmentMediaType(path) === "file" && <span>{attachmentFileName(path)}</span>}
+                  <button type="button" aria-label={`移除附件 ${path}`} onClick={() => void removePendingAttachment(path)}>
                     <X size={12} aria-hidden="true" />
                   </button>
                 </span>
@@ -1827,9 +1843,36 @@ function ComposerMenu({ label, title, icon, value, options, disabled, onChange }
   </div>;
 }
 
+// Multimedia attachments show as thumbnails (images) or type icons
+// (video/audio) instead of file-name text; the stored upload's bytes come
+// from /uploads/content. Non-media files keep the plain paperclip chip.
+// A failed preview (file deleted, scope switched) degrades to the icon chip.
+function AttachmentPreview({ api, scopeId, path, variant }) {
+  const [failed, setFailed] = useState(false);
+  const mediaType = attachmentMediaType(path);
+  const name = attachmentFileName(path);
+  if (mediaType === "image" && !failed) {
+    return (
+      <img
+        className={`attachment-thumb attachment-thumb-${variant}`}
+        src={api.uploadContentUrl(scopeId, path)}
+        alt={name}
+        title={path}
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  const Icon = mediaType === "video" ? Film : mediaType === "audio" ? Music : Paperclip;
+  return (
+    <span className={`attachment-icon attachment-icon-${variant}`} title={path} role="img" aria-label={name}>
+      <Icon size={variant === "message" ? 14 : 12} aria-hidden="true" />
+    </span>
+  );
+}
+
 // Memoized: during streaming every applied delta re-renders the transcript
 // once per frame, and only the active assistant message actually changes.
-const MessageRow = memo(function MessageRow({ message, entering = false, activityCollapseToken, api }) {
+const MessageRow = memo(function MessageRow({ message, entering = false, activityCollapseToken, api, scopeId = "" }) {
   if (message.role === "activity") {
     return <ActivityMessage message={message} collapseToken={activityCollapseToken} api={api} />;
   }
@@ -1859,7 +1902,7 @@ const MessageRow = memo(function MessageRow({ message, entering = false, activit
             {Array.isArray(message.attachments) && message.attachments.length > 0 && (
               <span className="message-attachments">
                 {message.attachments.map((path) => (
-                  <code key={path} title={path}>{path.split(/[\\/]/).pop()}</code>
+                  <AttachmentPreview key={path} api={api} scopeId={scopeId} path={path} variant="message" />
                 ))}
               </span>
             )}

@@ -3,15 +3,18 @@
 The chat attachment pipeline (lara.runtime.attachments) only accepts paths
 inside the workspace, so pasted or picked files that are not workspace files
 are stored under ``<workspace_root>/.lara/uploads`` first and referenced by
-their returned relative path afterwards.
+their returned relative path afterwards. Stored uploads can be served back
+for icon/thumbnail previews and deleted again; both operations are restricted
+to the uploads directory so workspace files stay untouched.
 """
 
 from __future__ import annotations
 
+import mimetypes
 import re
 import uuid
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 UPLOADS_SUBDIR = Path(".lara") / "uploads"
@@ -115,9 +118,51 @@ def store_upload(data: bytes, filename: str | None, workspace_root: str | Path) 
     )
 
 
+def resolve_upload_path(workspace_root: str | Path, relative_path: str) -> Path:
+    """Resolve one stored-upload path; refuses anything outside ``.lara/uploads``."""
+
+    clean = str(relative_path or "").replace("\\", "/").strip("/")
+    if not clean or PurePosixPath(clean).is_absolute():
+        raise ValueError("attachment path must be relative to the project root")
+    root = Path(workspace_root).resolve()
+    candidate = (root / Path(*PurePosixPath(clean).parts)).resolve()
+    uploads_root = (root / UPLOADS_SUBDIR).resolve()
+    try:
+        candidate.relative_to(uploads_root)
+    except ValueError as exc:
+        raise ValueError("attachment path must point inside .lara/uploads") from exc
+    return candidate
+
+
+def read_upload(workspace_root: str | Path, relative_path: str) -> tuple[bytes, str]:
+    """Return the stored upload's bytes and serve mime type for previews."""
+
+    target = resolve_upload_path(workspace_root, relative_path)
+    if not target.is_file():
+        raise FileNotFoundError(relative_path)
+    data = target.read_bytes()
+    mime = sniff_mime(data[:_SNIFF_HEAD_BYTES])
+    if not mime:
+        mime = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+    return data, mime
+
+
+def delete_upload(workspace_root: str | Path, relative_path: str) -> Path:
+    """Delete one stored upload; the path must stay inside ``.lara/uploads``."""
+
+    target = resolve_upload_path(workspace_root, relative_path)
+    if not target.is_file():
+        raise FileNotFoundError(relative_path)
+    target.unlink()
+    return target
+
+
 __all__ = [
     "MAX_UPLOAD_BYTES",
     "StoredUpload",
+    "delete_upload",
+    "read_upload",
+    "resolve_upload_path",
     "sniff_mime",
     "sanitize_filename",
     "store_upload",

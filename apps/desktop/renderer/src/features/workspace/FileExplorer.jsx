@@ -1,5 +1,12 @@
 import React, { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, FileText, Folder, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Film, Folder, FileText, Image as ImageIcon, Music, Trash2, X } from "lucide-react";
+import { attachmentMediaType, isUploadedAttachment } from "../../shared/media/mediaTypes.js";
+
+const FILE_ICONS = {
+  image: ImageIcon,
+  video: Film,
+  audio: Music,
+};
 
 export function FileExplorer({ api, scopeId, workspaceRoot }) {
   const [entries, setEntries] = useState([]);
@@ -44,6 +51,13 @@ export function FileExplorer({ api, scopeId, workspaceRoot }) {
     });
   }
 
+  // Only pasted/dropped uploads may be deleted here; regular project files
+  // stay read-only in the explorer.
+  function handleEntryDeleted(path) {
+    setEntries((current) => current.filter((item) => item.path !== path));
+    closeFile(path);
+  }
+
   if (!scopeId?.startsWith("project:")) {
     return <div className="workspace-empty"><Folder aria-hidden="true" /><strong>Select a project</strong><span>Files are available for project chats.</span></div>;
   }
@@ -56,7 +70,7 @@ export function FileExplorer({ api, scopeId, workspaceRoot }) {
         {error && <div className="workspace-error" role="alert">{error}</div>}
         <div className="file-tree" role="tree" aria-label="Project files">
           {entries.map((entry) => (
-            <FileTreeEntry api={api} entry={entry} key={entry.path} level={1} scopeId={scopeId} onOpen={openFile} />
+            <FileTreeEntry api={api} entry={entry} key={entry.path} level={1} scopeId={scopeId} onOpen={openFile} onDeleted={handleEntryDeleted} />
           ))}
           {!error && entries.length === 0 && <div className="empty-state compact">Empty project</div>}
         </div>
@@ -82,11 +96,13 @@ export function FileExplorer({ api, scopeId, workspaceRoot }) {
   );
 }
 
-function FileTreeEntry({ api, entry, level, scopeId, onOpen }) {
+export function FileTreeEntry({ api, entry, level, scopeId, onOpen, onDeleted }) {
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState(null);
   const [error, setError] = useState("");
   const isDirectory = entry.kind === "directory";
+  const deletable = !isDirectory && isUploadedAttachment(entry.path);
+  const FileIcon = FILE_ICONS[attachmentMediaType(entry.name)] || FileText;
 
   async function toggleDirectory() {
     if (!isDirectory) return;
@@ -99,6 +115,16 @@ function FileTreeEntry({ api, entry, level, scopeId, onOpen }) {
       }
     }
     setExpanded((value) => !value);
+  }
+
+  async function handleDelete() {
+    setError("");
+    try {
+      await api.deleteUpload(scopeId, entry.path);
+      onDeleted?.(entry.path);
+    } catch (err) {
+      setError(String(err?.message || err));
+    }
   }
 
   function handleKeyDown(event) {
@@ -117,17 +143,28 @@ function FileTreeEntry({ api, entry, level, scopeId, onOpen }) {
 
   return (
     <div role="none">
-      <button className="file-tree-row" type="button" role="treeitem" aria-expanded={isDirectory ? expanded : undefined}
-          style={{ paddingLeft: `${8 + level * 14}px` }} title={entry.path}
-          onClick={isDirectory ? toggleDirectory : undefined}
-          onDoubleClick={isDirectory ? undefined : () => onOpen(entry.path)} onKeyDown={handleKeyDown}>
-        {isDirectory ? (expanded ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />) : <span className="file-tree-spacer" />}
-        {isDirectory ? <Folder aria-hidden="true" /> : <FileText aria-hidden="true" />}
-        <span>{entry.name}</span>
-      </button>
+      <div className="file-tree-row-wrap">
+        <button className="file-tree-row" type="button" role="treeitem" aria-expanded={isDirectory ? expanded : undefined}
+            style={{ paddingLeft: `${8 + level * 14}px` }} title={entry.path}
+            onClick={isDirectory ? toggleDirectory : undefined}
+            onDoubleClick={isDirectory ? undefined : () => onOpen(entry.path)} onKeyDown={handleKeyDown}>
+          {isDirectory ? (expanded ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />) : <span className="file-tree-spacer" />}
+          {isDirectory ? <Folder aria-hidden="true" /> : <FileIcon aria-hidden="true" />}
+          <span>{entry.name}</span>
+        </button>
+        {deletable && (
+          <button className="file-tree-row-delete" type="button" aria-label={`删除 ${entry.path}`} title={`删除 ${entry.name}`} onClick={() => void handleDelete()}>
+            <Trash2 aria-hidden="true" />
+          </button>
+        )}
+      </div>
       {error && <div className="workspace-error tree-error">{error}</div>}
       {expanded && (children || []).map((child) => (
-        <FileTreeEntry api={api} entry={child} key={child.path} level={level + 1} scopeId={scopeId} onOpen={onOpen} />
+        <FileTreeEntry api={api} entry={child} key={child.path} level={level + 1} scopeId={scopeId} onOpen={onOpen}
+          onDeleted={(childPath) => {
+            setChildren((current) => (current || []).filter((item) => item.path !== childPath));
+            onDeleted?.(childPath);
+          }} />
       ))}
     </div>
   );
