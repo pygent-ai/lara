@@ -236,3 +236,37 @@ def test_zero_limits_are_rejected_instead_of_replaced(tmp_path: Path, content: s
     home = write_user_config(tmp_path, content)
     with patch("lara.config.loader.Path.home", return_value=home), pytest.raises(ValueError, match=message):
         load_run_config(workspace_root=tmp_path)
+
+
+def test_eternal_conversation_trigger_settings_are_loaded(tmp_path: Path) -> None:
+    home = write_user_config(
+        tmp_path,
+        "eternal_conversation:\n  enabled: true\n  extraction_trigger: context_ratio\n  extraction_trigger_ratio: 0.75\n",
+    )
+    with patch("lara.config.loader.Path.home", return_value=home):
+        config = load_run_config(workspace_root=tmp_path)
+    assert config.eternal_conversation.enabled is True
+    assert config.eternal_conversation.extraction_trigger == "context_ratio"
+    assert config.eternal_conversation.extraction_trigger_ratio == 0.75
+
+
+def test_eternal_conversation_trigger_defaults_preserve_per_turn_extraction(tmp_path: Path) -> None:
+    home = write_user_config(tmp_path, "eternal_conversation:\n  enabled: true\n")
+    with patch("lara.config.loader.Path.home", return_value=home):
+        config = load_run_config(workspace_root=tmp_path)
+    assert config.eternal_conversation.extraction_trigger == "turn"
+    assert config.eternal_conversation.extraction_trigger_ratio == 0.7
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        ("eternal_conversation:\n  extraction_trigger: every_turn\n", "extraction_trigger"),
+        ("eternal_conversation:\n  extraction_trigger: context_ratio\n  extraction_trigger_ratio: 1.0\n", "extraction_trigger_ratio"),
+        ("eternal_conversation:\n  extraction_trigger: context_ratio\n  extraction_trigger_ratio: 0\n", "extraction_trigger_ratio"),
+    ],
+)
+def test_invalid_eternal_trigger_settings_are_rejected(tmp_path: Path, content: str, message: str) -> None:
+    home = write_user_config(tmp_path, content)
+    with patch("lara.config.loader.Path.home", return_value=home), pytest.raises(ValueError, match=message):
+        load_run_config(workspace_root=tmp_path)

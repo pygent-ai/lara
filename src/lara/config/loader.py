@@ -330,6 +330,8 @@ def _validate_config_shape(data: dict[str, Any]) -> None:
             "extractor_agent_alias",
             "builder_agent_alias",
             "dynamic_memory_cli_path",
+            "extraction_trigger",
+            "extraction_trigger_ratio",
         },
         "eternal_conversation",
     )
@@ -536,6 +538,15 @@ def _resolve_eternal_conversation(
         )
         or default_alias,
         dynamic_memory_cli_path=cli_path,
+        extraction_trigger=_non_empty(
+            _dig(data, "eternal_conversation.extraction_trigger")
+        )
+        or "turn",
+        extraction_trigger_ratio=(
+            0.7
+            if _dig(data, "eternal_conversation.extraction_trigger_ratio") is None
+            else float(_dig(data, "eternal_conversation.extraction_trigger_ratio"))
+        ),
     )
 
 

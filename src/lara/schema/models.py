@@ -174,6 +174,8 @@ class EternalConversationConfig:
     extractor_agent_alias: str | None = None
     builder_agent_alias: str | None = None
     dynamic_memory_cli_path: str | None = None
+    extraction_trigger: str = "turn"
+    extraction_trigger_ratio: float = 0.7
 
     def __post_init__(self) -> None:
         self.enabled = bool(self.enabled)
@@ -183,6 +185,19 @@ class EternalConversationConfig:
                 setattr(self, name, _require(value, name))
         if self.dynamic_memory_cli_path is not None:
             self.dynamic_memory_cli_path = _abs_path(self.dynamic_memory_cli_path)
+        if self.extraction_trigger not in ("turn", "context_ratio"):
+            raise ValueError(
+                "extraction_trigger must be 'turn' or 'context_ratio'"
+            )
+        if isinstance(self.extraction_trigger_ratio, bool) or not isinstance(
+            self.extraction_trigger_ratio, (int, float)
+        ):
+            raise ValueError("extraction_trigger_ratio must be a number")
+        self.extraction_trigger_ratio = float(self.extraction_trigger_ratio)
+        if not 0 < self.extraction_trigger_ratio < 1:
+            raise ValueError(
+                "extraction_trigger_ratio must be between zero and one"
+            )
 
 
 @dataclass(slots=True)

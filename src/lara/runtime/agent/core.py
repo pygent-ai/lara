@@ -481,6 +481,7 @@ class LaraAgent(Agent[UserMessage, AIMessage]):
                             for definition in execution_context.tools
                         ],
                     },
+                    context_window_tokens=self.config.context_window,
                 )
             store.append(
                 "model.response",
