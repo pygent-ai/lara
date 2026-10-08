@@ -6,6 +6,8 @@ from httpx import ASGITransport, AsyncClient
 from lara_api.app import create_app
 from lara_api.services.uploads import (
     MAX_UPLOAD_BYTES,
+    delete_upload,
+    resolve_upload_path,
     sanitize_filename,
     sniff_mime,
     store_upload,
@@ -110,3 +112,70 @@ def test_uploaded_path_flows_through_attachment_pipeline(tmp_path):
     assert [(item.delivery, item.media_type, item.mime) for item in resolved] == [
         ("media", "image", "image/png")
     ]
+
+
+def test_store_and_delete_upload_round_trip(tmp_path):
+    stored = store_upload(PNG_BYTES, "error.png", tmp_path)
+    target = delete_upload(tmp_path, stored.relative)
+    assert target == tmp_path / stored.relative
+    assert not target.exists()
+
+
+def test_upload_paths_outside_uploads_directory_are_rejected(tmp_path):
+    (tmp_path / "notes.txt").write_text("keep me", encoding="utf-8")
+    with pytest.raises(ValueError, match="inside .lara/uploads"):
+        resolve_upload_path(tmp_path, "notes.txt")
+    with pytest.raises(ValueError, match="inside .lara/uploads"):
+        resolve_upload_path(tmp_path, "../notes.txt")
+    with pytest.raises(ValueError, match="inside .lara/uploads"):
+        resolve_upload_path(tmp_path, ".lara/uploads/../../secret.txt")
+    with pytest.raises(FileNotFoundError):
+        delete_upload(tmp_path, ".lara/uploads/missing.png")
+    assert (tmp_path / "notes.txt").read_text(encoding="utf-8") == "keep me"
+
+
+@pytest.mark.asyncio
+async def test_upload_content_serves_stored_bytes(tmp_path):
+    async with make_client(tmp_path) as client:
+        stored = store_upload(PNG_BYTES, "error.png", tmp_path)
+        response = await client.get(
+            "/uploads/content",
+            params={"scope_id": None, "path": stored.relative},
+        )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/png")
+    assert response.content == PNG_BYTES
+
+
+@pytest.mark.asyncio
+async def test_upload_content_rejects_missing_and_outside_paths(tmp_path):
+    async with make_client(tmp_path) as client:
+        missing = await client.get("/uploads/content", params={"path": ".lara/uploads/nope.png"})
+        outside = await client.get("/uploads/content", params={"path": "notes.txt"})
+        traversal = await client.get("/uploads/content", params={"path": ".lara/../notes.txt"})
+    assert missing.status_code == 404
+    assert outside.status_code == 400
+    assert traversal.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_upload_delete_endpoint_removes_stored_file(tmp_path):
+    async with make_client(tmp_path) as client:
+        stored = store_upload(PNG_BYTES, "error.png", tmp_path)
+        removed = await client.delete("/uploads", params={"path": stored.relative})
+        assert removed.status_code == 204
+        assert not (tmp_path / stored.relative).exists()
+
+        repeat = await client.delete("/uploads", params={"path": stored.relative})
+        assert repeat.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_upload_delete_endpoint_only_touches_uploads_directory(tmp_path):
+    (tmp_path / "notes.txt").write_text("keep me", encoding="utf-8")
+    async with make_client(tmp_path) as client:
+        outside = await client.delete("/uploads", params={"path": "notes.txt"})
+        traversal = await client.delete("/uploads", params={"path": ".lara/uploads/../..//notes.txt"})
+        assert outside.status_code == 400
+        assert traversal.status_code == 400
+    assert (tmp_path / "notes.txt").read_text(encoding="utf-8") == "keep me"

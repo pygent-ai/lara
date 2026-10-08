@@ -17,8 +17,8 @@ wheels/
 **/credentials.env
 .idea/
 
-# Local Lora runtime state
-.lora/
+# Local Lara runtime state
+.lara/
 .superpowers/
 /sessions/
 /workspace/
