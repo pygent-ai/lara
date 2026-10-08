@@ -217,26 +217,31 @@ class SessionManager:
         metadata = read_json(metadata_path)
         metadata.update({"status": status, "finished_at": utc_now()})
         write_json_atomic(metadata_path, metadata)
-        session = self.load(case_run_ref.session_id)
-        session.updated_at = utc_now()
-        session.metadata.update(
-            {
-                "active_case_id": case_run_ref.case_id,
-                "last_case_run_id": case_run_ref.case_run_id,
-                "last_case_run_status": status,
-            }
-        )
-        self._save_session(session)
         metadata_path = self._session_dir(case_run_ref.session_id) / "metadata.json"
         session_metadata = read_json(metadata_path)
-        session_metadata.update(
-            {
-                "updated_at": session.updated_at,
-                "last_case_run_id": case_run_ref.case_run_id,
-                "last_case_run_status": status,
-            }
-        )
-        write_json(metadata_path, session_metadata)
+        if session_metadata.get("last_case_run_id") in (None, case_run_ref.case_run_id):
+            # Finishing the latest run moves the session pointers; finishing an
+            # older run (stale-run reconcile after a crashed host) must not
+            # regress them onto the already-superseded run. metadata.json is
+            # the authoritative pointer: start_case_run updates it directly.
+            session = self.load(case_run_ref.session_id)
+            session.updated_at = utc_now()
+            session.metadata.update(
+                {
+                    "active_case_id": case_run_ref.case_id,
+                    "last_case_run_id": case_run_ref.case_run_id,
+                    "last_case_run_status": status,
+                }
+            )
+            self._save_session(session)
+            session_metadata.update(
+                {
+                    "updated_at": session.updated_at,
+                    "last_case_run_id": case_run_ref.case_run_id,
+                    "last_case_run_status": status,
+                }
+            )
+            write_json(metadata_path, session_metadata)
         self._append_session_event(
             case_run_ref.session_id,
             "case.finished",

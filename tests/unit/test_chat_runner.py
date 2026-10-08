@@ -9,6 +9,7 @@ import pytest
 from pygent import AIMessage, Context
 
 from lara.orchestration import ManagedSessionTurn, TurnCommand, TurnState
+from lara.core.io import write_json
 from lara.schema import CaseRunRef
 from lara_api.models.requests import ChatTurnRequest
 from lara_api.services import chat_runner
@@ -301,6 +302,156 @@ async def test_nonterminal_durable_execution_is_recovered_instead_of_only_attach
     assert service.recovered == ["execution-1"]
     assert run.startup_error is None
     assert manager.finished == [(run_ref, "passed")]
+
+
+@pytest.mark.asyncio
+async def test_resume_miss_finalizes_the_stale_running_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    write_json(
+        run_dir / "run_metadata.json",
+        {
+            "case_id": "chat",
+            "case_run_id": "run-1",
+            "status": "running",
+            "runtime_execution_id": "execution-1",
+        },
+    )
+    run_ref = CaseRunRef(
+        session_id="session-1",
+        case_id="chat",
+        case_run_id="run-1",
+        run_dir=str(run_dir),
+    )
+
+    class _DeadRuntime:
+        async def get_execution_handle(self, execution_id: str):
+            raise KeyError(execution_id)
+
+    class _RuntimeService:
+        def __init__(self) -> None:
+            self.runtime = _DeadRuntime()
+
+    class _Manager:
+        def __init__(self, status: str) -> None:
+            self.sessions_root = tmp_path / "sessions"
+            self.config = SimpleNamespace()
+            self.status = status
+            self.finished: list[tuple[CaseRunRef, str]] = []
+
+        def show(self, session_id: str) -> dict[str, dict[str, str]]:
+            return {"metadata": {"last_case_run_id": "run-1"}}
+
+        def find_case_run(self, session_id: str, case_run_id: str) -> CaseRunRef:
+            return run_ref
+
+        def load_run_config(self, ref: CaseRunRef, *, credential_source):
+            return self.config
+
+        def run_timing(self, ref: CaseRunRef) -> dict[str, str]:
+            return {"status": self.status}
+
+        def finish_case_run(self, ref: CaseRunRef, status: str) -> None:
+            self.finished.append((ref, status))
+
+    class _Context:
+        def __init__(self, manager: _Manager) -> None:
+            self._manager = manager
+
+        async def acquire_runtime(self, **_kwargs):
+            return _Lease(self._manager, _RuntimeService())
+
+    running_manager = _Manager("running")
+    monkeypatch.setattr(
+        chat_runner,
+        "session_service_for_scope",
+        lambda _context, _scope_id: SimpleNamespace(manager=running_manager),
+    )
+    registry = ChatRunRegistry()
+
+    run = await registry.resolve(
+        _Context(running_manager),
+        ChatTurnRequest(execution_id="execution-1", session_id="session-1"),
+    )
+
+    assert run is None
+    assert running_manager.finished == [(run_ref, "error")]
+
+
+@pytest.mark.asyncio
+async def test_resume_miss_keeps_terminal_runs_unchanged(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    write_json(
+        run_dir / "run_metadata.json",
+        {
+            "case_id": "chat",
+            "case_run_id": "run-1",
+            "status": "passed",
+            "runtime_execution_id": "execution-1",
+        },
+    )
+    run_ref = CaseRunRef(
+        session_id="session-1",
+        case_id="chat",
+        case_run_id="run-1",
+        run_dir=str(run_dir),
+    )
+
+    class _DeadRuntime:
+        async def get_execution_handle(self, execution_id: str):
+            raise KeyError(execution_id)
+
+    class _RuntimeService:
+        def __init__(self) -> None:
+            self.runtime = _DeadRuntime()
+
+    class _Manager:
+        def __init__(self) -> None:
+            self.sessions_root = tmp_path / "sessions"
+            self.config = SimpleNamespace()
+            self.finished: list[tuple[CaseRunRef, str]] = []
+
+        def show(self, session_id: str) -> dict[str, dict[str, str]]:
+            return {"metadata": {"last_case_run_id": "run-1"}}
+
+        def find_case_run(self, session_id: str, case_run_id: str) -> CaseRunRef:
+            return run_ref
+
+        def load_run_config(self, ref: CaseRunRef, *, credential_source):
+            return self.config
+
+        def run_timing(self, ref: CaseRunRef) -> dict[str, str]:
+            return {"status": "passed"}
+
+        def finish_case_run(self, ref: CaseRunRef, status: str) -> None:
+            self.finished.append((ref, status))
+
+    class _Context:
+        async def acquire_runtime(self, **_kwargs):
+            return _Lease(manager, _RuntimeService())
+
+    manager = _Manager()
+    monkeypatch.setattr(
+        chat_runner,
+        "session_service_for_scope",
+        lambda _context, _scope_id: SimpleNamespace(manager=manager),
+    )
+    registry = ChatRunRegistry()
+
+    run = await registry.resolve(
+        _Context(),
+        ChatTurnRequest(execution_id="execution-1", session_id="session-1"),
+    )
+
+    assert run is None
+    assert manager.finished == []
 
 
 @pytest.mark.asyncio

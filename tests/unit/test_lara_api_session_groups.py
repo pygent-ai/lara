@@ -32,7 +32,7 @@ def test_session_groups_are_partitioned_by_remembered_project(tmp_path: Path) ->
     context.remember_project(project_a)
     context.remember_project(project_b)
 
-    response = session_groups_response(context)
+    response = asyncio.run(session_groups_response(context))
 
     groups = {group.scope.scope_id: group for group in response.groups}
     scope_a = f"project:{project_a.resolve()}"
@@ -62,12 +62,12 @@ def test_conversation_scope_can_create_and_load_a_chat(tmp_path: Path, monkeypat
     assert created.scope_id == "conversation"
     assert loaded.session.scope_id == "conversation"
     assert loaded.session.session_id == created.session_id
-    groups = {group.scope.scope_id: group for group in session_groups_response(context).groups}
+    groups = {group.scope.scope_id: group for group in asyncio.run(session_groups_response(context)).groups}
     assert [item.session_id for item in groups["conversation"].sessions] == [created.session_id]
     assert groups[f"project:{project.resolve()}"].sessions == []
 
     assert delete_session(created.session_id, scope_id="conversation", context=context).deleted is True
-    groups = {group.scope.scope_id: group for group in session_groups_response(context).groups}
+    groups = {group.scope.scope_id: group for group in asyncio.run(session_groups_response(context)).groups}
     assert groups["conversation"].sessions == []
 
 
@@ -292,7 +292,7 @@ def test_session_groups_ignore_project_lara_yaml(tmp_path: Path) -> None:
     context.remember_project(invalid_project)
     context.remember_project(active_project)
 
-    response = session_groups_response(context)
+    response = asyncio.run(session_groups_response(context))
 
     assert [group.scope.scope_id for group in response.groups] == [
         f"project:{invalid_project.resolve()}",
@@ -447,21 +447,23 @@ def test_sessions_follow_drag_order_and_new_sessions_land_on_top(tmp_path: Path)
     third = service.create_session().session_id
     scope_id = f"project:{tmp_path.resolve()}"
 
-    groups = {group.scope.scope_id: group for group in session_groups_response(context).groups}
+    groups = {group.scope.scope_id: group for group in asyncio.run(session_groups_response(context)).groups}
     assert {item.session_id for item in groups[scope_id].sessions} == {first, second, third}
 
-    reorder_session_groups(
-        ReorderSessionsRequest(
-            scope_id=scope_id,
-            ordered_session_ids=[first, second, third],
-        ),
-        context=context,
+    asyncio.run(
+        reorder_session_groups(
+            ReorderSessionsRequest(
+                scope_id=scope_id,
+                ordered_session_ids=[first, second, third],
+            ),
+            context=context,
+        )
     )
-    groups = {group.scope.scope_id: group for group in session_groups_response(context).groups}
+    groups = {group.scope.scope_id: group for group in asyncio.run(session_groups_response(context)).groups}
     assert [item.session_id for item in groups[scope_id].sessions] == [first, second, third]
 
     fourth = service.create_session().session_id
-    groups = {group.scope.scope_id: group for group in session_groups_response(context).groups}
+    groups = {group.scope.scope_id: group for group in asyncio.run(session_groups_response(context)).groups}
     assert [item.session_id for item in groups[scope_id].sessions] == [fourth, first, second, third]
 
 
@@ -504,6 +506,40 @@ async def test_session_groups_etag_short_circuits_unchanged_polls(tmp_path, monk
 
 
 @pytest.mark.asyncio
+async def test_session_groups_first_inventory_pass_skips_cached_etag(
+    tmp_path, monkeypatch
+) -> None:
+    """A restarted server must reconcile before honoring a renderer's ETag.
+
+    The renderer keeps its ETag across an API restart, and a crash that leaves
+    sessions pinned as running does not touch any stat the fingerprint covers;
+    skipping the 304 on the first pass is what makes the reconcile reachable.
+    """
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    app = create_app(workspace_root=str(tmp_path))
+    async with AsyncClient(
+        transport=ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as client:
+        first = await client.get("/sessions/groups")
+        etag = first.headers["ETag"]
+        cached = await client.get("/sessions/groups", headers={"If-None-Match": etag})
+        assert cached.status_code == 304
+
+    restarted = create_app(workspace_root=str(tmp_path))
+    async with AsyncClient(
+        transport=ASGITransport(app=restarted, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as client:
+        warmed = await client.get("/sessions/groups")
+        assert warmed.status_code == 200
+        after_warmup = await client.get(
+            "/sessions/groups", headers={"If-None-Match": warmed.headers["ETag"]}
+        )
+        assert after_warmup.status_code == 304
+
+
+@pytest.mark.asyncio
 async def test_session_groups_etag_follows_gui_state_changes(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     app = create_app(workspace_root=str(tmp_path))
@@ -519,6 +555,92 @@ async def test_session_groups_etag_follows_gui_state_changes(tmp_path, monkeypat
         updated = await client.get("/sessions/groups", headers={"If-None-Match": etag})
         assert updated.status_code == 200
         assert updated.headers["ETag"] != etag
+
+
+class _MissingExecutionRuntime:
+    async def get_execution_handle(self, execution_id: str):
+        raise KeyError(execution_id)
+
+
+class _MissingExecutionLease:
+    runtime = SimpleNamespace(
+        runtime_service=SimpleNamespace(runtime=_MissingExecutionRuntime())
+    )
+
+    async def release(self) -> None:
+        return None
+
+
+def _create_stale_running_chat(project: Path) -> SessionManager:
+    manager = SessionManager(RunConfig(workspace_root=str(project)))
+    session = manager.create("chat", mode="chat")
+    run = manager.start_case_run(session.session_id, "chat")
+    run_metadata_path = Path(run.run_dir) / "run_metadata.json"
+    run_metadata = read_json(run_metadata_path)
+    run_metadata["runtime_execution_id"] = "execution-stale"
+    write_json(run_metadata_path, run_metadata)
+    return manager, session, run
+
+
+@pytest.mark.asyncio
+async def test_session_groups_finalize_stale_running_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lara_api.services.session_service import session_groups_response
+
+    project = tmp_path / "project"
+    project.mkdir()
+    manager, session, run = _create_stale_running_chat(project)
+    context = ApiContext(
+        workspace_root=str(project),
+        state_path=str(tmp_path / "state.json"),
+        _config=RunConfig(workspace_root=str(project)),
+    )
+    async def _acquire_runtime(self, **_kwargs):
+        return _MissingExecutionLease()
+
+    monkeypatch.setattr(ApiContext, "acquire_runtime", _acquire_runtime)
+
+    response = await session_groups_response(context)
+
+    scope_id = f"project:{project.resolve()}"
+    group = {group.scope.scope_id: group for group in response.groups}[scope_id]
+    record = group.sessions[0]
+    assert record.session_id == session.session_id
+    assert record.last_case_run_status == "error"
+    run_metadata = read_json(Path(run.run_dir) / "run_metadata.json")
+    assert run_metadata["status"] == "error"
+    assert run_metadata["finished_at"]
+    assert manager.load(session.session_id).metadata["last_case_run_status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_session_groups_keep_live_running_sessions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lara_api.services.session_service import session_groups_response
+
+    project = tmp_path / "project"
+    project.mkdir()
+    manager, session, run = _create_stale_running_chat(project)
+    context = ApiContext(
+        workspace_root=str(project),
+        state_path=str(tmp_path / "state.json"),
+        _config=RunConfig(workspace_root=str(project)),
+    )
+    coordinator = context.session_coordinator
+    monkeypatch.setattr(
+        coordinator, "find_case_run", AsyncMock(return_value=SimpleNamespace())
+    )
+
+    response = await session_groups_response(context)
+
+    scope_id = f"project:{project.resolve()}"
+    group = {group.scope.scope_id: group for group in response.groups}[scope_id]
+    record = group.sessions[0]
+    assert record.last_case_run_status == "running"
+    run_metadata = read_json(Path(run.run_dir) / "run_metadata.json")
+    assert run_metadata["status"] == "running"
 
 
 def _create_titled_chat(workspace_root: Path, title: str) -> str:

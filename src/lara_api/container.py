@@ -46,6 +46,7 @@ class ApiContext:
     _automation_store: AutomationStore | None = None
     _automation_service: AutomationService | None = None
     _automation_scheduler: AutomationScheduler | None = None
+    _stale_runs_reconciled: bool = False
     _lock: RLock = field(default_factory=RLock)
 
     @property
@@ -121,6 +122,13 @@ class ApiContext:
                 )
                 self.runtime_pool.attach_collaboration(self._session_collaboration)
             return self._session_collaboration
+
+    @property
+    def stale_runs_reconciled(self) -> bool:
+        return self._stale_runs_reconciled
+
+    def mark_stale_runs_reconciled(self) -> None:
+        self._stale_runs_reconciled = True
 
     async def acquire_runtime(
         self,
