@@ -19,6 +19,7 @@ from lara.runtime.eternal_conversation import (
     _bound_extractor_payload,
     _compact_working_memory,
     _validate_extractor_payload,
+    estimate_context_tokens,
     load_projection,
     render_memory_context,
 )
@@ -265,6 +266,179 @@ async def test_retry_pending_restarts_only_the_failed_memory_job(
     await harness.wait_idle()
 
     assert resumed == [session.session_id]
+
+
+def test_eternal_trigger_config_validation() -> None:
+    assert EternalConversationConfig(enabled=True).extraction_trigger == "turn"
+    assert (
+        EternalConversationConfig(
+            enabled=True,
+            extraction_trigger="context_ratio",
+            extraction_trigger_ratio=0.7,
+        ).extraction_trigger_ratio
+        == 0.7
+    )
+    with pytest.raises(ValueError, match="extraction_trigger must be"):
+        EternalConversationConfig(enabled=True, extraction_trigger="every_turn")
+    with pytest.raises(ValueError, match="extraction_trigger_ratio must be"):
+        EternalConversationConfig(enabled=True, extraction_trigger_ratio=1.0)
+    with pytest.raises(ValueError, match="extraction_trigger_ratio must be"):
+        EternalConversationConfig(enabled=True, extraction_trigger_ratio=0)
+
+
+def test_estimate_context_tokens_counts_snapshot_plus_uncovered_tail() -> None:
+    history = [
+        {"role": "user", "content": "old " * 200},
+        {"role": "assistant", "content": "tail"},
+    ]
+    covered_all = estimate_context_tokens(
+        history, {"covered_through": 2, "snapshot": {}}
+    )
+    partially_covered = estimate_context_tokens(
+        history, {"covered_through": 1, "snapshot": {}}
+    )
+    uncovered = estimate_context_tokens(history, {})
+
+    assert covered_all < partially_covered < uncovered
+
+
+@pytest.mark.asyncio
+async def test_context_ratio_trigger_defers_extraction_below_threshold(
+    tmp_path: Path,
+) -> None:
+    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
+    manager = SessionManager(config)
+    ref = manager.create("chat", mode="chat")
+    session = manager.load(ref.session_id)
+    session.history = [{"role": "user", "content": "short"}]
+    manager.save(session)
+    harness = EternalConversationHarness(
+        EternalConversationConfig(
+            enabled=True,
+            extraction_trigger="context_ratio",
+            extraction_trigger_ratio=0.7,
+        ),
+        run_agent=lambda *_args: asyncio.sleep(0, result="done"),
+    )
+
+    await harness.record_and_trigger(session, context_window_tokens=1_000_000)
+    await harness.wait_idle()
+
+    state = json.loads(
+        (Path(ref.session_dir) / "state" / "eternal-harness.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    # Recording keeps the observability contract; only extraction defers.
+    assert state["recorded_messages"] == 1
+    assert "requested_cursor" not in state
+    assert "extractor" not in (state.get("memory_jobs") or {})
+    raw = (Path(ref.session_dir) / "raw-history" / "events.jsonl").read_text(
+        encoding="utf-8"
+    )
+    assert "short" in raw
+
+
+@pytest.mark.asyncio
+async def test_context_ratio_trigger_spawns_extraction_at_threshold(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
+    manager = SessionManager(config)
+    ref = manager.create("chat", mode="chat")
+    session = manager.load(ref.session_id)
+    session.history = [{"role": "user", "content": "x" * 4_000}]
+    manager.save(session)
+    harness = EternalConversationHarness(
+        EternalConversationConfig(
+            enabled=True,
+            extraction_trigger="context_ratio",
+            extraction_trigger_ratio=0.7,
+        ),
+        run_agent=lambda *_args: asyncio.sleep(0, result="done"),
+    )
+    started: list[str] = []
+
+    async def extract(session_id: str, _session_dir: Path) -> None:
+        started.append(session_id)
+
+    monkeypatch.setattr(harness, "_guarded_extract_loop", extract)
+
+    await harness.record_and_trigger(session, context_window_tokens=1_000)
+    await harness.wait_idle()
+
+    assert started == [ref.session_id]
+    state = json.loads(
+        (Path(ref.session_dir) / "state" / "eternal-harness.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert state["requested_cursor"] == 1
+    assert state["memory_jobs"]["extractor"]["status"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_context_ratio_trigger_falls_back_without_window_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
+    manager = SessionManager(config)
+    ref = manager.create("chat", mode="chat")
+    session = manager.load(ref.session_id)
+    session.history = [{"role": "user", "content": "short"}]
+    manager.save(session)
+    harness = EternalConversationHarness(
+        EternalConversationConfig(
+            enabled=True,
+            extraction_trigger="context_ratio",
+            extraction_trigger_ratio=0.7,
+        ),
+        run_agent=lambda *_args: asyncio.sleep(0, result="done"),
+    )
+    started: list[str] = []
+
+    async def extract(session_id: str, _session_dir: Path) -> None:
+        started.append(session_id)
+
+    monkeypatch.setattr(harness, "_guarded_extract_loop", extract)
+
+    await harness.record_and_trigger(session, context_window_tokens=None)
+    await harness.wait_idle()
+
+    assert started == [ref.session_id]
+
+
+@pytest.mark.asyncio
+async def test_turn_trigger_extraction_ignores_window_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
+    manager = SessionManager(config)
+    ref = manager.create("chat", mode="chat")
+    session = manager.load(ref.session_id)
+    session.history = [{"role": "user", "content": "short"}]
+    manager.save(session)
+    harness = EternalConversationHarness(
+        EternalConversationConfig(enabled=True),
+        run_agent=lambda *_args: asyncio.sleep(0, result="done"),
+    )
+    started: list[str] = []
+
+    async def extract(session_id: str, _session_dir: Path) -> None:
+        started.append(session_id)
+
+    monkeypatch.setattr(harness, "_guarded_extract_loop", extract)
+
+    await harness.record_and_trigger(session, context_window_tokens=1_000_000)
+    await harness.wait_idle()
+
+    assert started == [ref.session_id]
+    state = json.loads(
+        (Path(ref.session_dir) / "state" / "eternal-harness.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert state["requested_cursor"] == 1
 
 
 @pytest.mark.asyncio

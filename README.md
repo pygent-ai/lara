@@ -83,6 +83,10 @@ eternal_conversation:
   extractor_agent_alias: dev
   builder_agent_alias: fast-check
   dynamic_memory_cli_path: ~/.lara/skills/dynamic-memory-cli/scripts/dynamic_memory_cli.py
+  # 提取触发方式：'turn' 每个成功 turn 触发（默认）；'context_ratio' 按上下文长度占比触发
+  extraction_trigger: turn
+  # extraction_trigger 为 'context_ratio' 时生效：模型可见历史达到 context_window 的该比例即触发
+  extraction_trigger_ratio: 0.7
 ```
 
 ## 使用

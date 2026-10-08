@@ -161,6 +161,28 @@ def render_memory_context(session_dir: str | Path, projection: dict[str, Any]) -
     return f"{render_memory_access_instruction(session_dir, projection)}\n{render_memory_snapshot(projection)}"
 
 
+def estimate_context_tokens(
+    history: list[dict[str, Any]], projection: dict[str, Any]
+) -> int:
+    """Estimate tokens of the model-visible history: snapshot + uncovered tail.
+
+    Uses the same lexical approximation as the Pygent request estimator so the
+    value is comparable against a RunConfig.context_window budget.
+    """
+
+    covered = int(projection.get("covered_through") or 0)
+    visible: list[Any] = []
+    if covered > 0:
+        visible.append(render_memory_snapshot(projection))
+    visible.extend(history[max(covered, 0) :])
+    canonical = json.dumps(visible, ensure_ascii=False, default=str)
+    ascii_bytes = len(canonical.encode("ascii", errors="ignore"))
+    non_ascii_codepoints = len(canonical) - ascii_bytes
+    lexical = (ascii_bytes + 2) // 3 + (non_ascii_codepoints * 3 + 1) // 2
+    structural = 8 * (len(visible) + 1)
+    return lexical + structural
+
+
 class EternalConversationHarness:
     def __init__(self, config: EternalConversationConfig, *, run_agent: AgentRunner) -> None:
         self.config = config
@@ -185,7 +207,11 @@ class EternalConversationHarness:
         raise FileNotFoundError("dynamic-memory-cli script is not configured or installed")
 
     async def record_and_trigger(
-        self, session: AgentSession, *, model_envelope: dict[str, Any] | None = None
+        self,
+        session: AgentSession,
+        *,
+        model_envelope: dict[str, Any] | None = None,
+        context_window_tokens: int | None = None,
     ) -> None:
         if not self.config.enabled or self._closed or not self._accepting:
             return
@@ -215,7 +241,13 @@ class EternalConversationHarness:
                 session_dir / "agent-history" / "foreground" / "conversation.jsonl",
                 event,
             )
-        state.update({"recorded_messages": len(session.history), "requested_cursor": len(session.history)})
+        state.update({"recorded_messages": len(session.history)})
+        if not self._should_extract(session, session_dir, context_window_tokens):
+            # Observability recording continues every turn; extraction waits for
+            # the configured trigger so Working Memory freezes in larger batches.
+            write_json(state_path, state)
+            return
+        state.update({"requested_cursor": len(session.history)})
         _update_job_state(state, "extractor", status="queued", error=None)
         write_json(state_path, state)
         task = self._workers.get(session.session_id)
@@ -225,6 +257,24 @@ class EternalConversationHarness:
                 name=f"eternal-extractor:{session.session_id}",
                 context=Context(),
             )
+
+    def _should_extract(
+        self,
+        session: AgentSession,
+        session_dir: Path,
+        context_window_tokens: int | None,
+    ) -> bool:
+        if self.config.extraction_trigger != "context_ratio":
+            return True
+        if not isinstance(context_window_tokens, int) or context_window_tokens <= 0:
+            # Without a known window budget the ratio cannot be evaluated;
+            # deferring extraction could let visible history grow unbounded.
+            return True
+        projection = load_projection(session_dir)
+        estimate = estimate_context_tokens(list(session.history), projection)
+        return estimate >= int(
+            context_window_tokens * self.config.extraction_trigger_ratio
+        )
 
     async def retry_pending(self, session: AgentSession) -> bool:
         """Restart a failed extractor job without replaying a foreground turn."""
