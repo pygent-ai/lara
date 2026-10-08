@@ -28,7 +28,7 @@ def list_sessions(context: ApiContext = Depends(get_api_context)) -> SessionList
     response_model=SessionGroupListResponse,
     responses={304: {"description": "Groups unchanged since the previous ETag"}},
 )
-def list_session_groups(
+async def list_session_groups(
     response: Response,
     if_none_match: Annotated[str | None, Header()] = None,
     context: ApiContext = Depends(get_api_context),
@@ -36,13 +36,22 @@ def list_session_groups(
     """Serve the sidebar groups, or 304 when nothing behind the ETag changed.
 
     The ETag is a stat-only fingerprint, so unchanged polls skip the full
-    metadata rebuild and the renderer skips re-rendering the sidebar.
+    metadata rebuild and the renderer skips re-rendering the sidebar. The first
+    inventory pass of each server process skips the 304 shortcut once: a host
+    crash while the renderer kept its ETag would otherwise serve unchanged-304
+    forever and never reconcile the runs the crash left behind.
     """
+    first_inventory_pass = not context.stale_runs_reconciled
     etag = f'"{session_groups_etag(context)}"'
-    if if_none_match and _etag_matches(if_none_match, etag):
+    if (
+        if_none_match
+        and not first_inventory_pass
+        and _etag_matches(if_none_match, etag)
+    ):
         return Response(status_code=304, headers={"ETag": etag})
     response.headers["ETag"] = etag
-    return session_groups_response(context)
+    context.mark_stale_runs_reconciled()
+    return await session_groups_response(context)
 
 
 def _etag_matches(header_value: str, etag: str) -> bool:
@@ -51,12 +60,12 @@ def _etag_matches(header_value: str, etag: str) -> bool:
 
 
 @router.patch("/groups/order", response_model=SessionGroupListResponse)
-def reorder_session_groups(
+async def reorder_session_groups(
     request: ReorderSessionsRequest,
     context: ApiContext = Depends(get_api_context),
 ) -> SessionGroupListResponse:
     context.project_state.reorder_sessions(request.scope_id, request.ordered_session_ids)
-    return session_groups_response(context)
+    return await session_groups_response(context)
 
 
 @router.post("", response_model=SessionRecordResponse)

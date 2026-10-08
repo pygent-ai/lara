@@ -121,6 +121,33 @@ class SessionManagerTests(unittest.TestCase):
             self.assertEqual(session_metadata["last_case_run_status"], "passed")
             self.assertEqual(loaded.metadata["last_case_run_id"], run.case_run_id)
 
+    def test_finish_case_run_does_not_regress_newer_session_pointers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = SessionManager(
+                RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
+            )
+            session = manager.create("case-a")
+            stale = manager.start_case_run(session.session_id, "case-a")
+            latest = manager.start_case_run(session.session_id, "case-a")
+            manager.finish_case_run(latest, "passed")
+            manager.finish_case_run(stale, "error")
+
+            stale_metadata = json.loads(
+                (Path(stale.run_dir) / "run_metadata.json").read_text(encoding="utf-8")
+            )
+            session_metadata = json.loads(
+                (Path(session.session_dir) / "metadata.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            loaded = manager.load(session.session_id)
+            self.assertEqual(stale_metadata["status"], "error")
+            self.assertIn("finished_at", stale_metadata)
+            self.assertEqual(session_metadata["last_case_run_id"], latest.case_run_id)
+            self.assertEqual(session_metadata["last_case_run_status"], "passed")
+            self.assertEqual(loaded.metadata["last_case_run_id"], latest.case_run_id)
+            self.assertEqual(loaded.metadata["last_case_run_status"], "passed")
+
     def test_find_case_run_returns_ref_from_run_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             manager = SessionManager(

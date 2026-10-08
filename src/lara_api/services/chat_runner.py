@@ -297,6 +297,17 @@ class ChatRunRegistry:
                     request.execution_id
                 )
             except KeyError:
+                # This process owns execution liveness: a resume miss means the
+                # turn died with its host process, so finalize the run the
+                # metadata still reports as running instead of retrying the
+                # resume forever.
+                if manager.run_timing(run_ref).get("status") == "running":
+                    try:
+                        manager.finish_case_run(run_ref, "error")
+                    except OSError:
+                        # Metadata repair must not mask the resume miss; the
+                        # next resume attempt reconciles again.
+                        pass
                 await lease.release()
                 return None
             try:

@@ -8,7 +8,7 @@ from typing import Any
 
 from lara.core.io import read_json, validate_path_id
 from lara.runtime.reminders import ReminderService
-from lara.schema import RunConfig
+from lara.schema import CaseRunRef, RunConfig
 from lara.sessions import SessionManager
 from lara.tracing.events import EventStore
 from lara_api.container import ApiContext
@@ -136,7 +136,7 @@ class SessionService:
         self.manager.save_title_from_user_input(session_id, user_input)
 
 
-def session_groups_response(context: ApiContext) -> SessionGroupListResponse:
+async def session_groups_response(context: ApiContext) -> SessionGroupListResponse:
     config = context.config
     active_scope_id = active_project_scope_id(config.workspace_root)
     collapsed_ids = set(context.project_state.collapsed_scope_ids or [])
@@ -151,6 +151,7 @@ def session_groups_response(context: ApiContext) -> SessionGroupListResponse:
                 raise
             continue
         records = SessionService(manager).list_chat_sessions(scope_id=scope.scope_id)
+        await reconcile_stale_running_sessions(context, manager, records)
         records = _apply_session_order(context.project_state, scope.scope_id, records)
         groups.append(
             SessionGroupResponse(
@@ -167,6 +168,68 @@ def session_groups_response(context: ApiContext) -> SessionGroupListResponse:
             )
         )
     return SessionGroupListResponse(active_scope_id=active_scope_id, groups=groups)
+
+async def reconcile_stale_running_sessions(
+    context: ApiContext,
+    manager: SessionManager,
+    records: list[SessionRecordResponse],
+) -> None:
+    """Finalize runs whose host process died before the run could finish.
+
+    The sidebar renders `last_case_run_status` directly, so a crashed host
+    leaves sessions spinning as running until someone opens the session and a
+    resume attempt reconciles it. Probe each candidate execution here and stamp
+    dead runs terminal so the list reports the real state.
+    """
+    for record in records:
+        if record.last_case_run_status != "running" or not record.last_case_run_id:
+            continue
+        try:
+            run_ref = manager.find_case_run(record.session_id, record.last_case_run_id)
+        except (FileNotFoundError, ValueError):
+            continue
+        if await _execution_is_live(context, manager, run_ref):
+            continue
+        try:
+            manager.finish_case_run(run_ref, "error")
+        except OSError:
+            # Metadata repair must not fail the list; the next rebuild retries.
+            continue
+        latest = manager.show(record.session_id)["metadata"].get("last_case_run_id")
+        if latest == record.last_case_run_id:
+            record.last_case_run_status = "error"
+
+async def _execution_is_live(
+    context: ApiContext, manager: SessionManager, run_ref: CaseRunRef
+) -> bool:
+    """Report whether `run_ref`'s execution is still running or recoverable.
+
+    The coordinator covers turns this process is driving; the runtime probe is
+    the authority for everything else, because an execution that is neither in
+    the pool's memory nor in durable history does not exist anymore.
+    """
+    coordinator = context.session_coordinator
+    if await coordinator.find_case_run(run_ref.case_run_id) is not None:
+        return True
+    run_metadata = read_json(Path(run_ref.run_dir) / "run_metadata.json", default={})
+    execution_id = _optional_str(run_metadata.get("runtime_execution_id"))
+    if not execution_id:
+        # A run without a recorded execution died before its durable identity
+        # existed, so there is nothing to recover.
+        return False
+    if await coordinator.find_execution(execution_id) is not None:
+        return True
+    lease = await context.acquire_runtime(config=manager.config, manager=manager)
+    try:
+        try:
+            await lease.runtime.runtime_service.runtime.get_execution_handle(
+                execution_id
+            )
+        except KeyError:
+            return False
+        return True
+    finally:
+        await lease.release()
 
 def session_groups_etag(context: ApiContext) -> str:
     """Stat-only fingerprint of every input `session_groups_response` reads.
