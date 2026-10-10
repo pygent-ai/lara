@@ -348,6 +348,7 @@ export function App() {
       setActiveSession(loadedSession);
       messagesRef.current = resolvedMessages;
       setMessages(resolvedMessages);
+      setPendingSteerings((items) => reconcilePendingSteerings(items, sessionId, resolvedMessages));
       setActivityCollapseToken((value) => value + 1);
       setStatus(runningSessionIdsRef.current[sessionId] ? "Running" : "Ready");
       if (resumeExecution && detail.runtime_execution_id && !runningSessionIdsRef.current[sessionId]) {
@@ -871,6 +872,7 @@ export function App() {
             const nextMessages = historyToMessages(detail.history || []);
             messagesRef.current = nextMessages;
             setMessages(nextMessages);
+            setPendingSteerings((items) => reconcilePendingSteerings(items, activeSessionId, nextMessages));
           }
         },
       });
@@ -2876,6 +2878,29 @@ export function stalePendingSteerings(pending, sessionId) {
   return { ...pending, [sessionId]: current.map((item) => ({ ...item, stale: true })) };
 }
 
+// A reloaded transcript is the source of truth for which steering inputs the
+// runtime consumed: the live boundary event can be missed when the turn ends
+// or the stream tears down first, and the stale chip would otherwise claim
+// "未生效" for an input that history shows was applied.
+export function reconcilePendingSteerings(pending, sessionId, messages) {
+  const current = pending[sessionId];
+  if (!current?.length) {
+    return pending;
+  }
+  const consumed = new Set(
+    (Array.isArray(messages) ? messages : [])
+      .map((message) => message?.steeringInputId)
+      .filter(Boolean),
+  );
+  if (!consumed.size) {
+    return pending;
+  }
+  const next = current.filter((item) => !consumed.has(item.inputId));
+  if (next.length === current.length) {
+    return pending;
+  }
+  return next.length ? { ...pending, [sessionId]: next } : omitKey(pending, sessionId);
+}
 function projectLiveExecutionEvent(setMessages, assistantId, event) {
   setMessages((items) => {
     let changed = false;

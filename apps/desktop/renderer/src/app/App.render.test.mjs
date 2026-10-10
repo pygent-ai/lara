@@ -233,6 +233,27 @@ test("steering waits for the react boundary, then moves new activity below it", 
   );
   assert.deepEqual(stale["session-1"], [{ inputId: "input-2", text: "use Chinese", stale: true }]);
   assert.equal(appModule.stalePendingSteerings(stale, "session-1"), stale);
+
+  // A reloaded transcript proves which inputs the runtime actually consumed:
+  // the boundary event can be missed when the turn is interrupted first.
+  const reloaded = [
+    { id: "history-0", role: "user", content: "focus on tests", steeringInputId: "input-1" },
+    { id: "history-1", role: "assistant", content: "ok" },
+  ];
+  let interrupted = appModule.stalePendingSteerings(
+    appModule.addPendingSteering({}, "session-1", { inputId: "input-1", text: "focus on tests" }),
+    "session-1",
+  );
+  assert.deepEqual(appModule.reconcilePendingSteerings(interrupted, "session-1", reloaded), {});
+  // An input that history does not contain was never applied and stays pending.
+  interrupted = appModule.stalePendingSteerings(
+    appModule.addPendingSteering({}, "session-1", { inputId: "input-2", text: "use Chinese" }),
+    "session-1",
+  );
+  const kept = appModule.reconcilePendingSteerings(interrupted, "session-1", reloaded);
+  assert.deepEqual(kept["session-1"], [{ inputId: "input-2", text: "use Chinese", stale: true }]);
+  assert.equal(appModule.reconcilePendingSteerings(kept, "session-1", reloaded), kept);
+  assert.equal(appModule.reconcilePendingSteerings(interrupted, "session-1", []), interrupted);
 });
 
 test("settings displays the saved tool permission mode", () => {
