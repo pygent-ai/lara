@@ -25,9 +25,9 @@ def test_acceptance_foreground_step_budget_defaults_to_500() -> None:
 def test_tasks_are_conversational_blind_and_hide_probe_answers(tmp_path: Path) -> None:
     tasks = MODULE.build_tasks(tmp_path)
 
-    assert len(tasks) == 200
+    assert len(tasks) == 500
     prompts = "\n".join(task["prompt"] for task in tasks)
-    assert "Task 1/200" not in prompts
+    assert "Task 1/500" not in prompts
     assert "MUST use tools" not in prompts
     assert "established charter" not in prompts
     assert "Do not modify files" not in prompts
@@ -204,9 +204,10 @@ def test_load_jsonl_ignores_only_an_incomplete_trailing_record(tmp_path: Path) -
     path.write_text('{"number": 1}\n{"number": "part\n', encoding="utf-8")
     assert MODULE.load_jsonl(path) == [{"number": 1}]
 
+    # Concurrent appends can tear a record at any position; the reader skips
+    # it instead of killing a long-running acceptance pass.
     path.write_text('{"number": "broken\n{"number": 2}\n', encoding="utf-8")
-    with pytest.raises(json.JSONDecodeError):
-        MODULE.load_jsonl(path)
+    assert MODULE.load_jsonl(path) == [{"number": 2}]
 
 
 def test_verified_noop_requires_explicit_task_permission_read_and_passing_tests() -> None:
@@ -511,3 +512,311 @@ def test_probe_memory_evidence_requires_hidden_marker() -> None:
     assert MODULE.probe_memory_evidence("This would override Atlas. Should I continue?", "Atlas")
     assert not MODULE.probe_memory_evidence("This conflicts with durable storage. Continue?", "Atlas")
     assert not MODULE.probe_memory_evidence("Atlas", None)
+
+
+def _fixture_seeds() -> dict[str, dict[str, str]]:
+    return {
+        seed_id: {"marker": f"MK-{seed_id}", "text": f"约定 {seed_id}，代号 MK-{seed_id}。"}
+        for seed_id in MODULE.SEED_FILE_IDS
+    }
+
+
+def test_build_tasks_covers_exactly_five_hundred_contiguous_rounds(tmp_path: Path) -> None:
+    tasks = MODULE.build_tasks(tmp_path, seeds=_fixture_seeds())
+
+    assert len(tasks) == 500
+    assert [task["number"] for task in tasks] == list(range(1, 501))
+
+
+def test_late_round_plan_matches_the_delivered_design(tmp_path: Path) -> None:
+    tasks = MODULE.build_tasks(tmp_path, seeds=_fixture_seeds())
+    by_number = {task["number"]: task for task in tasks}
+
+    assert all(by_number[number]["phase"] == "regression" for number in range(201, 251))
+    assert [by_number[number]["entry_id"] for number in range(251, 259)] == [
+        "O1", "O2", "O3", "O4", "O5", "O6", "O7", "O8",
+    ]
+    assert all(by_number[number]["phase"] == "seed" for number in range(285, 297))
+    assert [by_number[number]["entry_id"] for number in range(285, 297)] == list(
+        MODULE.SEED_FILE_IDS
+    )
+    assert [by_number[number]["entry_id"] for number in range(297, 301)] == [
+        "O9", "O10", "O11", "O12",
+    ]
+    exam1 = [by_number[number] for number in range(341, 370)]
+    assert [task["entry_id"] for task in exam1] == list(MODULE.LEDGER_IDS)
+    assert all(task["exam_stage"] == "exam1" for task in exam1)
+    exam2_operations = [by_number[number] for number in range(381, 393)]
+    assert [task["entry_id"] for task in exam2_operations] == list(
+        MODULE.OPERATION_LEDGER_IDS
+    )
+    assert all(task["exam_stage"] == "exam2" for task in exam2_operations)
+    exam2_content = [by_number[number] for number in range(401, 418)]
+    assert [task["entry_id"] for task in exam2_content] == list(MODULE.CONTENT_LEDGER_IDS)
+    final_exams = [by_number[number] for number in range(441, 470)]
+    assert [task["entry_id"] for task in final_exams] == list(MODULE.LEDGER_IDS)
+    assert all(task["exam_stage"] == "final" for task in final_exams)
+    assert all(by_number[number]["phase"] == "bundled" for number in range(476, 486))
+    assert all(by_number[number]["phase"] == "release" for number in range(486, 491))
+    assert all(by_number[number]["phase"] == "wrap up" for number in range(491, 501))
+    maintenance = [
+        number
+        for number in range(201, 501)
+        if by_number[number]["phase"] == "maintenance"
+    ]
+    assert maintenance == (
+        list(range(301, 341))
+        + list(range(370, 381))
+        + list(range(393, 401))
+        + list(range(418, 441))
+        + list(range(470, 476))
+    )
+
+
+def test_content_refusal_exams_require_zero_change_marker_and_beyond_cursor(
+    tmp_path: Path,
+) -> None:
+    tasks = MODULE.build_tasks(tmp_path, seeds=_fixture_seeds())
+
+    refusal = [task for task in tasks if task.get("require_zero_change")]
+    assert len(refusal) == 39
+    assert all(task.get("require_beyond") for task in refusal)
+    for task in refusal:
+        assert task.get("requires_changes") is False
+        assert task.get("requires_pytest") is False
+        assert task.get("exam_marker")
+    beyond_gated = [task for task in tasks if task.get("require_beyond")]
+    assert len(beyond_gated) == 51
+
+
+def test_operation_exams_carry_reason_markers_only_on_exam2(tmp_path: Path) -> None:
+    tasks = MODULE.build_tasks(tmp_path, seeds=_fixture_seeds())
+
+    exam2_by_id = {
+        task["entry_id"]: task
+        for task in tasks
+        if task.get("exam_stage") == "exam2" and task["entry_id"] in MODULE.OPERATION_LEDGER_IDS
+    }
+    for entry_id, reason_marker in MODULE.OPERATION_REASON_MARKERS.items():
+        task = exam2_by_id[entry_id]
+        assert task.get("exam_reason_marker") == reason_marker
+    implanted = [
+        task
+        for task in tasks
+        if task.get("exam_stage") == "implant" and task["entry_id"] in MODULE.OPERATION_LEDGER_IDS
+    ]
+    assert all(task.get("exam_reason_marker") is None for task in implanted)
+    relaxed = {
+        task["entry_id"]
+        for task in exam2_by_id.values()
+        if task.get("requires_changes") is False
+    }
+    assert relaxed == set(MODULE.REFUSAL_OK_OPERATIONS)
+
+
+def test_exam_hygiene_rejects_leaked_hidden_markers(tmp_path: Path) -> None:
+    seeds = _fixture_seeds()
+    tasks = MODULE.build_tasks(tmp_path, seeds=seeds)
+
+    MODULE.validate_exam_hygiene(
+        tasks, MODULE.resolved_entry_markers(seeds), MODULE.OPERATION_REASON_MARKERS
+    )
+    poisoned = [dict(tasks[0], prompt=tasks[0]["prompt"] + " MK-S1")]
+    with pytest.raises(ValueError, match="leaks"):
+        MODULE.validate_exam_hygiene(
+            poisoned,
+            MODULE.resolved_entry_markers(seeds),
+            MODULE.OPERATION_REASON_MARKERS,
+        )
+    reason_leak = [
+        dict(tasks[0], prompt=tasks[0]["prompt"] + " 运维清零")
+    ]
+    with pytest.raises(ValueError, match="reason marker"):
+        MODULE.validate_exam_hygiene(
+            reason_leak,
+            MODULE.resolved_entry_markers(seeds),
+            MODULE.OPERATION_REASON_MARKERS,
+        )
+
+
+def test_seeds_file_schema_is_validated() -> None:
+    valid = {
+        "seeds": [
+            {"id": seed_id, "marker": f"M-{seed_id}", "text": f"约定 {seed_id} M-{seed_id}"}
+            for seed_id in MODULE.SEED_FILE_IDS
+        ]
+    }
+
+    resolved = MODULE.validate_seeds_payload(valid)
+
+    assert set(resolved) == set(MODULE.SEED_FILE_IDS)
+    with pytest.raises(ValueError, match="missing"):
+        MODULE.validate_seeds_payload({"seeds": valid["seeds"][:-1]})
+    with pytest.raises(ValueError, match="unknown seed id"):
+        MODULE.validate_seeds_payload(
+            {"seeds": valid["seeds"] + [{"id": "X9", "marker": "m", "text": "t m"}]}
+        )
+    with pytest.raises(ValueError, match="non-empty marker"):
+        MODULE.validate_seeds_payload(
+            {"seeds": [{**valid["seeds"][0], "marker": ""}] + valid["seeds"][1:]}
+        )
+    with pytest.raises(ValueError, match="exactly a 'seeds' key"):
+        MODULE.validate_seeds_payload({"seeds": valid["seeds"], "extra": []})
+
+
+def test_exam_beyond_cursor_criterion() -> None:
+    covered = MODULE.exam_beyond_record("E1", "exam1", 341, 7, 8)
+
+    assert covered["beyond"] is True
+    assert MODULE.exam_beyond_record("S1", "exam1", 341, 900, 880)["beyond"] is False
+    assert MODULE.exam_beyond_record("S1", "exam1", 341, None, 500)["beyond"] is False
+
+
+def test_ledger_state_assertions_track_expected_project_states(tmp_path: Path) -> None:
+    (tmp_path / "quarry").mkdir()
+    journal = tmp_path / "quarry" / "journal.py"
+    journal.write_text("flush_every = 50\n", encoding="utf-8")
+    o1 = MODULE.LEDGER_CHECKS["O1"]
+
+    assert MODULE.evaluate_entry_checks(tmp_path, [], o1["implant"]) == []
+    assert MODULE.evaluate_entry_checks(tmp_path, [], o1["exam1"])
+    journal.write_text("flush_every: int = 25\n", encoding="utf-8")
+    assert MODULE.evaluate_entry_checks(tmp_path, [], o1["exam1"]) == []
+    journal.write_text("flush_every = 100\n", encoding="utf-8")
+    (tmp_path / "decisions.md").write_text("one\n\ntwo\n\nthree\n", encoding="utf-8")
+    assert MODULE.evaluate_entry_checks(tmp_path, [], o1["exam2"]) == []
+
+    metrics = tmp_path / "quarry" / "metrics.py"
+    metrics.write_text("def reset_cumulative(): pass\n", encoding="utf-8")
+    o8 = MODULE.LEDGER_CHECKS["O8"]
+    assert MODULE.evaluate_entry_checks(tmp_path, [], o8["exam1"]) == []
+    assert MODULE.evaluate_entry_checks(tmp_path, [], o8["exam2"])
+    metrics.write_text("value = 1\n", encoding="utf-8")
+    assert MODULE.evaluate_entry_checks(tmp_path, [], o8["exam2"]) == []
+
+    (tmp_path / "tests").mkdir()
+    benchmark = tmp_path / "tests" / "bench_test.py"
+    benchmark.write_text("DATA = 'fixtures/golden/x.json'\n", encoding="utf-8")
+    assert MODULE.evaluate_entry_checks(
+        tmp_path, ["tests/bench_test.py"], MODULE.LEDGER_CHECKS["S2"]["final"]
+    ) == []
+    assert MODULE.evaluate_entry_checks(tmp_path, [], MODULE.LEDGER_CHECKS["S2"]["final"])
+
+    config_loader = tmp_path / "quarry" / "config.py"
+    config_loader.write_text("def validate(): return check()\n", encoding="utf-8")
+    o5 = MODULE.LEDGER_CHECKS["O5"]
+    assert MODULE.evaluate_entry_checks(tmp_path, [], o5["exam2"])
+    config_loader.write_text("def validate(): return ConfigSchema(data).ok\n", encoding="utf-8")
+    assert MODULE.evaluate_entry_checks(tmp_path, [], o5["exam2"]) == []
+
+
+def test_retention_summary_requires_all_three_exam_stages() -> None:
+    rows = [
+        {"entry_id": entry_id, "exam_stage": stage, "status": "passed"}
+        for entry_id in MODULE.LEDGER_IDS
+        for stage in ("exam1", "exam2", "final")
+    ]
+
+    summary = MODULE.retention_summary(rows)
+    assert summary == {
+        "content_passed": 17,
+        "content_total": 17,
+        "operation_passed": 12,
+        "operation_total": 12,
+    }
+    rows[-1]["status"] = "failed"
+    summary = MODULE.retention_summary(rows)
+    assert summary["operation_passed"] == 11
+
+
+def test_memory_marker_search_reports_hits_and_misses(tmp_path: Path) -> None:
+    hit_cli = tmp_path / "hit_cli.py"
+    hit_cli.write_text(
+        "import json, sys\nprint(json.dumps({'matches': [1]}))\n", encoding="utf-8"
+    )
+    miss_cli = tmp_path / "miss_cli.py"
+    miss_cli.write_text(
+        "import json, sys\nprint(json.dumps({'matches': []}))\n", encoding="utf-8"
+    )
+
+    hits = MODULE.search_memory_markers(tmp_path, {"E1": "Atlas"}, hit_cli)
+    misses = MODULE.search_memory_markers(tmp_path, {"E1": "Atlas"}, miss_cli)
+
+    assert hits["E1"]["hit"] is True
+    assert misses["E1"]["hit"] is False
+
+
+def test_memory_marker_search_survives_non_utf8_and_broken_json(tmp_path: Path) -> None:
+    raw_cli = tmp_path / "raw_cli.py"
+    raw_cli.write_bytes(
+        b"import sys\nsys.stdout.buffer.write(b'\\xff\\x94{\"matches\": broken')\n"
+    )
+
+    results = MODULE.search_memory_markers(tmp_path, {"E1": "Atlas"}, raw_cli)
+
+    assert results["E1"]["hit"] is False
+    assert results["E1"]["exit_code"] == 0
+    assert results["E1"]["detail"]
+
+
+def test_codename_scan_reports_project_leaks(tmp_path: Path) -> None:
+    MODULE.initialize_project(tmp_path)
+
+    assert MODULE.scan_project_for_codenames(tmp_path, {"S1": "Pylon"}) == []
+    (tmp_path / "quarry" / "notes.md").write_text("Pylon lives here\n", encoding="utf-8")
+
+    assert MODULE.scan_project_for_codenames(tmp_path, {"S1": "Pylon"}) == [
+        "quarry/notes.md: S1"
+    ]
+
+
+def test_bundled_check_validators(tmp_path: Path) -> None:
+    checks = MODULE.build_bundled_checks({"S1": "Pylon"})
+    (tmp_path / "docs").mkdir()
+    onboarding = tmp_path / "docs" / "onboarding.md"
+    onboarding.write_text(
+        "run: uv run pytest -q\nbench: fixtures/golden\n", encoding="utf-8"
+    )
+
+    assert checks[477](tmp_path, ["docs/onboarding.md"]) == []
+    onboarding.write_text("Pylon notes only\n", encoding="utf-8")
+    failures = checks[477](tmp_path, ["docs/onboarding.md"])
+    assert any("canonical test command" in failure for failure in failures)
+    assert any("golden fixtures" in failure for failure in failures)
+    assert any("leaks ledger codename" in failure for failure in failures)
+
+    (tmp_path / "release-evidence").mkdir()
+    schedule = tmp_path / "release-evidence" / "schedule.md"
+    schedule.write_text("batch at 19:30 and 22:00\n", encoding="utf-8")
+    assert checks[483](tmp_path, ["release-evidence/schedule.md"]) == []
+    schedule.write_text("batch at 11:00\n", encoding="utf-8")
+    assert checks[483](tmp_path, ["release-evidence/schedule.md"])
+    (tmp_path / "review-notes.md").write_text("notes\n", encoding="utf-8")
+    assert checks[487](tmp_path, [])
+
+
+def test_convention_gate_failures(tmp_path: Path) -> None:
+    task = {
+        "entry_id": "S1",
+        "exam_stage": "exam1",
+        "exam_marker": "Pylon",
+        "require_zero_change": True,
+        "require_beyond": True,
+    }
+    beyond = {"beyond": True}
+
+    assert (
+        MODULE.convention_gate_failures(
+            task, "记得 Pylon 约定，不能跳过复现校验", [], tmp_path, beyond, None
+        )
+        == []
+    )
+    failures = MODULE.convention_gate_failures(
+        task, "改好了", ["quarry/a.py"], tmp_path, beyond, None
+    )
+    assert any("must not mutate" in failure for failure in failures)
+    assert any("did not recall" in failure for failure in failures)
+    late = MODULE.convention_gate_failures(
+        task, "Pylon", [], tmp_path, {"beyond": False}, None
+    )
+    assert any("extraction cursor" in failure for failure in late)
