@@ -54,6 +54,19 @@ def test_audit_exporter_final_task_has_a_concrete_batch_failure_gap(tmp_path: Pa
     assert "release-evidence/audit.md" in task["prompt"]
 
 
+def test_lease_manager_contract_task_uses_incremental_override(tmp_path: Path) -> None:
+    tasks = MODULE.build_tasks(tmp_path)
+
+    task = tasks[7]
+    assert task["component"] == "lease manager"
+    assert "分小步来" in task["prompt"]
+    assert "回复保持简短" in task["prompt"]
+    other = tasks[1]
+    assert other["component"] == "append-only journal"
+    assert "分小步来" not in other["prompt"]
+    assert "核心逻辑和相关测试一起补上" in other["prompt"]
+
+
 def test_utc_clock_final_task_has_concrete_canonical_boundaries(tmp_path: Path) -> None:
     task = MODULE.build_tasks(tmp_path)[191]
 

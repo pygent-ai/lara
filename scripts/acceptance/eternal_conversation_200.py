@@ -1090,6 +1090,14 @@ FAILURE_RECOVERY_REPORTS = {
     ),
 }
 
+CONTRACT_REPORTS = {
+    "lease manager": (
+        "接着把 lease manager 这块搭起来，代码放 quarry/leases.py。我希望它做到："
+        "UTC expiries and fencing tokens。这次分小步来：先把最小可用的过期时间和 fencing token "
+        "逻辑直接写进文件，跑通一个最小测试；其余细节下一步再补。回复保持简短，别贴大段代码。"
+    ),
+}
+
 CHANGE_REQUEST_REPORTS = {
     "canonical envelope": (
         "事件导入要加一个明确的 v2 批量入口 build_envelopes_v2(events)。每项包含 payload、event_type，"
@@ -1418,7 +1426,7 @@ def build_tasks(
                     "时间统一用带时区的 UTC，遇到坏数据直接报错。再补一组小而完整的测试，改完跑一下相关 pytest。"
                 )
             elif phase == "contract":
-                instruction = (
+                instruction = CONTRACT_REPORTS.get(component.name) or (
                     f"接着把 {component.name} 这块搭起来，代码放 quarry/{component.file}。我希望它做到："
                     f"{component.contract}。API 先小一点，核心逻辑和相关测试一起补上。"
                 )
