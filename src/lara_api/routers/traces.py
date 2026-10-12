@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +10,7 @@ from lara.runtime.model_request_journal import ModelRequestJournal
 from lara.tracing import EventStore
 from lara_api.dependencies import ApiContext, get_api_context
 from lara_api.models.responses import SessionActivityResponse, TraceEventsResponse
-from lara_api.services.session_activity import session_activity_events
+from lara_api.services.session_activity import recent_jsonl_records, session_activity_events
 
 router = APIRouter(prefix="/traces", tags=["traces"])
 
@@ -30,8 +29,9 @@ def get_session_activity(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    events, events_total = session_activity_events(Path(session.session_dir))
-    shown = _latest_items(events, event_limit)
+    shown, events_total = session_activity_events(
+        Path(session.session_dir), event_limit=event_limit
+    )
     return SessionActivityResponse(
         session_id=session_id,
         events=shown,
@@ -59,11 +59,13 @@ def get_trace_events(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     store = EventStore(run_ref)
     events, events_total = _latest_jsonl_items(store.events_path, event_limit)
-    snapshots = _context_snapshots(
-        context, run_ref.run_dir, session_id=session_id, case_run_id=case_run_id
+    snapshots, snapshots_total = _context_snapshots(
+        context,
+        run_ref.run_dir,
+        session_id=session_id,
+        case_run_id=case_run_id,
+        limit=context_snapshot_limit,
     )
-    snapshots_total = len(snapshots)
-    snapshots = _latest_items(snapshots, context_snapshot_limit)
     return TraceEventsResponse(
         session_id=session_id,
         case_run_id=case_run_id,
@@ -82,32 +84,20 @@ def _context_snapshots(
     *,
     session_id: str,
     case_run_id: str,
-) -> list[dict[str, Any]]:
+    limit: int | None = None,
+) -> tuple[list[dict[str, Any]], int]:
     execution_id = read_json(
         Path(run_dir) / "run_metadata.json", default={}
     ).get("runtime_execution_id")
     if not execution_id:
-        return []
+        return [], 0
     journal = ModelRequestJournal(context.config.runtime_durability.history_path)
+    snapshots, snapshots_total = journal.list_window(execution_id, limit=limit)
     return [
         {**snapshot, "session_id": session_id, "case_run_id": case_run_id}
-        for snapshot in journal.list(execution_id)
-    ]
+        for snapshot in snapshots
+    ], snapshots_total
 
 
 def _latest_jsonl_items(path: Any, limit: int | None) -> tuple[list[dict[str, Any]], int]:
-    if limit is None or limit <= 0:
-        items = list(EventStore.iter_jsonl(path))
-        return items, len(items)
-    recent: deque[dict[str, Any]] = deque(maxlen=limit)
-    total = 0
-    for item in EventStore.iter_jsonl(path):
-        total += 1
-        recent.append(item)
-    return list(recent), total
-
-
-def _latest_items(items: list[dict[str, Any]], limit: int | None) -> list[dict[str, Any]]:
-    if limit is None or limit <= 0 or len(items) <= limit:
-        return items
-    return items[-limit:]
+    return recent_jsonl_records(Path(path), limit)

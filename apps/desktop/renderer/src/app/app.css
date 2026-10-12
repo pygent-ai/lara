@@ -704,6 +704,24 @@ button:focus-visible {
   background: var(--bg-content);
 }
 
+.load-earlier-messages {
+  display: block;
+  margin: 0 auto 24px;
+  padding: 7px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.load-earlier-messages:hover {
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+
 .welcome {
   max-width: 560px;
   margin: 10vh auto 0;
@@ -810,6 +828,38 @@ button:focus-visible {
 
 .markdown-content h3 {
   font-size: 15px;
+}
+
+/* Per-message footer: checkpoint time, token usage, copy action. */
+.message-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 8px;
+  color: var(--soft);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.message-meta-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  padding: 2px;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--soft);
+  cursor: pointer;
+  font: inherit;
+  line-height: 0;
+}
+
+.message-meta-copy:hover,
+.message-meta-copy:focus-visible {
+  color: var(--text);
+  text-decoration: underline;
 }
 
 .markdown-content p,
@@ -926,7 +976,16 @@ button:focus-visible {
   border: 1px solid var(--line);
   border-radius: 4px;
   background: var(--surface-2);
+  font-family: var(--font-mono);
   line-height: 1.55;
+}
+
+.markdown-code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
 .markdown-code code {
@@ -937,9 +996,29 @@ button:focus-visible {
   white-space: pre;
 }
 
+.markdown-code-copy {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  padding: 2px;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--soft);
+  cursor: pointer;
+  font: inherit;
+  line-height: 0;
+}
+
+.markdown-code-copy:hover,
+.markdown-code-copy:focus-visible {
+  color: var(--text);
+  background: var(--surface-3);
+}
+
 .markdown-code-language {
   display: block;
-  margin-bottom: 8px;
   color: var(--soft);
   font-size: 11px;
   font-weight: 800;
@@ -950,12 +1029,19 @@ button:focus-visible {
   flex: 0 1 auto;
   width: auto;
   max-width: min(680px, 76%);
-  padding: 10px 14px;
+  padding: 0;
   color: var(--text);
   border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* The gray plate wraps only the message text; the meta footer (copy) sits
+   below it on the bare transcript background. */
+.message.user .bubble-body {
+  padding: 10px 14px;
   border-radius: 18px;
   background: var(--message-user-bg);
-  box-shadow: none;
 }
 
 .activity {
@@ -980,7 +1066,7 @@ button:focus-visible {
   color: var(--soft);
   background: transparent;
   cursor: pointer;
-  font-size: inherit;
+  font: inherit;
   font-weight: 650;
   line-height: inherit;
   text-align: left;
@@ -1161,7 +1247,7 @@ button:focus-visible {
 .tool-call-status {
   flex: 0 0 auto;
   color: var(--muted);
-  font-size: 12px;
+  font-size: inherit;
   font-weight: 600;
 }
 
@@ -2896,7 +2982,8 @@ input:focus,
 .transcript { padding:32px clamp(20px, 4vw, 52px); scrollbar-gutter:stable; }
 .transcript > .message { max-width:840px; margin-left:auto; margin-right:auto; margin-bottom:32px; }
 .message.assistant .bubble { font-size:15px; line-height:1.85; }
-.message.user .bubble { padding:12px 18px; border-radius:16px 16px 4px 16px; }
+.message.user .bubble { padding:0; }
+.message.user .bubble-body { padding:12px 18px; border-radius:16px 16px 4px 16px; }
 .composer { position:relative; flex-shrink:0; padding:16px clamp(20px, 4vw, 52px) 18px; background:var(--surface); border-top:0; }
 .composer-box { max-width:840px; margin:0 auto; min-height:104px; padding:16px; gap:12px; border:1px solid #cdd3dd; border-radius:16px; background:var(--surface); box-shadow:0 3px 14px rgba(25,40,65,.05); }
 .composer-box:focus-within { border-color:var(--accent); box-shadow:0 0 0 3px rgba(47,125,225,.09); }
@@ -2910,7 +2997,7 @@ input:focus,
 .composer-context { max-width:840px; margin:10px auto 0; display:flex; align-items:center; flex-wrap:wrap; gap:8px 14px; font-size:12px; color:var(--muted); }
 .composer-context > span { display:inline-flex; align-items:center; gap:5px; min-width:0; overflow-wrap:anywhere; }
 .composer-hint { margin-left:auto; }
-.jump-latest { position:absolute; top:-40px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:6px; padding:8px 14px; border:1px solid var(--line); border-radius:20px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:0 3px 12px #17203312; }
+.jump-latest { position:absolute; top:-40px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:6px; padding:8px 14px; border:1px solid var(--line); border-radius:20px; background:var(--surface); color:var(--text); cursor:pointer; font:inherit; box-shadow:0 3px 12px #17203312; }
 .welcome { margin:12vh auto 40px; }
 .welcome-eyebrow { color:var(--accent-deep); font-size:11px; letter-spacing:2px; font-weight:700; }
 .welcome h3 { margin:16px 0 12px; font-size:30px; font-weight:650; }
@@ -3013,11 +3100,12 @@ input:focus,
 .composer-option select { appearance:none; padding-right:20px; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m3 4.5 3 3 3-3' fill='none' stroke='%2376787d' stroke-width='1.2'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 4px center; }
 .transcript { background:var(--bg-content); }
 .transcript > .message { margin-bottom:28px; }
-.message.user .bubble { padding:12px 18px; border:0; border-radius:16px 16px 4px 16px; background:var(--message-user-bg); color:var(--text); box-shadow:none; }
-.message.pending-steering .bubble { border:1px dashed #b6bdca; background:transparent; color:#6d7684; }
+.message.user .bubble { padding:0; border:0; background:transparent; color:var(--text); box-shadow:none; }
+.message.user .bubble-body { padding:12px 18px; border-radius:16px 16px 4px 16px; background:var(--message-user-bg); }
+.message.pending-steering .bubble { padding:12px 18px; border:1px dashed #b6bdca; background:transparent; color:#6d7684; }
 .pending-steering-label { display:block; margin-bottom:6px; color:#8a93a3; font-size:11px; font-weight:700; letter-spacing:.05em; }
 .message.assistant .bubble { line-height:1.8; color:var(--text); }
-.activity-head { width:fit-content; padding:4px 0; border:0; border-radius:0; background:transparent; color:#738094; font-size:13px; font-weight:400; line-height:1.5; transition:color 160ms ease; }
+.activity-head { width:fit-content; padding:4px 0; border:0; border-radius:0; background:transparent; color:#738094; font-weight:400; line-height:1.5; transition:color 160ms ease; }
 .activity-head:hover { background:transparent; color:#405779; }
 .activity-title { align-items:center; gap:7px; }
 .activity-chevron { width:14px; height:14px; flex:0 0 14px; align-self:center; transition:transform 180ms ease; }
@@ -3025,7 +3113,7 @@ input:focus,
 .activity-detail { padding-top:14px; animation:conversation-reveal 180ms ease-out; }
 .activity-section { padding:6px 0; }
 .tool-group { padding:5px 0; gap:8px; }
-.tool-group-head, .thinking-summary { align-items:center; gap:8px; padding:3px 0; border:0; border-radius:0; background:transparent; font-size:13px; font-weight:400; line-height:1.5; color:#738094; transition:color 160ms ease; }
+.tool-group-head, .thinking-summary { align-items:center; gap:8px; padding:3px 0; border:0; border-radius:0; background:transparent; font-weight:400; line-height:1.5; color:#738094; transition:color 160ms ease; }
 .tool-group-head:hover, .thinking-summary:hover { color:#405779; background:transparent; }
 .tool-group-body { padding:4px 0; border:0; border-radius:0; background:transparent; animation:conversation-reveal 180ms ease-out; }
 .activity-head:focus-visible, .tool-group-head:focus-visible, .thinking-summary:focus-visible { outline:2px solid #7d9fcc; outline-offset:3px; }

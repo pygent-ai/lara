@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -17,6 +18,7 @@ from lara_api.routers.health import health
 from lara_api.routers.tool_results import get_tool_result
 from lara_api.routers.traces import get_session_activity, get_trace_events
 from lara_api.services.session_service import SessionService
+from lara_api.services.session_activity import recent_jsonl_records
 from tests.unit.test_model_request_journal import EXECUTION_ID, _prepared_event, _seed_journal
 
 
@@ -352,6 +354,25 @@ def test_session_activity_can_limit_large_event_windows(tmp_path) -> None:
     assert response.events_total == 3
     assert response.events_truncated is True
     assert len(response.events) == 2
+
+
+def test_recent_jsonl_records_parses_only_the_requested_tail(tmp_path) -> None:
+    path = tmp_path / "events.jsonl"
+    path.write_text(
+        "".join(
+            json.dumps({"index": index}) + "\n"
+            for index in range(5)
+        ),
+        encoding="utf-8",
+    )
+
+    recent, total = recent_jsonl_records(path, 2)
+    all_records, all_total = recent_jsonl_records(path, 0)
+
+    assert total == 5
+    assert [record["index"] for record in recent] == [3, 4]
+    assert all_total == 5
+    assert [record["index"] for record in all_records] == list(range(5))
 
 
 def test_session_activity_rejects_unknown_session(tmp_path) -> None:

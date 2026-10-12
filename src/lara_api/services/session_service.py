@@ -82,9 +82,10 @@ class SessionService:
         ):
             ref = self.manager.find_case_run(session_id, metadata["last_case_run_id"])
             run_metadata = read_json(Path(ref.run_dir) / "run_metadata.json")
-        history = self.manager.history_with_run_timing(session)
-        history_total = len(history)
-        history = _latest_items(history, history_limit)
+        history_total = self.manager.history_count(session)
+        history = self.manager.history_with_run_timing(
+            session, limit=history_limit
+        )
         return SessionDetailResponse(
             session=_record_from_metadata(
                 Path(session.session_dir), metadata, scope_id=self.scope_id
@@ -469,12 +470,6 @@ def _clean_title(value: str) -> str:
 
 def _optional_str(value: Any) -> str | None:
     return str(value) if value is not None else None
-
-
-def _latest_items(items: list[Any], limit: int | None) -> list[Any]:
-    if limit is None or limit <= 0 or len(items) <= limit:
-        return items
-    return items[-limit:]
 
 
 def _delete_tree(path: Path) -> None:

@@ -113,6 +113,27 @@ def test_list_orders_by_event_index_and_filters_other_data(tmp_path: Path) -> No
     ]
 
 
+def test_list_window_limits_in_sql_and_preserves_total(tmp_path: Path) -> None:
+    journal_path = tmp_path / "runtime" / "executions-v1.sqlite3"
+    _seed_journal(
+        journal_path,
+        [
+            (EXECUTION_ID, index, _prepared_event(f"event-{index}"))
+            for index in range(5)
+        ],
+    )
+
+    snapshots, total = ModelRequestJournal(journal_path).list_window(
+        EXECUTION_ID, limit=2
+    )
+
+    assert total == 5
+    assert [snapshot["snapshot_id"] for snapshot in snapshots] == [
+        "request-event-3",
+        "request-event-4",
+    ]
+
+
 def test_list_returns_empty_for_missing_journal_or_execution(tmp_path: Path) -> None:
     missing = tmp_path / "runtime" / "executions-v1.sqlite3"
     assert ModelRequestJournal(missing).list(EXECUTION_ID) == []

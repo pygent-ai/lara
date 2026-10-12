@@ -312,22 +312,47 @@ class SessionManager:
         metadata["updated_at"] = utc_now()
         write_json_atomic(metadata_path, metadata)
 
-    def history_with_run_timing(self, session: AgentSession) -> list[dict[str, Any]]:
-        """Project checkpoint-owned history with its run timing."""
+    def history_with_run_timing(
+        self, session: AgentSession, *, limit: int | None = None
+    ) -> list[dict[str, Any]]:
+        """Project checkpoint-owned history with its run timing and timestamps.
+
+        Apply the display window in SQLite instead of materializing every
+        checkpoint and slicing it in the API layer.  Long-running chats can
+        contain megabytes of old tool output, so decoding the full history on
+        every session switch or freshness check is needlessly expensive.
+        """
         database_path = self._checkpoint_database_path(session.session_id)
         if not database_path.exists():
             return []
         with closing(self._checkpoint_connection(database_path)) as connection:
-            rows = connection.execute(
-                """SELECT case_id, case_run_id, message_json
-                   FROM conversation_checkpoints
-                   WHERE include_in_session = 1 AND sequence <= ?
-                   ORDER BY sequence""",
-                (int(session.metadata.get("history_checkpoint_seq") or 0),),
-            ).fetchall()
+            checkpoint_sequence = int(
+                session.metadata.get("history_checkpoint_seq") or 0
+            )
+            if limit is not None and limit > 0:
+                rows = connection.execute(
+                    """SELECT case_id, case_run_id, message_json, created_at
+                       FROM (
+                           SELECT sequence, case_id, case_run_id, message_json, created_at
+                           FROM conversation_checkpoints
+                           WHERE include_in_session = 1 AND sequence <= ?
+                           ORDER BY sequence DESC
+                           LIMIT ?
+                       )
+                       ORDER BY sequence""",
+                    (checkpoint_sequence, limit),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """SELECT case_id, case_run_id, message_json, created_at
+                       FROM conversation_checkpoints
+                       WHERE include_in_session = 1 AND sequence <= ?
+                       ORDER BY sequence""",
+                    (checkpoint_sequence,),
+                ).fetchall()
         history: list[dict[str, Any]] = []
         timings: dict[str, dict[str, Any]] = {}
-        for case_id, run_id, message_json in rows:
+        for case_id, run_id, message_json, created_at in rows:
             if run_id not in timings:
                 ref = CaseRunRef(
                     session_id=session.session_id,
@@ -340,8 +365,23 @@ class SessionManager:
                 timings[run_id] = self.run_timing(ref)
             message = json.loads(message_json)
             message["run_timing"] = timings[run_id]
+            message["created_at"] = created_at
             history.append(message)
         return history
+
+    def history_count(self, session: AgentSession) -> int:
+        """Count checkpoint-owned messages without decoding their JSON."""
+        database_path = self._checkpoint_database_path(session.session_id)
+        if not database_path.exists():
+            return 0
+        with closing(self._checkpoint_connection(database_path)) as connection:
+            row = connection.execute(
+                """SELECT COUNT(*)
+                   FROM conversation_checkpoints
+                   WHERE include_in_session = 1 AND sequence <= ?""",
+                (int(session.metadata.get("history_checkpoint_seq") or 0),),
+            ).fetchone()
+        return int(row[0] if row else 0)
 
     def run_timing(self, ref: CaseRunRef) -> dict[str, Any]:
         metadata = read_json(Path(ref.run_dir) / "run_metadata.json", default={})

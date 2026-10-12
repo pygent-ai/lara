@@ -14,6 +14,7 @@ import {
   waitForBackend,
 } from "./backendProcess.mjs";
 import { applyBadgeOverlay } from "./badge.mjs";
+import { attachProcessDiagnostics, attachWindowDiagnostics } from "./diagnostics.mjs";
 import { registerSingleInstance } from "./singleInstance.mjs";
 import { launchDesktop } from "./startup.mjs";
 
@@ -106,6 +107,7 @@ async function createWindow() {
     },
   });
   mainWindow.removeMenu();
+  attachWindowDiagnostics({ window: mainWindow, isPackaged: app.isPackaged });
 
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show();
@@ -125,6 +127,7 @@ async function createWindow() {
 }
 
 if (ownsSingleInstance) {
+  attachProcessDiagnostics({ app });
   ipcMain.handle("backend:status", () => backendStatus);
   ipcMain.handle("badge:set-count", (_event, count, dataUrl) =>
     applyBadgeOverlay({
