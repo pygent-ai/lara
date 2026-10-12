@@ -2980,11 +2980,22 @@ export function messagesForRecovery(detail, assistantId) {
     throw new Error("Invalid session recovery history boundary");
   }
   const user = history.slice(start).find((message) => message.role === "user");
+  const attachments = user ? historyAttachments(user) : undefined;
   return [
     ...historyToMessages(history.slice(0, start)),
-    ...(user ? [{ id: `${assistantId}-user`, role: messageDisplayRole(user), content: displayMessageContent(user), ...(user.created_at ? { createdAt: user.created_at } : {}) }] : []),
+    ...(user ? [{ id: `${assistantId}-user`, role: messageDisplayRole(user), content: displayMessageContent(user),
+      ...(user.created_at ? { createdAt: user.created_at } : {}),
+      ...(attachments ? { attachments } : {}) }] : []),
     { id: assistantId, role: "assistant", content: "", sections: [], ...runTimingFields(user?.run_timing), status: "running" },
   ];
+}
+
+// Persisted user turns keep their attachment paths in data.attachments (the
+// same shape the live send path uses), so restored transcripts re-render the
+// media chips instead of silently dropping the images.
+function historyAttachments(message) {
+  const attachments = message?.data?.attachments;
+  return Array.isArray(attachments) && attachments.length > 0 ? attachments : undefined;
 }
 
 export function historyToMessages(history) {
@@ -3000,9 +3011,11 @@ export function historyToMessages(history) {
     }
     const content = displayMessageContent(message);
     if (content) {
+      const attachments = historyAttachments(message);
       rendered.push({ id: `history-${index}`, role: messageDisplayRole(message), content,
         ...(message.created_at ? { createdAt: message.created_at } : {}),
         ...(message.kind === "lara.user.steering" ? { steeringInputId: message.data?.input_id } : {}),
+        ...(attachments ? { attachments } : {}),
       });
     }
     const segment = [];
