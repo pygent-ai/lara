@@ -95,6 +95,24 @@ test("assistant markdown keeps CJK bold around a URL instead of swallowing it", 
   assert.doesNotMatch(html, /\*\*/);
 });
 
+test("single tildes in windows short names do not strike through", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.MarkdownContent, {
+    content: "canonicalize produced ADMINI~1 short segments? My probe used ADMINI~1 here.",
+  }));
+
+  assert.doesNotMatch(html, /<del>/);
+  assert.match(html, /ADMINI~1 short segments\? My probe used ADMINI~1/);
+});
+
+test("double-tilde strikethrough still renders as del", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.MarkdownContent, {
+    content: "~~removed~~ kept",
+  }));
+
+  assert.match(html, /<del>removed<\/del>/);
+  assert.match(html, / kept/);
+});
+
 test("autolink boundaries keep CJK punctuation, markup, and code spans out of URLs", () => {
   const html = renderToStaticMarkup(React.createElement(appModule.MarkdownContent, {
     content: [
