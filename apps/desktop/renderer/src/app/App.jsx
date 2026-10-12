@@ -13,6 +13,7 @@ import {
   CalendarClock,
   Copy,
   Film,
+  FileText,
   Music,
   Paperclip,
   PanelLeftClose,
@@ -28,7 +29,7 @@ import {
 } from "lucide-react";
 
 import { createApiClient } from "../shared/api/client.js";
-import { attachmentFileName, attachmentMediaType, isUploadedAttachment } from "../shared/media/mediaTypes.js";
+import { attachmentFileName, attachmentMediaType, isDocumentAttachment, isUploadedAttachment } from "../shared/media/mediaTypes.js";
 import { createSessionGroupSync } from "./sessionGroupSync.js";
 import {
   CONTEXT_SNAPSHOT_LIMIT,
@@ -1962,7 +1963,8 @@ function ComposerMenu({ label, title, icon, value, options, disabled, onChange }
 
 // Multimedia attachments show as thumbnails (images) or type icons
 // (video/audio) instead of file-name text; the stored upload's bytes come
-// from /uploads/content. Non-media files keep the plain paperclip chip.
+// from /uploads/content. Documents (md/txt/pdf) show a document icon,
+// everything else keeps the plain paperclip chip.
 // A failed preview (file deleted, scope switched) degrades to the icon chip.
 function AttachmentPreview({ api, scopeId, path, variant }) {
   const [failed, setFailed] = useState(false);
@@ -1979,7 +1981,7 @@ function AttachmentPreview({ api, scopeId, path, variant }) {
       />
     );
   }
-  const Icon = mediaType === "video" ? Film : mediaType === "audio" ? Music : Paperclip;
+  const Icon = mediaType === "video" ? Film : mediaType === "audio" ? Music : isDocumentAttachment(path) ? FileText : Paperclip;
   return (
     <span className={`attachment-icon attachment-icon-${variant}`} title={path} role="img" aria-label={name}>
       <Icon size={variant === "message" ? 14 : 12} aria-hidden="true" />
