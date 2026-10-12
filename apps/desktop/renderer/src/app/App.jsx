@@ -728,6 +728,12 @@ export function App() {
               } else if (streamSessionId && terminalEvent) {
                 activeExecutionsRef.current.delete(streamSessionId);
                 setSteeringSessionIds((items) => omitKey(items, streamSessionId));
+                // The terminal event is the authoritative end of the turn (the
+                // backend yields it only after the run is durable). Drop the
+                // running flag here instead of waiting for the stream close and
+                // the post-completion reload, or the composer keeps spinning
+                // with a stop button that has nothing left to cancel.
+                setSessionRunning(streamSessionId, false);
               }
               streamEvents = appendSessionLiveTraceEvent(
                 sessionLiveEventsRef.current,
@@ -929,8 +935,17 @@ export function App() {
   const handleCancelTurn = useCallback(async () => {
     const sessionId = activeSessionIdRef.current;
     const execution = activeExecutionsRef.current.get(sessionId);
-    if (!execution || !runningSessionIdsRef.current[sessionId]) {
-      throw new Error("执行尚未连接或已经结束，无需取消。");
+    if (!runningSessionIdsRef.current[sessionId]) {
+      // The turn already ended (the terminal event dropped the running flag);
+      // this click raced the stop button unmounting. There is nothing to
+      // cancel anywhere, so unsticking silently beats reporting an error.
+      return;
+    }
+    if (!execution) {
+      // Still running locally but no execution is bound yet: the stream is
+      // connecting (new turn or resume), so nothing has been submitted that
+      // this API could cancel. Say that instead of implying the task ended.
+      throw new Error("任务尚未连接到执行，暂无可取消的内容。");
     }
     await api.cancelChatTurn(execution.executionId, { sessionId });
   }, [api]);
