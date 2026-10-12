@@ -3167,18 +3167,40 @@ export function projectLiveAssistantEvent(message, event, now = Date.now()) {
 
   if (kind === "model.tool_call.completed" || kind === "tool.started"
       || (kind === "lara.runtime.message" && payload.role === "assistant" && toolCallsFromMessage(payload).length)) {
-    let sections = Array.isArray(message.sections) ? message.sections : [];
-    if (String(message.content || "").trim()) {
-      sections = appendTextSection(sections, "Assistant content", message.content);
+    if (kind === "tool.started" && isInternalToolId(payload.tool_id)) {
+      const callId = String(payload.call_id || payload.tool_call_id || "");
+      const internalIds = Array.isArray(message.internalToolCallIds) ? message.internalToolCallIds : [];
+      if (!callId || internalIds.includes(callId)) {
+        return message;
+      }
+      return { ...message, internalToolCallIds: [...internalIds, callId] };
     }
+    const sections = Array.isArray(message.sections) ? message.sections : [];
+    const knownIds = new Set(sections.flatMap((section) => (section.calls || []).map((call) => call.id)));
     const calls = kind === "lara.runtime.message" ? toolCallsFromMessage(payload) : [{
       id: payload.call_id || payload.tool_call_id,
       name: payload.name || payload.tool_name,
       arguments: payload.arguments ?? payload.args,
     }];
-    const knownIds = new Set(sections.flatMap((section) => (section.calls || []).map((call) => call.id)));
-    const newCalls = calls.map(toolCallState).filter((call) => !knownIds.has(call.id));
-    return { ...message, content: "", sections: appendToolCallsSection(sections, newCalls) };
+    let nextSections = sections;
+    const newCalls = [];
+    for (const raw of calls) {
+      const call = toolCallState(raw);
+      if (call.id && knownIds.has(call.id)) {
+        nextSections = backfillToolCallState(nextSections, raw);
+        continue;
+      }
+      newCalls.push(call);
+    }
+    if (!newCalls.length) {
+      // Pure backfill: keep streaming content where it is instead of moving it
+      // into a section for a row that already exists.
+      return nextSections === sections ? message : { ...message, sections: nextSections };
+    }
+    if (String(message.content || "").trim()) {
+      nextSections = appendTextSection(nextSections, "Assistant content", message.content);
+    }
+    return { ...message, content: "", sections: appendToolCallsSection(nextSections, newCalls) };
   }
 
   if (kind === "tool.result" || (kind === "lara.runtime.message" && payload.role === "tool")) {
@@ -3196,8 +3218,11 @@ export function projectLiveAssistantEvent(message, event, now = Date.now()) {
   }
 
   if (kind === "tool.completed" || kind === "tool.failed" || kind === "tool.cancelled") {
-    const failed = kind !== "tool.completed";
     const callId = String(payload.call_id || "");
+    if ((message.internalToolCallIds || []).includes(callId)) {
+      return message;
+    }
+    const failed = kind !== "tool.completed";
     const existing = (message.sections || []).flatMap((section) => section.calls || []).find((call) => call.id === callId);
     const result = {
       toolCallId: callId,
@@ -3454,9 +3479,59 @@ export function dedupeTraceEvents(events) {
   return items;
 }
 
+// Runtime-synthesized bookkeeping calls (deferred file effects) are executed
+// without a model step: they emit tool.started/tool.completed with a tool_id
+// but no name and no model.tool_call.completed, so chat rows built from them
+// can only show the "tool" placeholder. They are tracked and hidden instead.
+const INTERNAL_TOOL_ID_PREFIX = "lara.internal.";
+
+function isInternalToolId(toolId) {
+  return String(toolId || "").startsWith(INTERNAL_TOOL_ID_PREFIX);
+}
+
+// A row may already exist when the model completion lands (out-of-order
+// started event, resumed stream); the completion carries the authoritative
+// name and arguments, so fill the row in place instead of dropping the event.
+// Only concrete values patch the row: the raw event has no "tool" fallback.
+function backfillToolCallState(sections, toolCall) {
+  const id = toolCallId(toolCall);
+  const name = String(toolCall?.name || toolCall?.tool_name || toolCall?.function?.name || "");
+  const argumentsText = toolCallArguments(toolCall);
+  const description = argumentsText ? toolCallDescription(argumentsText) : "";
+  let changed = false;
+  const nextSections = sections.map((section) => {
+    if (section.type !== "tools") {
+      return section;
+    }
+    const calls = section.calls || [];
+    const index = calls.findIndex((call) => call.id === id);
+    if (index < 0) {
+      return section;
+    }
+    const call = calls[index];
+    const patch = {
+      ...(name && name !== call.name ? { name } : {}),
+      ...(description && description !== call.description ? { description } : {}),
+      ...(argumentsText && argumentsText !== call.arguments ? { arguments: argumentsText } : {}),
+    };
+    if (!Object.keys(patch).length) {
+      return section;
+    }
+    changed = true;
+    const next = [...calls];
+    next[index] = { ...call, ...patch };
+    return { ...section, calls: next };
+  });
+  return changed ? nextSections : sections;
+}
+
 export function traceToolEvents(events) {
   const items = [];
   const byCallId = new Map();
+  const internalCallIds = new Set((Array.isArray(events) ? events : [])
+    .filter((event) => String(event?.type || "") === "tool.started" && isInternalToolId(event?.payload?.tool_id))
+    .map((event) => String(event?.payload?.call_id || event?.payload?.tool_call_id || ""))
+    .filter(Boolean));
 
   function upsert(callId, patch) {
     const key = callId || `tool-${items.length}`;
@@ -3493,6 +3568,9 @@ export function traceToolEvents(events) {
 
     if (type === "tool.call" || type === "model.tool_call.completed" || type === "tool.started") {
       const callId = String(payload.model_tool_call_id || payload.tool_call_id || payload.call_id || payload.id || event.id || "");
+      if (internalCallIds.has(callId)) {
+        continue;
+      }
       const previous = byCallId.get(callId)?.payload;
       upsert(callId, {
         tool_call_id: callId,
@@ -3508,6 +3586,9 @@ export function traceToolEvents(events) {
 
     if (["tool.completed", "tool.failed", "tool.cancelled"].includes(type)) {
       const callId = String(payload.call_id || payload.tool_call_id || "");
+      if (internalCallIds.has(callId)) {
+        continue;
+      }
       const failed = type !== "tool.completed";
       const patch = {
         result_event: event,
