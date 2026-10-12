@@ -1567,6 +1567,20 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
   const fileInputRef = useRef(null);
   const followTranscriptRef = useRef(true);
   const [awayFromLatest, setAwayFromLatest] = useState(false);
+  // Scroll events fire for programmatic pins and scroll-anchoring adjustments
+  // too, and during streaming either can measure a large distance-to-bottom
+  // without the user touching anything; treating that as "user scrolled away"
+  // was silently ending the auto-follow. Re-evaluate following only after
+  // real user input (wheel, touch, scrollbar) marks the user as driving.
+  const transcriptUserScrollingRef = useRef(false);
+  const pinTranscriptToLatest = useCallback(() => {
+    const node = transcriptRef.current;
+    if (!node) return;
+    followTranscriptRef.current = true;
+    scrollTranscriptToLatest(node);
+    transcriptUserScrollingRef.current = false;
+    setAwayFromLatest(false);
+  }, []);
   const [visibleMessageLimit, setVisibleMessageLimit] = useState(INITIAL_TRANSCRIPT_MESSAGE_LIMIT);
   const chatTitle = activeSession?.title || "选择或创建会话";
   const visibleMessages = useMemo(
@@ -1590,13 +1604,47 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
   });
 
   useEffect(() => {
-    if (followTranscriptRef.current) scrollTranscriptToLatest(transcriptRef.current);
+    if (followTranscriptRef.current) pinTranscriptToLatest();
   }, [messages, activityCollapseToken]);
+  // Content can also grow after that scroll effect measured it: tool groups
+  // expanding from their own effect land a render later, image attachments
+  // load without intrinsic size, and panel resizes change the scrollport.
+  // While the user is following, keep the transcript pinned through all of
+  // them; the scrollport itself never fires the observer for scrollTop
+  // changes, so this cannot loop.
+  const transcriptResizeRef = useRef(null);
+  useEffect(() => {
+    const node = transcriptRef.current;
+    if (!node || typeof ResizeObserver === "undefined") {
+      return undefined;
+    }
+    const observer = new ResizeObserver(() => {
+      if (followTranscriptRef.current) {
+        pinTranscriptToLatest();
+      }
+    });
+    observer.observe(node);
+    transcriptResizeRef.current = observer;
+    return () => {
+      transcriptResizeRef.current = null;
+      observer.disconnect();
+    };
+  }, []);
+  useEffect(() => {
+    const node = transcriptRef.current;
+    const observer = transcriptResizeRef.current;
+    if (!node || !observer) {
+      return;
+    }
+    for (const child of node.children) {
+      observer.observe(child);
+    }
+  }, [visibleMessages, activityCollapseToken]);
   useEffect(() => {
     followTranscriptRef.current = true;
     setAwayFromLatest(false);
     setVisibleMessageLimit(INITIAL_TRANSCRIPT_MESSAGE_LIMIT);
-    scrollTranscriptToLatest(transcriptRef.current);
+    pinTranscriptToLatest();
   }, [activeSession?.session_id]);
   useEffect(() => {
     const input = composerRef.current;
@@ -1734,9 +1782,14 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
       </header>
 
       <div className="transcript" ref={transcriptRef} onScroll={(event) => {
+        if (!transcriptUserScrollingRef.current) return;
         const node = event.currentTarget;
         followTranscriptRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 64;
         setAwayFromLatest(!followTranscriptRef.current);
+      }} onWheel={() => { transcriptUserScrollingRef.current = true; }} onTouchStart={() => { transcriptUserScrollingRef.current = true; }} onPointerDown={(event) => {
+        // Scrollbar drags target the scrollport itself; clicks on message
+        // content bubble from children and must not end the auto-follow.
+        if (event.target === event.currentTarget) transcriptUserScrollingRef.current = true;
       }}>
         {hiddenMessageCount > 0 && (
           <button
@@ -1784,7 +1837,7 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
           </div>
         )}
 
-        {awayFromLatest && <button className="jump-latest" type="button" onClick={() => { followTranscriptRef.current = true; scrollTranscriptToLatest(transcriptRef.current); setAwayFromLatest(false); }}><ArrowDown size={14} />回到最新</button>}
+        {awayFromLatest && <button className="jump-latest" type="button" onClick={pinTranscriptToLatest}><ArrowDown size={14} />回到最新</button>}
         <div className="composer-surface">
         <div className={`composer-box${dragOver ? " drag-over" : ""}`}
           onDragOver={(event) => { if (dataTransferHasFiles(event.dataTransfer)) { event.preventDefault(); setDragOver(true); } }}
@@ -2286,11 +2339,22 @@ const THINKING_PREVIEW_LIMIT = 160;
 export function ThinkingActivity({ content, running }) {
   const contentRef = useRef(null);
   const followRef = useRef(true);
+  // Same rule as the transcript above: only real user input may end the
+  // follow, because scroll events here also fire for the pin writes and for
+  // anchoring adjustments caused by deltas landing above the scrollport.
+  const userScrollingRef = useRef(false);
   const userClosedRef = useRef(false);
   const flattened = content.replace(/\s+/g, " ").trim();
   const preview = flattened.length > THINKING_PREVIEW_LIMIT
     ? `…${flattened.slice(-THINKING_PREVIEW_LIMIT)}`
     : flattened;
+
+  const pinContentToLatest = useCallback(() => {
+    const node = contentRef.current;
+    if (!node) return;
+    node.scrollTop = node.scrollHeight;
+    userScrollingRef.current = false;
+  }, []);
 
   // While streaming, keep the newest reasoning in view, scrolling instantly
   // in the same cadence as the transcript around it: a smooth inner scroll
@@ -2300,11 +2364,10 @@ export function ThinkingActivity({ content, running }) {
     if (!running) {
       return;
     }
-    const node = contentRef.current;
-    if (node && followRef.current) {
-      node.scrollTop = node.scrollHeight;
+    if (followRef.current) {
+      pinContentToLatest();
     }
-  }, [content, running]);
+  }, [content, running, pinContentToLatest]);
 
   return (
     <details
@@ -2312,16 +2375,18 @@ export function ThinkingActivity({ content, running }) {
       open={running && !userClosedRef.current ? true : undefined}
       onToggle={(event) => {
         if (!running) {
+          // The collapsed preview shows the latest reasoning, so opening a
+          // finished block lands on the same tail instead of the beginning.
+          if (event.currentTarget.open) {
+            pinContentToLatest();
+          }
           return;
         }
         const open = event.currentTarget.open;
         userClosedRef.current = !open;
         if (open) {
           followRef.current = true;
-          const node = contentRef.current;
-          if (node) {
-            node.scrollTop = node.scrollHeight;
-          }
+          pinContentToLatest();
         }
       }}
     >
@@ -2335,8 +2400,14 @@ export function ThinkingActivity({ content, running }) {
         className="thinking-content"
         ref={contentRef}
         onScroll={(event) => {
+          if (!userScrollingRef.current) return;
           const node = event.currentTarget;
           followRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 32;
+        }}
+        onWheel={() => { userScrollingRef.current = true; }}
+        onTouchStart={() => { userScrollingRef.current = true; }}
+        onPointerDown={(event) => {
+          if (event.target === event.currentTarget) userScrollingRef.current = true;
         }}
       ><MarkdownContent content={content} /></div>
     </details>
