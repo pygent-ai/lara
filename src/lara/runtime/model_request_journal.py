@@ -20,19 +20,44 @@ class ModelRequestJournal:
         self.path = Path(journal_path)
 
     def list(self, execution_id: str) -> list[dict[str, Any]]:
+        snapshots, _ = self.list_window(execution_id)
+        return snapshots
+
+    def list_window(
+        self, execution_id: str, *, limit: int | None = None
+    ) -> tuple[list[dict[str, Any]], int]:
         if not execution_id or not self.path.exists():
-            return []
-        query = (
-            "SELECT event_json FROM events "
-            "WHERE execution_id = ? "
-            "AND json_extract(event_json, '$.kind') = 'model.request.prepared' "
-            "ORDER BY event_index"
+            return [], 0
+        predicate = (
+            "execution_id = ? "
+            "AND json_extract(event_json, '$.kind') = 'model.request.prepared'"
         )
         with closing(
             sqlite3.connect(f"file:{self.path.as_posix()}?mode=ro", uri=True)
         ) as connection:
-            rows = connection.execute(query, (execution_id,)).fetchall()
-        return [_snapshot_from_event(json.loads(row[0])) for row in rows]
+            total = int(
+                connection.execute(
+                    f"SELECT COUNT(*) FROM events WHERE {predicate}",
+                    (execution_id,),
+                ).fetchone()[0]
+            )
+            if limit is not None and limit > 0:
+                rows = connection.execute(
+                    f"""SELECT event_json FROM (
+                            SELECT event_index, event_json FROM events
+                            WHERE {predicate}
+                            ORDER BY event_index DESC
+                            LIMIT ?
+                        )
+                        ORDER BY event_index""",
+                    (execution_id, limit),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    f"SELECT event_json FROM events WHERE {predicate} ORDER BY event_index",
+                    (execution_id,),
+                ).fetchall()
+        return [_snapshot_from_event(json.loads(row[0])) for row in rows], total
 
 
 def _snapshot_from_event(event: dict[str, Any]) -> dict[str, Any]:

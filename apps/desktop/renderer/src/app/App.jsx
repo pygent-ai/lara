@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Check,
   CalendarClock,
+  Copy,
   Film,
   Music,
   Paperclip,
@@ -28,7 +29,7 @@ import {
 
 import { createApiClient } from "../shared/api/client.js";
 import { attachmentFileName, attachmentMediaType, isUploadedAttachment } from "../shared/media/mediaTypes.js";
-import { createSessionGroupSync, startBackgroundRefresh } from "./sessionGroupSync.js";
+import { createSessionGroupSync } from "./sessionGroupSync.js";
 import {
   CONTEXT_SNAPSHOT_LIMIT,
   SESSION_HISTORY_LIMIT,
@@ -97,6 +98,7 @@ const INSPECTOR_LABELS = { Overview: "概览", Events: "事件", Context: "上�
 const TOOL_ARGUMENT_PREVIEW_LIMIT = 4_000;
 const TOOL_RESULT_PREVIEW_LIMIT = 6_000;
 const TRACE_RENDER_LIMIT = 300;
+const INITIAL_TRANSCRIPT_MESSAGE_LIMIT = 60;
 const EMPTY_SESSION_ACTIVITY = { events: [], shown: 0, total: 0, truncated: false };
 const EMPTY_TRACE_WINDOW = { shown: 0, total: 0, truncated: false };
 
@@ -163,6 +165,7 @@ export function App() {
   const messagesRef = useRef([]);
   const runningSessionIdsRef = useRef({});
   const pendingSessionMessagesRef = useRef(new Map());
+  const sessionViewCacheRef = useRef(new Map());
   const sessionLiveEventsRef = useRef(new Map());
   const activeExecutionsRef = useRef(new Map());
   const sessionLoadTokenRef = useRef(0);
@@ -176,6 +179,11 @@ export function App() {
 
   const activeSessionId = activeSession?.session_id || "";
   const running = Boolean(activeSessionId && runningSessionIds[activeSessionId]);
+  const activeSessionListRecord = useMemo(
+    () => flattenSessionGroups(sessionGroups).find((session) => session.session_id === activeSessionId) || null,
+    [sessionGroups, activeSessionId],
+  );
+  const activeSessionListSignature = sessionFreshnessSignature(activeSessionListRecord);
   const visibleSessionGroups = useMemo(
     () => applyRunningSessionStatus(sessionGroups, runningSessionIds),
     [sessionGroups, runningSessionIds],
@@ -288,18 +296,21 @@ export function App() {
 
   const loadSession = useCallback(
     async (sessionId, previewSession = null, { resumeExecution = true } = {}) => {
+      const loadStartedAt = globalThis.performance?.now?.() ?? Date.now();
       const sessionToken = sessionLoadTokenRef.current + 1;
       sessionLoadTokenRef.current = sessionToken;
       traceLoadTokenRef.current += 1;
       const traceToken = traceLoadTokenRef.current;
-      if (previewSession) {
-        activeSessionIdRef.current = previewSession.session_id || sessionId;
-        setActiveSession(previewSession);
+      const cachedView = sessionViewCacheRef.current.get(sessionId);
+      const visiblePreviewSession = previewSession || cachedView?.session || null;
+      if (visiblePreviewSession) {
+        activeSessionIdRef.current = visiblePreviewSession.session_id || sessionId;
+        setActiveSession(visiblePreviewSession);
       }
       setStatus("Loading");
       setNotice("");
       const pendingMessages = pendingSessionMessagesRef.current.get(sessionId);
-      const previewMessages = selectSessionMessages(pendingMessages, []);
+      const previewMessages = selectSessionMessages(pendingMessages, cachedView?.messages || []);
       const previewLiveEvents = sessionLiveEventsRef.current.get(sessionId) || [];
       messagesRef.current = previewMessages;
       setMessages(previewMessages);
@@ -350,6 +361,10 @@ export function App() {
       setMessages(resolvedMessages);
       setPendingSteerings((items) => reconcilePendingSteerings(items, sessionId, resolvedMessages));
       setActivityCollapseToken((value) => value + 1);
+      rememberSessionView(sessionViewCacheRef.current, sessionId, {
+        session: loadedSession,
+        messages: resolvedMessages,
+      });
       setStatus(runningSessionIdsRef.current[sessionId] ? "Running" : "Ready");
       if (resumeExecution && detail.runtime_execution_id && !runningSessionIdsRef.current[sessionId]) {
         resumeSessionRef.current?.(detail);
@@ -361,6 +376,12 @@ export function App() {
           }
         });
       }, 0);
+      logSessionSwitchPerformance({
+        sessionId,
+        startedAt: loadStartedAt,
+        historyCount: resolvedMessages.length,
+        historyTotal: detail.history_total ?? resolvedMessages.length,
+      });
     },
     [api, loadTrace],
   );
@@ -451,6 +472,7 @@ export function App() {
         }
         await api.deleteSession(sessionId, { scopeId: scope?.scope_id });
         pendingSessionMessagesRef.current.delete(sessionId);
+        sessionViewCacheRef.current.delete(sessionId);
         sessionLiveEventsRef.current.delete(sessionId);
         await refreshWorkbench({ selectFirst: true });
         setNotice("Session deleted");
@@ -630,6 +652,7 @@ export function App() {
           id: `user-${Date.now()}`,
           role: "user",
           content: message,
+          createdAt: Date.now(),
           attachments: attachments.length ? attachments : undefined,
         },
         {
@@ -816,8 +839,11 @@ export function App() {
   resumeSessionRef.current = (detail) => handleSendMessage("", detail);
 
   useEffect(() => {
-    if (!activeSessionId) return undefined;
-    return startBackgroundRefresh(async ({ signal }) => {
+    if (!activeSessionId || !activeSessionListRecord || running
+      || !activeSessionNeedsRefresh(activeSession, activeSessionListRecord)) return undefined;
+    const controller = new AbortController();
+    void (async () => {
+      const { signal } = controller;
       const token = sessionLoadTokenRef.current;
       const traceToken = traceLoadTokenRef.current;
       const isCurrent = () => activeSessionIdRef.current === activeSessionId
@@ -873,11 +899,16 @@ export function App() {
             messagesRef.current = nextMessages;
             setMessages(nextMessages);
             setPendingSteerings((items) => reconcilePendingSteerings(items, activeSessionId, nextMessages));
+            rememberSessionView(sessionViewCacheRef.current, activeSessionId, {
+              session: loadedSession,
+              messages: nextMessages,
+            });
           }
         },
       });
-    }, { window, document });
-  }, [api, activeSessionId, activeSession?.scope_id]);
+    })().catch(() => {});
+    return () => controller.abort();
+  }, [api, activeSessionId, activeSession?.scope_id, activeSessionListSignature, running]);
 
   const handleSteering = useCallback(async (message, inputId) => {
     const sessionId = activeSessionIdRef.current;
@@ -1521,7 +1552,13 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
   const fileInputRef = useRef(null);
   const followTranscriptRef = useRef(true);
   const [awayFromLatest, setAwayFromLatest] = useState(false);
+  const [visibleMessageLimit, setVisibleMessageLimit] = useState(INITIAL_TRANSCRIPT_MESSAGE_LIMIT);
   const chatTitle = activeSession?.title || "选择或创建会话";
+  const visibleMessages = useMemo(
+    () => latestItems(messages, visibleMessageLimit),
+    [messages, visibleMessageLimit],
+  );
+  const hiddenMessageCount = Math.max(0, messages.length - visibleMessages.length);
 
   // The entrance animation plays only for messages appended to the session
   // view the user is already looking at; see enteringMessageIds.
@@ -1543,6 +1580,7 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
   useEffect(() => {
     followTranscriptRef.current = true;
     setAwayFromLatest(false);
+    setVisibleMessageLimit(INITIAL_TRANSCRIPT_MESSAGE_LIMIT);
     scrollTranscriptToLatest(transcriptRef.current);
   }, [activeSession?.session_id]);
   useEffect(() => {
@@ -1685,7 +1723,16 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
         followTranscriptRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 64;
         setAwayFromLatest(!followTranscriptRef.current);
       }}>
-        {messages.map((message) => (
+        {hiddenMessageCount > 0 && (
+          <button
+            className="load-earlier-messages"
+            type="button"
+            onClick={() => setVisibleMessageLimit((value) => value + INITIAL_TRANSCRIPT_MESSAGE_LIMIT)}
+          >
+            显示更早消息（还有 {hiddenMessageCount} 条）
+          </button>
+        )}
+        {visibleMessages.map((message) => (
           <MessageRow key={message.id} message={message} entering={enteringMessageIds.has(message.id)} activityCollapseToken={activityCollapseToken} api={api} scopeId={selectedScope} />
         ))}
         {pendingSteerings.map((item) => (
@@ -1899,7 +1946,7 @@ const MessageRow = memo(function MessageRow({ message, entering = false, activit
             {message.content && <MarkdownContent content={message.content} />}
           </>
         ) : (
-          <>
+          <div className="bubble-body">
             {message.content}
             {Array.isArray(message.attachments) && message.attachments.length > 0 && (
               <span className="message-attachments">
@@ -1908,8 +1955,9 @@ const MessageRow = memo(function MessageRow({ message, entering = false, activit
                 ))}
               </span>
             )}
-          </>
+          </div>
         )}
+        <MessageMeta message={message} />
       </div>
     </article>
   );
@@ -1956,12 +2004,58 @@ function MarkdownPre({ children }) {
   const code = Array.isArray(children) ? children[0] : children;
   const className = String(code?.props?.className || "");
   const language = /(?:^|\s)language-([\w+.#-]+)/.exec(className)?.[1] || "";
+  const codeText = codeElementText(code?.props?.children).replace(/\n$/, "");
   return (
     <pre className="markdown-code">
-      {language && <span className="markdown-code-language">{language}</span>}
+      {(language || codeText) && (
+        <span className="markdown-code-head">
+          {language && <span className="markdown-code-language">{language}</span>}
+          <MarkdownCodeCopy text={codeText} />
+        </span>
+      )}
       {children}
     </pre>
   );
+}
+
+// react-markdown hands the fenced body over as nested text nodes; flatten
+// them back into the raw code string for the clipboard.
+function codeElementText(value) {
+  if (value == null || value === true || value === false) return "";
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  if (Array.isArray(value)) return value.map(codeElementText).join("");
+  if (typeof value === "object" && value.props) return codeElementText(value.props.children);
+  return "";
+}
+
+function MarkdownCodeCopy({ text }) {
+  const [copied, markCopied] = useCopiedFeedback();
+  return (
+    <button
+      type="button"
+      className="markdown-code-copy"
+      aria-label={copied ? "代码已复制" : "复制代码"}
+      onClick={() => {
+        copyContextValue(text);
+        markCopied();
+      }}
+    >
+      {copied ? <Check size={12} aria-hidden="true" /> : <Copy size={12} aria-hidden="true" />}
+    </button>
+  );
+}
+
+// Shared "已复制" flash so both copy buttons revert without leaking timers.
+function useCopiedFeedback() {
+  const [copied, setCopied] = useState(false);
+  const timerRef = useRef(null);
+  useEffect(() => () => window.clearTimeout(timerRef.current), []);
+  const markCopied = useCallback(() => {
+    setCopied(true);
+    window.clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(() => setCopied(false), 1600);
+  }, []);
+  return [copied, markCopied];
 }
 
 function MarkdownTable({ children }) {
@@ -1974,6 +2068,119 @@ function MarkdownLink({ children, href }) {
       {children}
     </a>
   );
+}
+
+// Footer under every transcript message: the checkpoint timestamp, the
+// turn's aggregated token usage, and a copy button for the raw content.
+function MessageMeta({ message }) {
+  if (message.role === "assistant" && message.status === "running") {
+    return null;
+  }
+  // History carries the checkpoint timestamp; live turns fall back to the
+  // run's own timing so the footer still shows when it finished.
+  const time = formatMessageTimestamp(message.createdAt ?? message.endedAt ?? message.startedAt);
+  const usage = usageSummaryText(message.usage);
+  const content = String(message.content || "");
+  if (!time && !usage && !content.trim()) {
+    return null;
+  }
+  return (
+    <div className="message-meta">
+      {time && <span className="message-meta-time">{time}</span>}
+      {usage && <span className="message-meta-usage" title={usageDetailText(message.usage)}>{usage}</span>}
+      {content.trim() && <MessageMetaCopy text={content} />}
+    </div>
+  );
+}
+
+function MessageMetaCopy({ text }) {
+  const [copied, markCopied] = useCopiedFeedback();
+  return (
+    <button
+      type="button"
+      className="message-meta-copy"
+      aria-label={copied ? "已复制" : "复制消息"}
+      onClick={() => {
+        copyContextValue(text);
+        markCopied();
+      }}
+    >
+      {copied ? <Check size={12} aria-hidden="true" /> : <Copy size={12} aria-hidden="true" />}
+    </button>
+  );
+}
+
+// Accepts the backend ISO timestamp or a client-side epoch value; same-day
+// messages show only the clock time so the transcript stays compact.
+export function formatMessageTimestamp(value, now = Date.now()) {
+  const timestamp = typeof value === "number" ? value : Date.parse(String(value || ""));
+  if (!Number.isFinite(timestamp)) {
+    return "";
+  }
+  const date = new Date(timestamp);
+  const current = new Date(now);
+  const pad = (part) => String(part).padStart(2, "0");
+  const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  if (date.toDateString() === current.toDateString()) {
+    return time;
+  }
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${time}`;
+}
+
+// A turn can span several model calls (tools in between); the footer shows
+// their summed usage so the number matches what the reply actually cost.
+export function summarizeMessageUsage(usages) {
+  const totals = {};
+  let counted = false;
+  for (const usage of usages) {
+    if (!usage || typeof usage !== "object") continue;
+    for (const [key, value] of Object.entries(usage)) {
+      const number = Number(value);
+      if (!Number.isFinite(number) || number <= 0) continue;
+      totals[key] = (totals[key] || 0) + number;
+      counted = true;
+    }
+  }
+  return counted ? totals : undefined;
+}
+
+function formatCount(value) {
+  return String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+// Footer keeps raw token counts out of the way: compact "↑3.1M ↓28k" style
+// symbols in the row, full precision moved into the hover tooltip.
+function formatCompact(value) {
+  const strip = (text) => text.replace(/\.0$/, "");
+  if (value >= 1_000_000) return `${strip((value / 1_000_000).toFixed(1))}M`;
+  if (value >= 1_000) return `${strip((value / 1_000).toFixed(1))}k`;
+  return String(Math.round(value));
+}
+
+function usageSummaryText(usage) {
+  if (!usage || typeof usage !== "object") return "";
+  const parts = [];
+  if (usage.input_tokens > 0) parts.push(`↑ ${formatCompact(usage.input_tokens)}`);
+  if (usage.output_tokens > 0) parts.push(`↓ ${formatCompact(usage.output_tokens)}`);
+  if (!parts.length) {
+    return usage.total_tokens > 0 ? formatCompact(usage.total_tokens) : "";
+  }
+  return parts.join(" ");
+}
+
+function usageDetailText(usage) {
+  if (!usage || typeof usage !== "object") return "";
+  const labels = [
+    ["input_tokens", "输入"],
+    ["output_tokens", "输出"],
+    ["cached_input_tokens", "缓存"],
+    ["reasoning_tokens", "推理"],
+    ["total_tokens", "总计"],
+  ];
+  const parts = labels
+    .filter(([key]) => Number(usage[key]) > 0)
+    .map(([key, label]) => `${label} ${formatCount(usage[key])}`);
+  return parts.length ? `${parts.join(" · ")} tokens` : "";
 }
 
 function ActivityMessage({ message, collapseToken, api }) {
@@ -2689,7 +2896,7 @@ export function messagesForRecovery(detail, assistantId) {
   const user = history.slice(start).find((message) => message.role === "user");
   return [
     ...historyToMessages(history.slice(0, start)),
-    ...(user ? [{ id: `${assistantId}-user`, role: messageDisplayRole(user), content: displayMessageContent(user) }] : []),
+    ...(user ? [{ id: `${assistantId}-user`, role: messageDisplayRole(user), content: displayMessageContent(user), ...(user.created_at ? { createdAt: user.created_at } : {}) }] : []),
     { id: assistantId, role: "assistant", content: "", sections: [], ...runTimingFields(user?.run_timing), status: "running" },
   ];
 }
@@ -2708,6 +2915,7 @@ export function historyToMessages(history) {
     const content = displayMessageContent(message);
     if (content) {
       rendered.push({ id: `history-${index}`, role: messageDisplayRole(message), content,
+        ...(message.created_at ? { createdAt: message.created_at } : {}),
         ...(message.kind === "lara.user.steering" ? { steeringInputId: message.data?.input_id } : {}),
       });
     }
@@ -2771,6 +2979,12 @@ function renderTurnSegment(segment, idPrefix, timing = segment.find((message) =>
   if (sections.length === 0 && !finalContent) {
     return [];
   }
+  const usage = summarizeMessageUsage(
+    segment
+      .filter((message) => String(message?.role || "") === "assistant")
+      .map((message) => message?.usage),
+  );
+  const createdAt = segmentCreatedAt(segment, finalAssistantIndex);
   return [
     {
       id: `${idPrefix}-assistant`,
@@ -2779,8 +2993,26 @@ function renderTurnSegment(segment, idPrefix, timing = segment.find((message) =>
       status: "success",
       ...runTimingFields(timing),
       sections: finalizeToolSections(sections),
+      ...(createdAt ? { createdAt } : {}),
+      ...(usage ? { usage } : {}),
     },
   ];
+}
+
+// The answer's own checkpoint time is the turn's time; fall back to the
+// latest timestamp in the segment when the final message omits it.
+function segmentCreatedAt(segment, finalAssistantIndex) {
+  const answer = finalAssistantIndex >= 0 ? segment[finalAssistantIndex] : undefined;
+  if (typeof answer?.created_at === "string" && answer.created_at) {
+    return answer.created_at;
+  }
+  for (let index = segment.length - 1; index >= 0; index -= 1) {
+    const createdAt = segment[index]?.created_at;
+    if (typeof createdAt === "string" && createdAt) {
+      return createdAt;
+    }
+  }
+  return undefined;
 }
 
 function apiEventToTraceEvent(event) {
@@ -2901,6 +3133,7 @@ export function reconcilePendingSteerings(pending, sessionId, messages) {
   }
   return next.length ? { ...pending, [sessionId]: next } : omitKey(pending, sessionId);
 }
+
 function projectLiveExecutionEvent(setMessages, assistantId, event) {
   setMessages((items) => {
     let changed = false;
@@ -3437,6 +3670,49 @@ function sessionDetailSignature(session) {
     session?.selected_model_key || "",
     stableListSignature(session?.selectable_models || [], modelSummarySignature),
   ].join("|");
+}
+
+function sessionFreshnessSignature(session) {
+  if (!session?.session_id) return "";
+  return [
+    session.session_id,
+    session.updated_at || "",
+    session.last_case_run_id || "",
+    session.last_case_run_status || "",
+    session.model_group_name || "",
+    session.selected_model_key || "",
+  ].join("|");
+}
+
+export function activeSessionNeedsRefresh(activeSession, listRecord) {
+  return Boolean(
+    activeSession?.session_id
+    && activeSession.session_id === listRecord?.session_id
+    && sessionFreshnessSignature(activeSession) !== sessionFreshnessSignature(listRecord)
+  );
+}
+
+export function rememberSessionView(cache, sessionId, view, limit = 5) {
+  if (!cache || !sessionId) return;
+  cache.delete(sessionId);
+  cache.set(sessionId, view);
+  while (cache.size > limit) {
+    cache.delete(cache.keys().next().value);
+  }
+}
+
+function logSessionSwitchPerformance({ sessionId, startedAt, historyCount, historyTotal }) {
+  const frame = globalThis.window?.requestAnimationFrame?.bind(globalThis.window);
+  const now = globalThis.performance?.now?.bind(globalThis.performance) || Date.now;
+  if (!frame || typeof globalThis.console?.info !== "function") return;
+  frame(() => frame(() => {
+    globalThis.console.info("[performance] session_switch", {
+      session_id: sessionId,
+      duration_ms: Math.round((now() - startedAt) * 10) / 10,
+      history_count: historyCount,
+      history_total: historyTotal,
+    });
+  }));
 }
 
 function sessionHistorySignature(detail) {

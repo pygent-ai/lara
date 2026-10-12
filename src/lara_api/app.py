@@ -22,6 +22,7 @@ from lara_api.routers import (
     workspace,
 )
 from lara_api.services.chat_runner import ChatRunRegistry
+from lara_api.services.request_timing import RequestTimingMiddleware
 
 
 def create_app(
@@ -61,6 +62,7 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(RequestTimingMiddleware)
     app.state.api_context = context
     app.include_router(health.router)
     app.include_router(automations.router)

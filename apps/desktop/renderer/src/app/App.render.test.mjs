@@ -125,6 +125,86 @@ test("assistant markdown renders an incomplete streaming fence as code", () => {
   assert.match(html, /markdown-code-language">js</);
   assert.match(html, /console\.log\(/);
 });
+
+test("fenced code blocks offer a copy button with the raw code text", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.MarkdownContent, {
+    content: "```python\nprint(1)\n```",
+  }));
+
+  assert.match(html, /markdown-code-head/);
+  assert.match(html, /markdown-code-copy[^>]*aria-label="复制代码"/);
+  assert.match(html, /<svg[^>]*class="lucide lucide-copy[^"]*"/);
+});
+
+test("message footers show time, token usage, and copy; running turns wait", () => {
+  const props = (messages) => ({
+    activeSession: { session_id: "session-1", scope_id: "conversation" },
+    messages,
+    settings: {}, status: "Ready", running: false, approvals: [],
+  });
+  const finished = renderToStaticMarkup(React.createElement(appModule.ChatPane, props([
+    { id: "user-1", role: "user", content: "hello", createdAt: "2026-10-10T08:00:00+00:00" },
+    {
+      id: "assistant-1", role: "assistant", content: "Answer", status: "success",
+      createdAt: "2026-10-10T08:00:30+00:00",
+      usage: { input_tokens: 3103656, output_tokens: 27974, total_tokens: 3131630, cached_input_tokens: 400 },
+    },
+  ])));
+  assert.match(finished, /message-meta-time/);
+  assert.match(finished, /↑ 3\.1M ↓ 28k/);
+  assert.match(finished, /message-meta-copy[^>]*aria-label="复制消息"/);
+  assert.match(finished, /<svg[^>]*class="lucide lucide-copy[^"]*"/);
+  assert.match(finished, /title="输入 3,103,656 · 输出 27,974 · 缓存 400 · 总计 3,131,630 tokens"/);
+  // User text carries the bubble background; the meta footer sits outside it.
+  assert.match(finished, /bubble-body">hello<\/div><div class="message-meta"/);
+
+  const running = renderToStaticMarkup(React.createElement(appModule.ChatPane, props([
+    { id: "assistant-live", role: "assistant", content: "partial", status: "running", startedAt: 1, sections: [] },
+  ])));
+  assert.doesNotMatch(running, /message-meta/);
+});
+
+test("assistant turns without a checkpoint timestamp still show run timing", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.ChatPane, {
+    activeSession: { session_id: "session-1", scope_id: "conversation" },
+    messages: [{
+      id: "assistant-1", role: "assistant", content: "Answer", status: "success", sections: [],
+      endedAt: new Date(2026, 9, 10, 16, 5).getTime(),
+      usage: { total_tokens: 13023 },
+    }],
+    settings: {}, status: "Ready", running: false, approvals: [],
+  }));
+  assert.match(html, /message-meta-time/);
+  assert.match(html, /message-meta-usage/);
+});
+
+test("history turns carry checkpoint timestamps and summed model usage", () => {
+  const rendered = appModule.historyToMessages([
+    { role: "user", content: "Hi", created_at: "2026-10-10T08:00:00+00:00" },
+    {
+      role: "assistant", content: "", created_at: "2026-10-10T08:00:05+00:00",
+      usage: { input_tokens: 200, output_tokens: 30, total_tokens: 240 },
+      tool_calls: [{ call_id: "call-a", name: "bash", arguments: { command: "ls" } }],
+    },
+    { role: "tool", content: "", results: [{ call_id: "call-a", name: "bash", status: "succeeded", output: "out" }] },
+    {
+      role: "assistant", content: "Done", created_at: "2026-10-10T08:00:30+00:00",
+      usage: { input_tokens: 100, output_tokens: 20, total_tokens: 120 },
+    },
+  ]);
+
+  assert.equal(rendered[0].createdAt, "2026-10-10T08:00:00+00:00");
+  assert.equal(rendered[1].createdAt, "2026-10-10T08:00:30+00:00");
+  assert.deepEqual(rendered[1].usage, { input_tokens: 300, output_tokens: 50, total_tokens: 360 });
+});
+
+test("message timestamps show the clock time today and the date otherwise", () => {
+  const now = new Date(2026, 9, 10, 16, 30).getTime();
+  assert.equal(appModule.formatMessageTimestamp(new Date(2026, 9, 10, 16, 5).toISOString(), now), "16:05");
+  assert.equal(appModule.formatMessageTimestamp(new Date(2026, 9, 10, 16, 5).getTime(), now), "16:05");
+  assert.equal(appModule.formatMessageTimestamp(new Date(2026, 8, 1, 8, 5).toISOString(), now), "2026-09-01 08:05");
+  assert.equal(appModule.formatMessageTimestamp("not-a-date", now), "");
+});
 test("a render error surfaces a message instead of a blank window", () => {
   const { ErrorBoundary } = errorBoundaryModule;
   // SSR cannot recover from a throwing child, so drive the boundary directly:
@@ -167,6 +247,23 @@ test("reconnecting sessions allow drafting but cannot steer until connected", ()
   assert.doesNotMatch(html.match(/<textarea[^>]*>/)[0], /disabled/);
   assert.match(html, /aria-label="正在连接"[^>]*disabled/);
   assert.doesNotMatch(html, /aria-label="追加指令"/);
+});
+
+test("long transcripts mount only the latest window initially", () => {
+  const messages = Array.from({ length: 70 }, (_, index) => ({
+    id: `message-${index}`,
+    role: "user",
+    content: index < 10 ? `hidden-early-${index}` : `visible-recent-${index}`,
+  }));
+  const html = renderToStaticMarkup(React.createElement(appModule.ChatPane, {
+    activeSession: { session_id: "long-session", scope_id: "conversation" },
+    messages,
+    settings: {}, status: "Ready", running: false, approvals: [],
+  }));
+
+  assert.match(html, /显示更早消息（还有 10 条）/);
+  assert.doesNotMatch(html, /hidden-early-/);
+  assert.match(html, /visible-recent-69/);
 });
 
 test("a steering boundary already rendered from history does not split twice", () => {
@@ -852,6 +949,36 @@ test("session history survives switching away while another session is running",
   assert.equal(appModule.selectSessionMessages(live, persisted), live);
   assert.equal(appModule.selectSessionMessages([], persisted), persisted);
   assert.equal(appModule.selectSessionMessages(undefined, persisted), persisted);
+});
+
+test("active session refreshes only when the lightweight sidebar record changes", () => {
+  const current = {
+    session_id: "one",
+    updated_at: "2026-10-09T10:00:00Z",
+    last_case_run_id: "run-one",
+    last_case_run_status: "completed",
+    model_group_name: "coding",
+    selected_model_key: "main",
+  };
+  assert.equal(appModule.activeSessionNeedsRefresh(current, { ...current }), false);
+  assert.equal(appModule.activeSessionNeedsRefresh(current, {
+    ...current,
+    updated_at: "2026-10-09T10:01:00Z",
+  }), true);
+  assert.equal(appModule.activeSessionNeedsRefresh(current, {
+    ...current,
+    session_id: "two",
+  }), false);
+});
+
+test("session view cache is a bounded least-recently-used map", () => {
+  const cache = new Map();
+  appModule.rememberSessionView(cache, "one", { messages: [1] }, 2);
+  appModule.rememberSessionView(cache, "two", { messages: [2] }, 2);
+  appModule.rememberSessionView(cache, "one", { messages: [3] }, 2);
+  appModule.rememberSessionView(cache, "three", { messages: [4] }, 2);
+  assert.deepEqual([...cache.keys()], ["one", "three"]);
+  assert.deepEqual(cache.get("one").messages, [3]);
 });
 
 test("session live events survive switching away while another session is running", () => {

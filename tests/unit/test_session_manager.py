@@ -294,6 +294,36 @@ def test_session_detail_can_limit_large_history_windows(tmp_path: Path) -> None:
     assert [item["content"] for item in detail.history] == ["message 3", "message 4"]
 
 
+def test_session_history_carries_checkpoint_timestamps(tmp_path: Path) -> None:
+    manager = SessionManager(native_run_config(tmp_path))
+    session = manager.create("chat", mode="chat")
+    run = manager.start_case_run(session.session_id, "chat")
+    manager.append_history_checkpoint(
+        run,
+        turn_id="turn-0",
+        checkpoint_id="checkpoint-user",
+        message={"role": "user", "content": "hello"},
+    )
+    manager.append_history_checkpoint(
+        run,
+        turn_id="turn-0",
+        checkpoint_id="checkpoint-assistant",
+        message={
+            "role": "assistant",
+            "content": "hi",
+            "usage": {"input_tokens": 10, "output_tokens": 3, "total_tokens": 13},
+        },
+    )
+
+    history = manager.history_with_run_timing(manager.load(session.session_id))
+
+    assert [item.get("created_at") for item in history]
+    for item in history:
+        assert isinstance(item["created_at"], str) and item["created_at"]
+        assert "T" in item["created_at"]
+    assert history[1]["usage"] == {"input_tokens": 10, "output_tokens": 3, "total_tokens": 13}
+
+
 def test_session_persists_fixed_group_and_preferred_model(tmp_path: Path) -> None:
     config = native_run_config(tmp_path)
     manager = SessionManager(config)

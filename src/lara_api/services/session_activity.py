@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +12,9 @@ from lara.tracing import EventStore
 RESULT_PREVIEW_CHARS = 2_000
 
 
-def session_activity_events(session_dir: Path) -> tuple[list[dict[str, Any]], int]:
+def session_activity_events(
+    session_dir: Path, *, event_limit: int | None = None
+) -> tuple[list[dict[str, Any]], int]:
     """Build the session-wide tool/file activity feed from the session logs.
 
     Every run mirrors its tool, file, and diff projections into
@@ -22,9 +26,16 @@ def session_activity_events(session_dir: Path) -> tuple[list[dict[str, Any]], in
     """
 
     logs_dir = Path(session_dir) / "logs"
-    tool_names = _tool_names_by_call_id(logs_dir / "tool_calls.jsonl")
+    limit = event_limit if event_limit is not None and event_limit > 0 else None
+    tool_calls, tool_calls_total = recent_jsonl_records(
+        logs_dir / "tool_calls.jsonl", limit
+    )
+    tool_results, tool_results_total = recent_jsonl_records(
+        logs_dir / "tool_results.jsonl", limit
+    )
+    tool_names = _tool_names_by_call_id(tool_calls)
     events: list[dict[str, Any]] = []
-    for record in EventStore.iter_jsonl(logs_dir / "tool_calls.jsonl") or []:
+    for record in tool_calls:
         call_id = _call_id(record)
         events.append(
             {
@@ -40,7 +51,7 @@ def session_activity_events(session_dir: Path) -> tuple[list[dict[str, Any]], in
                 },
             }
         )
-    for record in EventStore.iter_jsonl(logs_dir / "tool_results.jsonl") or []:
+    for record in tool_results:
         call_id = _call_id(record)
         failed = record.get("error") is not None
         result = record.get("result")
@@ -69,8 +80,11 @@ def session_activity_events(session_dir: Path) -> tuple[list[dict[str, Any]], in
                 "payload": payload,
             }
         )
+    events_total = tool_calls_total + tool_results_total
     for name, fallback_type in (("file_events.jsonl", "file.unknown"), ("diff_events.jsonl", "diff.created")):
-        for record in EventStore.iter_jsonl(logs_dir / name) or []:
+        records, records_total = recent_jsonl_records(logs_dir / name, limit)
+        events_total += records_total
+        for record in records:
             events.append(
                 {
                     "id": str(record.get("event_id") or ""),
@@ -81,7 +95,9 @@ def session_activity_events(session_dir: Path) -> tuple[list[dict[str, Any]], in
                 }
             )
     events.sort(key=lambda event: (str(event.get("created_at") or ""), str(event.get("id") or "")))
-    return events, len(events)
+    if limit is not None and len(events) > limit:
+        events = events[-limit:]
+    return events, events_total
 
 
 def _call_id(record: dict[str, Any]) -> str:
@@ -93,9 +109,9 @@ def _call_id(record: dict[str, Any]) -> str:
     )
 
 
-def _tool_names_by_call_id(path: Path) -> dict[str, str]:
+def _tool_names_by_call_id(records: list[dict[str, Any]]) -> dict[str, str]:
     names: dict[str, str] = {}
-    for record in EventStore.iter_jsonl(path) or []:
+    for record in records:
         tool_name = str(record.get("tool_name") or "")
         if not tool_name:
             continue
@@ -104,3 +120,42 @@ def _tool_names_by_call_id(path: Path) -> dict[str, str]:
             if call_id:
                 names.setdefault(call_id, tool_name)
     return names
+
+
+def recent_jsonl_records(
+    path: Path, limit: int | None
+) -> tuple[list[dict[str, Any]], int]:
+    """Return a bounded JSONL tail while counting rows without decoding all of it.
+
+    Each source log is append-only.  Keeping the latest ``limit`` raw rows from
+    every source is sufficient to find the latest ``limit`` rows after the
+    sources are merged, and avoids constructing every historical event.
+    """
+    if not path.exists():
+        return [], 0
+    if limit is None or limit <= 0:
+        records = list(EventStore.iter_jsonl(path) or [])
+        return records, len(records)
+
+    recent: deque[bytes] = deque(maxlen=limit)
+    total = 0
+    with path.open("rb") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            total += 1
+            recent.append(line)
+
+    records: list[dict[str, Any]] = []
+    invalid_recent = 0
+    for line in recent:
+        try:
+            record = json.loads(line)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            invalid_recent += 1
+            continue
+        if isinstance(record, dict):
+            records.append(record)
+        else:
+            invalid_recent += 1
+    return records, max(0, total - invalid_recent)
