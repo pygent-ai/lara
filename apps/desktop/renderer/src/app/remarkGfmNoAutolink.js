@@ -38,7 +38,10 @@ export default function remarkGfmNoAutolink() {
   // One extension per entry: the combiners walk entries with for..in, so a
   // nested array would be silently ignored.
   add("micromarkExtensions", gfmFootnote());
-  add("micromarkExtensions", gfmStrikethrough());
+  // singleTilde off: model output and Windows paths are full of 8.3 short
+  // names like ADMINI~1, and two stray single tildes would strike through
+  // everything between them. Double-tilde ~~text~~ still renders.
+  add("micromarkExtensions", gfmStrikethrough({ singleTilde: false }));
   add("micromarkExtensions", gfmTable());
   add("micromarkExtensions", gfmTaskListItem());
   add("fromMarkdownExtensions", gfmFootnoteFromMarkdown());
