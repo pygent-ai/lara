@@ -1691,6 +1691,43 @@ test("automation triggers render as system-origin cards with the raw instruction
   assert.equal(message.content, "检查构建状态");
 });
 
+test("restored user turns keep their attachments and steerings stay chip-free", () => {
+  const [withMedia, steering, plain] = appModule.historyToMessages([
+    {
+      role: "user",
+      content: "<user-context><user-message>看这张图</user-message></user-context>",
+      data: { raw_content: "看这张图", attachments: [".lara/uploads/8efe-image.png"] },
+      created_at: "2026-10-12T08:00:00Z",
+    },
+    {
+      role: "user",
+      kind: "lara.user.steering",
+      content: "<user-context><user-message>补充说明</user-message></user-context>",
+      data: { input_id: "input-1" },
+    },
+    { role: "user", content: "没有附件" },
+  ]);
+  assert.deepEqual(withMedia.attachments, [".lara/uploads/8efe-image.png"]);
+  assert.equal(steering.attachments, undefined);
+  assert.equal(plain.attachments, undefined);
+});
+
+test("recovery replays the in-flight turn's user message with its attachments", () => {
+  const restored = appModule.messagesForRecovery({
+    run_history_start_index: 2,
+    history: [
+      { role: "user", content: "Previous" }, { role: "assistant", content: "Completed" },
+      {
+        role: "user",
+        content: "<user-context><user-message>当前问题</user-message></user-context>",
+        data: { raw_content: "当前问题", attachments: ["shots/a.png"] },
+      },
+      { role: "assistant", content: "Partial output" },
+    ],
+  }, "resumed");
+  assert.deepEqual(restored[2].attachments, ["shots/a.png"]);
+});
+
 test("reopening an active session replays only its current turn without duplicating partial output", () => {
   const restored = appModule.messagesForRecovery({
     run_history_start_index: 2,
