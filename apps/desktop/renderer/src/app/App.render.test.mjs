@@ -855,6 +855,57 @@ test("legacy model tool IDs pair calls with their results", () => {
   assert.match(appModule.traceEventDetails(tools[0], "Tools"), /actual file content/);
 });
 
+test("internal runtime bookkeeping calls never render as chat tool rows", () => {
+  const initial = { role: "assistant", content: "", status: "running", sections: [] };
+  const events = [
+    { kind: "model.tool_call.completed", data: { call_id: "call-edit", name: "edit", arguments: { file_path: "standard/_files.py" } } },
+    { kind: "tool.started", data: { call_id: "call-edit", tool_id: "lara.tool.edit" } },
+    { kind: "tool.completed", data: { call_id: "call-edit" } },
+    { kind: "tool.started", data: { call_id: "batch-1", tool_id: "lara.internal.persist_file_effects" } },
+    { kind: "tool.completed", data: { call_id: "batch-1" } },
+    { kind: "tool.failed", data: { call_id: "batch-1", error_kind: "executor_error" } },
+  ];
+  let message = initial;
+  for (const event of events) {
+    message = appModule.projectLiveAssistantEvent(message, event);
+  }
+  const calls = message.sections.flatMap((section) => section.calls || []);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].name, "edit");
+  assert.ok(!calls.some((call) => call.name === "tool"));
+  assert.deepEqual(message.internalToolCallIds, ["batch-1"]);
+  const html = renderToStaticMarkup(React.createElement(appModule.AssistantActivity, { message }));
+  assert.match(html, /已执行 1 个工具调用/);
+  assert.doesNotMatch(html, /tool-call-name">Tool</);
+});
+
+test("model tool completion backfills a row created by an early started event", () => {
+  const initial = { role: "assistant", content: "", status: "running", sections: [] };
+  const started = appModule.projectLiveAssistantEvent(initial, {
+    kind: "tool.started", data: { call_id: "call-1", tool_id: "lara.tool.edit" },
+  });
+  assert.equal(started.sections[0].calls[0].name, "tool");
+  const completed = appModule.projectLiveAssistantEvent(started, {
+    kind: "model.tool_call.completed", data: { call_id: "call-1", name: "edit", arguments: { file_path: "a.py" } },
+  });
+  assert.equal(completed.sections.length, started.sections.length);
+  const [row] = completed.sections[0].calls;
+  assert.equal(row.name, "edit");
+  assert.match(row.arguments, /a\.py/);
+});
+
+test("trace tools hide runtime internal bookkeeping calls", () => {
+  const tools = appModule.traceToolEvents([
+    { id: "evt-call", type: "tool.call", payload: { model_tool_call_id: "call-edit", tool_name: "edit", args: { file_path: "standard/_files.py" } } },
+    { id: "evt-result", type: "tool.result", payload: { model_tool_call_id: "call-edit", tool_call_id: "evt-call", status: "success", result: "ok" } },
+    { id: "evt-batch", type: "tool.started", payload: { call_id: "batch-1", tool_id: "lara.internal.persist_file_effects" } },
+    { id: "evt-batch-done", type: "tool.completed", payload: { call_id: "batch-1" } },
+  ]);
+  assert.equal(tools.length, 1);
+  assert.equal(tools[0].payload.tool_name, "edit");
+  assert.equal(tools[0].payload.status, "success");
+});
+
 test("project groups create chats directly and omit session counts", () => {
   const html = renderToStaticMarkup(
     React.createElement(appModule.SessionSidebar, {
