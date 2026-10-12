@@ -1,6 +1,12 @@
 const DEFAULT_BASE_URL = "http://127.0.0.1:8765";
 const STREAM_RESUME_TIMEOUT_MS = 55_000;
 const STREAM_RESUME_RETRY_DELAY_MS = 1_000;
+// The backend emits a keep-alive at least every 10s while a stream is open
+// (CHAT_KEEPALIVE_SECONDS), so total silence means the connection or the
+// server-side resolve is wedged. Without this bound a pending fetch would
+// spin the composer forever: the resume window below only starts counting
+// after an attempt fails, and a hung request never fails on its own.
+const STREAM_STALL_TIMEOUT_MS = 30_000;
 
 export function createApiClient(options = {}) {
   const baseUrl = normalizeBaseUrl(options.baseUrl || defaultBaseUrl());
@@ -281,20 +287,48 @@ export function parseSseEvents(text) {
 async function streamChatTurn({ baseUrl, fetchImpl, request, onEvent, onConnectionState, signal }) {
   let executionId = request.executionId || null;
   let afterSequence = Number.isFinite(request.afterSequence) ? request.afterSequence : null;
+  let maxSequenceSeen = Number.isFinite(request.afterSequence) ? request.afterSequence : -1;
   let disconnectedAt = null;
   let terminal = false;
   let attempt = 0;
 
   while (true) {
+    // Each attempt is bounded by event activity, not just by failures: a
+    // silent connection must not hold the stream open indefinitely.
+    const stallController = new AbortController();
+    const onOuterAbort = () => stallController.abort();
+    if (signal) {
+      if (signal.aborted) stallController.abort();
+      else signal.addEventListener("abort", onOuterAbort, { once: true });
+    }
+    let stallTimer = null;
+    let stalled = false;
+    const armStallTimer = () => {
+      if (stallTimer !== null) clearTimeout(stallTimer);
+      stalled = false;
+      stallTimer = setTimeout(() => {
+        stalled = true;
+        stallController.abort();
+      }, STREAM_STALL_TIMEOUT_MS);
+    };
     try {
+      armStallTimer();
       await streamChatAttempt({
         baseUrl,
         fetchImpl,
         request: { ...request, executionId, afterSequence },
         onEvent: (event) => {
+          armStallTimer();
           const data = event?.data || {};
-          disconnectedAt = null;
-          attempt = 0;
+          if (Number.isFinite(data.sequence) && data.sequence > maxSequenceSeen) {
+            maxSequenceSeen = data.sequence;
+            // Only genuinely new events prove progress. A reconnect that
+            // merely replays already-seen events must not reopen the give-up
+            // window below, or a server that dies right after replaying keeps
+            // the client reconnecting forever.
+            disconnectedAt = null;
+            attempt = 0;
+          }
           onConnectionState?.("connected");
           if (data.execution_id) {
             executionId = data.execution_id;
@@ -305,13 +339,20 @@ async function streamChatTurn({ baseUrl, fetchImpl, request, onEvent, onConnecti
           terminal ||= ["execution.completed", "execution.failed", "execution.cancelled", "execution.deadline_exceeded", "lara.transport.error"].includes(data.kind);
           emitStreamEvent(event, onEvent);
         },
-        signal,
+        signal: stallController.signal,
       });
       if (terminal) return;
       throw new Error("Execution stream ended before the task finished");
     } catch (err) {
       if (terminal) return;
-      if (signal?.aborted || isAbortError(err) || !executionId) {
+      if (signal?.aborted) {
+        throw err;
+      }
+      if (isAbortError(err)) {
+        if (!stalled) throw err;
+        err = new Error("Execution stream stalled: no events, including keep-alives, arrived within 30s");
+      }
+      if (!executionId) {
         throw err;
       }
       disconnectedAt ??= Date.now();
@@ -321,6 +362,9 @@ async function streamChatTurn({ baseUrl, fetchImpl, request, onEvent, onConnecti
       onConnectionState?.("reconnecting");
       attempt += 1;
       await delay(Math.min(STREAM_RESUME_RETRY_DELAY_MS * attempt, 5_000), signal);
+    } finally {
+      if (stallTimer !== null) clearTimeout(stallTimer);
+      if (signal) signal.removeEventListener("abort", onOuterAbort);
     }
   }
 }

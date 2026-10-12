@@ -580,3 +580,102 @@ test("streamChat forwards workspace attachment paths in the request body", async
   await client.streamChat({ message: "plain" }, { onEvent: () => {} });
   assert.equal("attachments" in calls[1], false);
 });
+
+test("streamChat reconnects when the event stream goes silent mid-run", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const encoder = new TextEncoder();
+  const calls = [];
+  const states = [];
+  const client = createApiClient({
+    fetchImpl: async (_url, init) => {
+      calls.push(JSON.parse(init.body));
+      if (calls.length === 1) {
+        // One event, then a wedged connection: no further bytes, no close.
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(encoder.encode(
+                'event: execution.event\ndata: {"execution_id":"exec1","sequence":1,"kind":"lara.chat.started","data":{}}\n\n',
+              ));
+              init.signal.addEventListener("abort", () =>
+                controller.error(new DOMException("The operation was aborted.", "AbortError")));
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "text/event-stream" } },
+        );
+      }
+      return new Response(
+        'event: execution.event\ndata: {"execution_id":"exec1","sequence":2,"kind":"execution.completed","data":{}}\n\n',
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      );
+    },
+  });
+
+  // Mocked timers only advance while tick() runs; flush microtasks between
+  // ticks so the abort/delay/attempt chains can reach their next timer.
+  const flush = async () => {
+    for (let i = 0; i < 10; i += 1) {
+      await Promise.resolve();
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  };
+  const streaming = client.streamChat(
+    { message: "hello" },
+    { onConnectionState: (state) => states.push(state) },
+  );
+  await flush();
+  t.mock.timers.tick(30_000);
+  await flush();
+  t.mock.timers.tick(1_000);
+  await flush();
+  await streaming;
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].execution_id, "exec1");
+  assert.equal(calls[1].after_sequence, 1);
+  assert.equal(calls[1].message, null);
+  assert.ok(states.includes("reconnecting"));
+});
+
+test("streamChat gives up on a persistently silent stream instead of spinning forever", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const encoder = new TextEncoder();
+  let calls = 0;
+  const client = createApiClient({
+    fetchImpl: async (_url, init) => {
+      calls += 1;
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(
+              'event: execution.event\ndata: {"execution_id":"exec1","sequence":1,"kind":"lara.chat.started","data":{}}\n\n',
+            ));
+            init.signal.addEventListener("abort", () =>
+              controller.error(new DOMException("The operation was aborted.", "AbortError")));
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      );
+    },
+  });
+
+  const flush = async () => {
+    for (let i = 0; i < 10; i += 1) {
+      await Promise.resolve();
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  };
+  let failure = null;
+  const streaming = client.streamChat({ message: "hello" }, { onEvent: () => {} });
+  streaming.then(() => {}, (err) => { failure = err; });
+  // Each reconnect replays the same event, so the give-up window must keep
+  // accumulating across cycles until the bounded failure fires.
+  for (let i = 0; i < 10 && failure === null; i += 1) {
+    await flush();
+    t.mock.timers.tick(30_000);
+    await flush();
+  }
+  assert.ok(failure !== null, "streamChat never gave up on a persistently silent stream");
+  await assert.rejects(() => streaming, /stalled/);
+  assert.ok(calls >= 2);
+});
