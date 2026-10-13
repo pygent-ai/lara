@@ -54,6 +54,17 @@ test("a background-completed run refreshes trace and context for the open sessio
   assert.deepEqual(f.snapshots, [[f.detail, f.trace, f.activity]]);
 });
 
+test("a collapsed trace panel skips context snapshot payloads", async () => {
+  const f = fixture();
+  let traceOptions;
+  f.options.api.getTraceEvents = async (_sessionId, _runId, options) => {
+    traceOptions = options;
+    return f.trace;
+  };
+  await refreshActiveSession({ ...f.options, includeContextSnapshots: false });
+  assert.equal(traceOptions.contextSnapshotLimit, 0);
+});
+
 test("an externally started execution attaches to the existing stream", async () => {
   const f = fixture({ getTraceEvents: () => assert.fail("must use the live stream") });
   f.detail.runtime_execution_id = "external-execution";

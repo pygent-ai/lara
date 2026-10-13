@@ -86,6 +86,11 @@ def _context_snapshots(
     case_run_id: str,
     limit: int | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
+    # The renderer passes 0 while the trace panel is collapsed: skip the read
+    # entirely, because every journal snapshot row carries a full request
+    # payload (hundreds of KB each). None keeps the unlimited read.
+    if limit is not None and limit <= 0:
+        return [], 0
     execution_id = read_json(
         Path(run_dir) / "run_metadata.json", default={}
     ).get("runtime_execution_id")
