@@ -4,7 +4,16 @@ export const CONTEXT_SNAPSHOT_LIMIT = 50;
 
 const EMPTY_ACTIVITY = { events: [], events_total: 0, events_truncated: false };
 
-export async function refreshActiveSession({ api, sessionId, scopeId, signal, isCurrent, onResume, onSnapshot }) {
+export async function refreshActiveSession({
+  api,
+  sessionId,
+  scopeId,
+  signal,
+  isCurrent,
+  onResume,
+  onSnapshot,
+  includeContextSnapshots = true,
+}) {
   const current = () => !signal.aborted && isCurrent();
   if (!current()) return;
   const detail = await api.getSession(sessionId, {
@@ -24,7 +33,9 @@ export async function refreshActiveSession({ api, sessionId, scopeId, signal, is
     runId
       ? api.getTraceEvents(sessionId, runId, {
           eventLimit: TRACE_EVENT_LIMIT,
-          contextSnapshotLimit: CONTEXT_SNAPSHOT_LIMIT,
+          // 0 makes the API skip the snapshot read entirely: every journal
+          // snapshot row carries a full request payload.
+          contextSnapshotLimit: includeContextSnapshots ? CONTEXT_SNAPSHOT_LIMIT : 0,
           signal,
         })
       : Promise.resolve({

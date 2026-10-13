@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
@@ -42,7 +44,9 @@ async def list_session_groups(
     forever and never reconcile the runs the crash left behind.
     """
     first_inventory_pass = not context.stale_runs_reconciled
-    etag = f'"{session_groups_etag(context)}"'
+    # The ETag stats every scope's session inventory; run the stat pass off the
+    # event loop so every sidebar poll cannot stall concurrent requests.
+    etag = f'"{await asyncio.to_thread(session_groups_etag, context)}"'
     if (
         if_none_match
         and not first_inventory_pass

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 from html import unescape
@@ -151,7 +152,12 @@ async def session_groups_response(context: ApiContext) -> SessionGroupListRespon
             if scope.scope_id == active_scope_id:
                 raise
             continue
-        records = SessionService(manager).list_chat_sessions(scope_id=scope.scope_id)
+        # The per-session metadata glob and reads are blocking file IO; keep
+        # them off the event loop so a slow disk cannot stall concurrent
+        # requests while a turn saturates the API.
+        records = await asyncio.to_thread(
+            SessionService(manager).list_chat_sessions, scope_id=scope.scope_id
+        )
         await reconcile_stale_running_sessions(context, manager, records)
         records = _apply_session_order(context.project_state, scope.scope_id, records)
         groups.append(

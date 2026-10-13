@@ -177,6 +177,8 @@ export function App() {
   const activitySignatureRef = useRef("");
   const contextSnapshotsSignatureRef = useRef("");
   const messagesHistorySignatureRef = useRef("");
+  const traceCollapsedRef = useRef(layout.traceCollapsed);
+  const prevTraceCollapsedRef = useRef(layout.traceCollapsed);
 
   const activeSessionId = activeSession?.session_id || "";
   const running = Boolean(activeSessionId && runningSessionIds[activeSessionId]);
@@ -244,7 +246,9 @@ export function App() {
           ? api
             .getTraceEvents(session.session_id, runId, {
               eventLimit: TRACE_EVENT_LIMIT,
-              contextSnapshotLimit: CONTEXT_SNAPSHOT_LIMIT,
+              // Collapsed panel skips the snapshot payloads entirely: every
+              // journal snapshot row carries a full request context.
+              contextSnapshotLimit: traceCollapsedRef.current ? 0 : CONTEXT_SNAPSHOT_LIMIT,
             })
             .catch((err) => {
               // A turn that just started has no run directory yet; the periodic
@@ -294,6 +298,17 @@ export function App() {
     },
     [api],
   );
+
+  // A collapsed-panel load skips context snapshots; expanding refetches them
+  // for the open session.
+  useEffect(() => {
+    const wasCollapsed = prevTraceCollapsedRef.current;
+    prevTraceCollapsedRef.current = layout.traceCollapsed;
+    if (!wasCollapsed || layout.traceCollapsed || !activeSession?.session_id) {
+      return;
+    }
+    void loadTrace(activeSession, traceLoadTokenRef.current);
+  }, [activeSession, layout.traceCollapsed, loadTrace]);
 
   const loadSession = useCallback(
     async (sessionId, previewSession = null, { resumeExecution = true } = {}) => {
@@ -457,8 +472,23 @@ export function App() {
       // the composer shows the model-group selector there, and the first
       // message creates the session with the chosen group.
       setPendingNewSessionScope(scope?.scope_id === "conversation" ? "conversation" : "");
-      await refreshWorkbench({ preserveSessionId: "" });
+      // Show the empty composer before the sidebar refresh resolves: the
+      // groups read can stall behind a running turn, and awaiting it first
+      // made new chats feel slow to appear.
+      sessionLoadTokenRef.current += 1;
+      traceLoadTokenRef.current += 1;
+      activeSessionIdRef.current = "";
+      messagesRef.current = [];
+      setActiveSession(null);
+      setMessages([]);
+      setTraceEvents([]);
+      setTraceWindow(EMPTY_TRACE_WINDOW);
+      setSessionActivity(EMPTY_SESSION_ACTIVITY);
+      setLiveEvents([]);
+      setContextSnapshots([]);
+      setStatus("Ready");
       setNotice("已进入新建会话：选择模型组后，发送第一条消息即创建会话。");
+      await refreshWorkbench({ preserveSessionId: "" });
     } catch (err) {
       setError(readableError(err));
     }
@@ -859,6 +889,7 @@ export function App() {
         && !runningSessionIdsRef.current[activeSessionId];
       await refreshActiveSession({
         api, sessionId: activeSessionId, scopeId: activeSession?.scope_id, signal, isCurrent,
+        includeContextSnapshots: !traceCollapsedRef.current,
         onResume: (detail) => {
           traceLoadTokenRef.current += 1;
           setActiveSession(sessionFromDetail(detail));

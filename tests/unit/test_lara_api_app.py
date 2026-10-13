@@ -204,6 +204,37 @@ def test_trace_response_includes_session_context_snapshots(
     )
 
 
+def test_trace_response_skips_snapshot_read_when_limit_is_zero(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    context = ApiContext(
+        workspace_root=str(tmp_path), state_path=str(tmp_path / "state.json")
+    )
+    session = context.manager.create(case_id="chat", mode="chat")
+    run = context.manager.start_case_run(
+        session.session_id, "chat", run_config=context.config
+    )
+    metadata_path = Path(run.run_dir) / "run_metadata.json"
+    metadata = read_json(metadata_path)
+    metadata["runtime_execution_id"] = EXECUTION_ID
+    write_json(metadata_path, metadata)
+    _seed_journal(
+        Path(context.config.runtime_durability.history_path),
+        [(EXECUTION_ID, 0, _prepared_event("event-0"))],
+    )
+
+    # 0 is the collapsed-trace-panel skip: no snapshot row may be read even
+    # though the journal has one, and the total reports 0 rather than 1.
+    response = get_trace_events(
+        session.session_id, run.case_run_id, context, context_snapshot_limit=0
+    )
+
+    assert response.context_snapshots == []
+    assert response.context_snapshots_total == 0
+    assert response.context_snapshots_truncated is False
+
+
 def test_trace_response_skips_snapshots_without_journal_execution(
     tmp_path, monkeypatch
 ) -> None:
