@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -106,6 +107,9 @@ def _error_trace_payload(error: BaseException) -> dict[str, Any]:
         "error": str(error),
         "error_type": type(error).__name__,
     }
+    if isinstance(error, sqlite3.Error):
+        payload["sqlite_errorcode"] = getattr(error, "sqlite_errorcode", None)
+        payload["sqlite_errorname"] = getattr(error, "sqlite_errorname", None)
     if isinstance(error, ModelCallError):
         payload["model_failure"] = error.failure.to_dict()
     return payload

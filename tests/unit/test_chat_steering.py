@@ -24,7 +24,8 @@ from lara_api.services.chat_runner import ChatRunRegistry
 
 @pytest.mark.asyncio
 async def test_http_steering_reaches_running_react_and_persists_once(tmp_path: Path) -> None:
-    started, release = asyncio.Event(), asyncio.Event()
+    attempts_started = [asyncio.Event() for _ in range(3)]
+    release = asyncio.Event()
     requests = []
 
     class Invoker:
@@ -36,9 +37,8 @@ async def test_http_steering_reaches_running_react_and_persists_once(tmp_path: P
             index = len(requests)
 
             async def invoke(emit):
-                if index == 1:
-                    started.set()
-                    await release.wait()
+                attempts_started[index - 1].set()
+                await release.wait()
                 return ModelProviderResponse(message=AIMessage(content=f"answer-{index}"), usage={})
             return ModelExecution(invoke)
 
@@ -60,7 +60,7 @@ async def test_http_steering_reaches_running_react_and_persists_once(tmp_path: P
             manager=manager, message="original task", run_ref=run, turn_id="steering-test",
             interactive_approvals=False, deadline=time.monotonic() + 30,
         )
-        await asyncio.wait_for(started.wait(), 10)
+        await asyncio.wait_for(attempts_started[0].wait(), 10)
         active = SimpleNamespace(run_ref=run, runtime_service=service)
         coordinator = SimpleNamespace(find_execution=AsyncMock(return_value=active))
         app = FastAPI()
@@ -74,13 +74,18 @@ async def test_http_steering_reaches_running_react_and_persists_once(tmp_path: P
             response = await client.post(url, json=body)
             assert response.status_code == 200, response.text
             assert response.json()["status"] == "accepted"
+            # Pygent 0.3.24+ wakes immediate steering listeners directly, so
+            # each accepted input can interrupt and restart the in-flight model
+            # before the next HTTP request arrives.
+            await asyncio.wait_for(attempts_started[1].wait(), 10)
             assert (await client.post(url, json=body)).json()["status"] == "duplicate"
             assert (await client.post(url, json={**body, "input_id": "input-2", "message": "use Chinese"})).json()["status"] == "accepted"
+            await asyncio.wait_for(attempts_started[2].wait(), 10)
             release.set()
             await asyncio.wait_for(handle.result(), 10)
             assert (await client.post(url, json={**body, "input_id": "late"})).status_code == 409
-        assert len(requests) == 2
-        message, context = requests[1]
+        assert len(requests) == 3
+        message, context = requests[2]
         assert message.content == "use Chinese"
         assert any(item.content == "focus on tests" for item in context.messages)
         history = manager.load(session.session_id).history
