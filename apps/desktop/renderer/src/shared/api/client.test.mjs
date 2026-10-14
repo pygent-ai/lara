@@ -637,6 +637,86 @@ test("streamChat reconnects when the event stream goes silent mid-run", async (t
   assert.ok(states.includes("reconnecting"));
 });
 
+test("streamChat keeps a quiet stream alive while keep-alive comments arrive", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const encoder = new TextEncoder();
+  const calls = [];
+  const states = [];
+  let releaseChunk = null;
+  const nextChunk = () =>
+    new Promise((resolve) => {
+      releaseChunk = resolve;
+    });
+  let chunksSent = 0;
+  const client = createApiClient({
+    fetchImpl: async (_url, init) => {
+      calls.push(JSON.parse(init.body));
+      if (calls.length > 1) {
+        return new Response(
+          'event: execution.event\ndata: {"execution_id":"exec1","sequence":2,"kind":"execution.completed","data":{}}\n\n',
+          { status: 200, headers: { "Content-Type": "text/event-stream" } },
+        );
+      }
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            init.signal.addEventListener(
+              "abort",
+              () => controller.error(new DOMException("The operation was aborted.", "AbortError")),
+              { once: true },
+            );
+          },
+          async pull(controller) {
+            // First chunk is a real event so the run has an execution_id to
+            // resume; every later chunk is a keep-alive-only quiet period.
+            const text = chunksSent === 0
+              ? 'event: execution.event\ndata: {"execution_id":"exec1","sequence":1,"kind":"lara.chat.started","data":{}}\n\n'
+              : ": keep-alive\n\n";
+            chunksSent += 1;
+            await nextChunk();
+            controller.enqueue(encoder.encode(text));
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      );
+    },
+  });
+
+  const flush = async () => {
+    for (let i = 0; i < 10; i += 1) {
+      await Promise.resolve();
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  };
+  const streaming = client.streamChat(
+    { message: "hello" },
+    { onConnectionState: (state) => states.push(state) },
+  );
+  streaming.then(() => {}, () => {});
+  await flush();
+  releaseChunk(null);
+  await flush();
+  // Keep-alives arrive every 10s of mocked time; each one re-arms the stall
+  // timer, so three quiet minutes must never abort the connection.
+  for (let i = 0; i < 6; i += 1) {
+    releaseChunk(null);
+    await flush();
+    assert.equal(calls.length, 1, `reconnected too early at cycle ${i}`);
+    t.mock.timers.tick(10_000);
+    await flush();
+  }
+  // Total silence for 30s must still abort and reconnect.
+  t.mock.timers.tick(30_000);
+  await flush();
+  t.mock.timers.tick(1_000);
+  await flush();
+  await streaming;
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].after_sequence, 1);
+  assert.ok(states.includes("reconnecting"));
+});
+
 test("streamChat gives up on a persistently silent stream instead of spinning forever", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
   const encoder = new TextEncoder();
