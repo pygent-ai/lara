@@ -26,7 +26,7 @@ test("uploaded attachment paths recognize the workspace uploads area", () => {
 
 test("attachment file names survive mixed separators", () => {
   assert.equal(attachmentFileName(".lara/uploads/8efe283d6b70-image.png"), "8efe283d6b70-image.png");
-  assert.equal(attachmentFileName("E:\\Projects\\lora\\notes.txt"), "notes.txt");
+  assert.equal(attachmentFileName("E:\\Projects\\lara\\notes.txt"), "notes.txt");
 });
 
 test("document attachments detect text-like extensions", () => {
