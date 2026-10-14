@@ -273,6 +273,16 @@ class ChatRunRegistry:
             service = session_service_for_scope(context, request.scope_id)
             manager = service.manager
             run_ref = _request_case_run(manager, request)
+            if run_ref is not None:
+                driving = await self.coordinator.find_case_run(run_ref.case_run_id)
+                if driving is not None:
+                    # A turn this process is already driving is registered by
+                    # case run before its execution starts, so this also covers
+                    # the start window where the execution id is not in the
+                    # coordinator index yet. Recovering here instead would
+                    # stack a second turn on the live one.
+                    await driving.wait_ready()
+                    return ActiveChatRun(driving)
             probe_lease = None
             if run_ref is None:
                 probe_lease = await context.acquire_runtime(

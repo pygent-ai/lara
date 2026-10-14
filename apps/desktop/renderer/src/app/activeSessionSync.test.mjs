@@ -80,6 +80,64 @@ test("an already streaming session does not poll or replace live data", async ()
   assert.deepEqual(f.snapshots, []);
 });
 
+test("a running run without a published execution id is polled until it attaches", async () => {
+  const f = fixture({ getTraceEvents: () => assert.fail("must use the live stream") });
+  const runningDetail = {
+    session: { session_id: "child", last_case_run_id: "new-run", last_case_run_status: "running" },
+    history: [],
+  };
+  const historyLimits = [];
+  let call = 0;
+  f.options.api.getSession = async (_sessionId, options) => {
+    historyLimits.push(options.historyLimit);
+    call += 1;
+    if (call >= 3) {
+      return { ...runningDetail, runtime_execution_id: "live-execution" };
+    }
+    return runningDetail;
+  };
+  await refreshActiveSession({ ...f.options, executionIdPollMs: 1 });
+  assert.deepEqual(historyLimits, [200, 1, 1, 200]);
+  assert.deepEqual(f.resumed.map((detail) => detail.runtime_execution_id), ["live-execution"]);
+  assert.deepEqual(f.snapshots, []);
+});
+
+test("a run that finishes without publishing an execution id falls back to the snapshot", async () => {
+  const f = fixture();
+  f.options.api.getSession = async (_sessionId, options) => {
+    if (options.historyLimit === 1) {
+      return {
+        session: { session_id: "child", last_case_run_id: "new-run", last_case_run_status: "passed" },
+        history: [],
+      };
+    }
+    return {
+      session: { session_id: "child", last_case_run_id: "new-run", last_case_run_status: "running" },
+      history: [],
+    };
+  };
+  await refreshActiveSession({ ...f.options, executionIdPollMs: 1 });
+  assert.deepEqual(f.resumed, []);
+  assert.equal(f.snapshots.length, 1);
+});
+
+test("aborting during the execution-id poll stops probing", async () => {
+  const f = fixture({ getTraceEvents: () => assert.fail("must not load a stale snapshot") });
+  const runningDetail = {
+    session: { session_id: "child", last_case_run_id: "new-run", last_case_run_status: "running" },
+    history: [],
+  };
+  let call = 0;
+  f.options.api.getSession = async () => {
+    call += 1;
+    if (call >= 2) f.controller.abort();
+    return runningDetail;
+  };
+  await refreshActiveSession({ ...f.options, executionIdPollMs: 1 });
+  assert.deepEqual(f.resumed, []);
+  assert.deepEqual(f.snapshots, []);
+});
+
 test("switching sessions during detail loading does not attach the old execution", async () => {
   const f = fixture();
   let current = true;

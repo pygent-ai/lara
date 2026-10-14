@@ -876,8 +876,13 @@ export function App() {
   resumeSessionRef.current = (detail) => handleSendMessage("", detail);
 
   useEffect(() => {
-    if (!activeSessionId || !activeSessionListRecord || running
-      || !activeSessionNeedsRefresh(activeSession, activeSessionListRecord)) return undefined;
+    if (!activeSessionId || !activeSessionListRecord || running) return undefined;
+    if (!activeSessionNeedsRefresh(activeSession, activeSessionListRecord)
+      && !activeSessionRunAwaitingAttach(
+        activeSession,
+        activeSessionListRecord,
+        runningSessionIdsRef.current,
+      )) return undefined;
     const controller = new AbortController();
     void (async () => {
       const { signal } = controller;
@@ -3902,6 +3907,20 @@ export function activeSessionNeedsRefresh(activeSession, listRecord) {
     activeSession?.session_id
     && activeSession.session_id === listRecord?.session_id
     && sessionFreshnessSignature(activeSession) !== sessionFreshnessSignature(listRecord)
+  );
+}
+
+export function activeSessionRunAwaitingAttach(activeSession, listRecord, runningIds) {
+  // A scheduler-driven turn leaves the list record running while this client
+  // has no live stream for the session: the execution id is published only
+  // after the runtime starts the run, and a failed attach also drops the
+  // running flag. Keep probing so the session follows the live turn instead
+  // of showing an unattachable spinner.
+  return Boolean(
+    activeSession?.session_id
+    && activeSession.session_id === listRecord?.session_id
+    && listRecord?.last_case_run_status === "running"
+    && !runningIds?.[activeSession.session_id]
   );
 }
 

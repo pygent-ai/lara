@@ -305,6 +305,68 @@ async def test_nonterminal_durable_execution_is_recovered_instead_of_only_attach
 
 
 @pytest.mark.asyncio
+async def test_attach_prefers_the_coordinator_turn_already_driving_the_case_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A live scheduler-driven turn must be attached, not recovered again.
+
+    The coordinator registers a turn by case run before its execution starts,
+    so an attach arriving in the start window would otherwise fall into the
+    runtime recovery path and stack a second turn on the live one.
+    """
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    write_json(
+        run_dir / "run_metadata.json",
+        {"case_run_id": "run-1", "runtime_execution_id": "execution-1"},
+    )
+    run_ref = CaseRunRef(
+        session_id="session-1",
+        case_id="automation",
+        case_run_id="run-1",
+        run_dir=str(run_dir),
+    )
+
+    class _Manager:
+        def show(self, session_id):
+            assert session_id == "session-1"
+            return {"metadata": {"last_case_run_id": "run-1"}}
+
+        def find_case_run(self, session_id, case_run_id):
+            assert (session_id, case_run_id) == ("session-1", "run-1")
+            return run_ref
+
+    turn = ManagedSessionTurn(
+        lease=_Lease(SimpleNamespace(), SimpleNamespace()),
+        command=TurnCommand(session_id="session-1", message="hello"),
+        run_ref=run_ref,
+    )
+    turn.state = TurnState.STARTING
+    turn.ready.set()
+
+    class _Context:
+        async def acquire_runtime(self, **_kwargs):
+            raise AssertionError("a coordinator-driven run must not probe the runtime")
+
+    monkeypatch.setattr(
+        chat_runner,
+        "session_service_for_scope",
+        lambda _context, _scope_id: SimpleNamespace(manager=_Manager()),
+    )
+    registry = ChatRunRegistry()
+    await registry.coordinator._register_case_run(turn)
+
+    run = await registry.resolve(
+        _Context(),
+        ChatTurnRequest(execution_id="execution-1", session_id="session-1"),
+    )
+    assert run is not None
+    assert run.turn is turn
+    await registry.close()
+
+
+@pytest.mark.asyncio
 async def test_resume_miss_finalizes_the_stale_running_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
