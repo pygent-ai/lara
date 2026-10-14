@@ -167,6 +167,10 @@ export function App() {
   const runningSessionIdsRef = useRef({});
   const pendingSessionMessagesRef = useRef(new Map());
   const sessionViewCacheRef = useRef(new Map());
+  // Composer text keyed per session (or per scope for a pending new chat). A
+  // ref keeps keystrokes from re-rendering the whole App, while ChatPane —
+  // which remounts on every session switch — re-reads it on mount.
+  const composerDraftsRef = useRef(new Map());
   const sessionLiveEventsRef = useRef(new Map());
   const activeExecutionsRef = useRef(new Map());
   const sessionLoadTokenRef = useRef(0);
@@ -505,6 +509,7 @@ export function App() {
         pendingSessionMessagesRef.current.delete(sessionId);
         sessionViewCacheRef.current.delete(sessionId);
         sessionLiveEventsRef.current.delete(sessionId);
+        composerDraftsRef.current.delete(sessionId);
         await refreshWorkbench({ selectFirst: true });
         setNotice("Session deleted");
       } catch (err) {
@@ -1107,6 +1112,7 @@ export function App() {
         onOpenSession={(sessionId, workspaceRoot) => handleSelectSession(sessionId, { workspace_root: workspaceRoot })}
       /> : <ChatPane
         key={activeSessionId || "new-chat"}
+        composerDrafts={composerDraftsRef.current}
         activeSession={activeSession}
         messages={messages}
         activityCollapseToken={activityCollapseToken}
@@ -1580,8 +1586,13 @@ export function computeEnteringMessageIds(previous, sessionId, messages) {
   return new Set(messages.slice(previous.ids.length).map((message) => message.id));
 }
 
-export function ChatPane({ activeSession, messages, activityCollapseToken, settings, status, running, steeringReady = false, approvals, pendingSteerings = [], api, onSendMessage, onSteering, onCancelTurn, onApproval, projects = [], onSelectProject, onChooseProject, onChangePermissions, pendingNewModelGroup = "", onChangeNewModelGroup = () => {}, pendingNewSessionScope = "", onChangeModel = () => {} }) {
-  const [draft, setDraft] = useState("");
+export function ChatPane({ activeSession, messages, activityCollapseToken, settings, status, running, steeringReady = false, approvals, pendingSteerings = [], api, onSendMessage, onSteering, onCancelTurn, onApproval, projects = [], onSelectProject, onChooseProject, onChangePermissions, pendingNewModelGroup = "", onChangeNewModelGroup = () => {}, pendingNewSessionScope = "", onChangeModel = () => {}, composerDrafts = new Map() }) {
+  const empty = messages.length === 0;
+  const selectedScope = activeSession?.scope_id || pendingNewSessionScope || scopeIdFromWorkspace(settings.workspace_root);
+  const composerDraftKey = activeSession ? activeSession.session_id : `new-chat:${selectedScope}`;
+  // ChatPane remounts on every session switch, so the App-level composerDrafts
+  // map is the only copy of half-typed text; re-read it on mount.
+  const [draft, setDraft] = useState(() => composerDrafts.get(composerDraftKey) || "");
   const [pendingAttachments, setPendingAttachments] = useState([]);
   const [configuring, setConfiguring] = useState(false);
   const [configError, setConfigError] = useState("");
@@ -1591,13 +1602,15 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
   const [dragOver, setDragOver] = useState(false);
   const sendingRef = useRef(false);
   const pendingSteeringRef = useRef(null);
-  const empty = messages.length === 0;
-  const selectedScope = activeSession?.scope_id || pendingNewSessionScope || scopeIdFromWorkspace(settings.workspace_root);
   async function configure(action) {
     setConfiguring(true);
     setConfigError("");
     try { await action(); } catch (err) { setConfigError(readableError(err)); }
     finally { setConfiguring(false); }
+  }
+  function updateDraft(value) {
+    setDraft(value);
+    syncComposerDraft(composerDrafts, composerDraftKey, value);
   }
   const transcriptRef = useRef(null);
   const composerRef = useRef(null);
@@ -1703,7 +1716,7 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
       }
       try {
         await onSteering(text, pendingSteeringRef.current.inputId);
-        setDraft("");
+        updateDraft("");
         pendingSteeringRef.current = null;
         followTranscriptRef.current = true;
       } catch (err) {
@@ -1714,7 +1727,7 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
       }
       return;
     }
-    setDraft("");
+    updateDraft("");
     setPendingAttachments([]);
     followTranscriptRef.current = true;
     onSendMessage(text, null, pendingAttachments);
@@ -1870,7 +1883,7 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
             <span className="welcome-eyebrow">LARA WORKSPACE</span>
             <h3>从一个任务开始</h3>
             <p>描述你的目标，Lara 会结合当前项目分析、执行并整理结果。</p>
-            <div className="starter-actions">{["介绍这个项目的结构", "检查当前代码中的问题", "梳理待完成的工作"].map((prompt) => <button key={prompt} type="button" onClick={() => { setDraft(prompt); composerRef.current?.focus(); }}>{prompt}<ArrowUp size={16} aria-hidden="true" /></button>)}</div>
+            <div className="starter-actions">{["介绍这个项目的结构", "检查当前代码中的问题", "梳理待完成的工作"].map((prompt) => <button key={prompt} type="button" onClick={() => { updateDraft(prompt); composerRef.current?.focus(); }}>{prompt}<ArrowUp size={16} aria-hidden="true" /></button>)}</div>
           </div>
         )}
 
@@ -1900,7 +1913,7 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
             disabled={sending || configuring}
             placeholder={running ? (steeringReady ? "追加指令，调整当前任务方向…" : "正在连接执行，可以先输入指令…") : "描述任务，或继续追问…"}
             value={draft}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => updateDraft(event.target.value)}
             onPaste={handleComposerPaste}
             onKeyDown={(event) => {
               if (shouldSubmitComposer(event)) {
@@ -4026,6 +4039,11 @@ function compactValueSignature(value) {
 
 export function shouldSubmitComposer(event) {
   return event.key === "Enter" && !event.shiftKey && !event.nativeEvent?.isComposing;
+}
+
+export function syncComposerDraft(drafts, key, value) {
+  if (value) drafts.set(key, value);
+  else drafts.delete(key);
 }
 
 export async function initializeWorkbench(
