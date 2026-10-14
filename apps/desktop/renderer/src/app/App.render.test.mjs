@@ -587,6 +587,46 @@ test("conversation updates scroll the transcript to the latest message", () => {
   assert.doesNotThrow(() => appModule.scrollTranscriptToLatest(null));
 });
 
+test("jump-to-latest smooth scrolls while stream follow stays instant", () => {
+  const smoothCalls = [];
+  const smooth = { scrollTop: 40, scrollHeight: 900, scrollTo: (options) => smoothCalls.push(options) };
+
+  appModule.scrollTranscriptToLatest(smooth, true);
+
+  assert.deepEqual(smoothCalls, [{ top: 900, behavior: "smooth" }]);
+
+  const instant = { scrollTop: 40, scrollHeight: 900 };
+  appModule.scrollTranscriptToLatest(instant);
+
+  assert.equal(instant.scrollTop, 900);
+  assert.doesNotThrow(() => appModule.scrollTranscriptToLatest(null, true));
+});
+
+test("sliding tab indicator tracks the active tab geometry", () => {
+  const pill = { style: {} };
+  const pillButton = { offsetLeft: 24, offsetTop: 8, offsetWidth: 64, offsetHeight: 30 };
+  assert.equal(
+    appModule.placeTabIndicator({ dataset: {}, querySelector: (selector) => (selector === ".tab-indicator" ? pill : pillButton) }),
+    true,
+  );
+  assert.equal(pill.style.width, "64px");
+  assert.equal(pill.style.height, "30px");
+  assert.equal(pill.style.transform, "translate(24px, 8px)");
+
+  const bar = { style: {} };
+  const barButton = { offsetLeft: 60, offsetTop: 12, offsetWidth: 44, offsetHeight: 32 };
+  assert.equal(
+    appModule.placeTabIndicator({ dataset: { indicator: "underline" }, querySelector: (selector) => (selector === ".tab-indicator" ? bar : barButton) }),
+    true,
+  );
+  assert.equal(bar.style.width, "44px");
+  assert.equal(bar.style.height, undefined);
+  assert.equal(bar.style.transform, "translate(60px, 42px)");
+
+  assert.equal(appModule.placeTabIndicator(null), false);
+  assert.equal(appModule.placeTabIndicator({ dataset: {}, querySelector: () => null }), false);
+});
+
 test("trace tools retain the call name when a result omits it", () => {
   const events = [
     { id: "call-1", type: "tool.call", payload: { tool_name: "read", args: { path: "src/app.js" } } },
@@ -846,6 +886,31 @@ test("background chat results remain running through turn completion and history
   }
   const [trace] = appModule.traceToolEvents([{ type: "lara.runtime.message", payload: toolMessage }]);
   assert.equal(trace.payload.status, "running");
+});
+
+test("a cancelled turn keeps the streamed answer instead of a cancel notice", () => {
+  const streamed = {
+    role: "assistant", content: "Partial answer", status: "running", startedAt: 1,
+    sections: [{
+      id: "tools-1", type: "tools", status: "running",
+      calls: [{ id: "call-1", name: "read", status: "running", result: "" }],
+    }],
+  };
+  const cancelled = appModule.projectLiveAssistantEvent(
+    streamed, { kind: "execution.cancelled", data: {} }, 1000,
+  );
+  assert.equal(cancelled.status, "error");
+  assert.equal(cancelled.content, "Partial answer");
+  assert.equal(cancelled.endedAt, 1000);
+  assert.equal(cancelled.sections[0].status, "done");
+  assert.equal(cancelled.sections[0].calls[0].status, "success");
+
+  // Nothing streamed yet: the notice still tells the user the turn ended.
+  const silent = appModule.projectLiveAssistantEvent(
+    { role: "assistant", content: "", status: "running", sections: [] },
+    { kind: "execution.cancelled", data: {} }, 1000,
+  );
+  assert.equal(silent.content, "对话已取消。");
 });
 
 test("live tools report failure and cancellation while parallel calls remain running", () => {

@@ -2,7 +2,7 @@ import { SettingsPage as SettingsPanel } from "../features/settings/SettingsPage
 import { settingsForSave } from "../features/settings/settingsModel.js";
 export { SettingsPanel };
 export { modelGroupValidationError, settingsForSave, protocolLabel, providerSelectionValue, renamedConnectionValue, protocolChoicesForConnection, capabilityPresetLabel } from "../features/settings/settingsModel.js";
-import React, { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Folder,
   FolderCode,
@@ -373,6 +373,7 @@ export function App() {
         return;
       }
       const latestPendingMessages = pendingSessionMessagesRef.current.get(sessionId);
+      const liveTranscriptShown = Array.isArray(latestPendingMessages) && latestPendingMessages.length > 0;
       const resolvedMessages = selectSessionMessages(latestPendingMessages, nextMessages);
       activeSessionIdRef.current = detail.session.session_id || sessionId;
       const loadedSession = sessionFromDetail(detail);
@@ -380,7 +381,12 @@ export function App() {
       messagesRef.current = resolvedMessages;
       setMessages(resolvedMessages);
       setPendingSteerings((items) => reconcilePendingSteerings(items, sessionId, resolvedMessages));
-      setActivityCollapseToken((value) => value + 1);
+      // The collapse token folds a freshly rendered historical view; a session
+      // whose live transcript is still shown (kept after an interrupt) keeps
+      // its expansion state instead.
+      if (!liveTranscriptShown) {
+        setActivityCollapseToken((value) => value + 1);
+      }
       rememberSessionView(sessionViewCacheRef.current, sessionId, {
         session: loadedSession,
         messages: resolvedMessages,
@@ -825,10 +831,9 @@ export function App() {
                   setActivityCollapseToken((value) => value + 1);
                 }
               } else if (eventKind === "execution.cancelled") {
+                // An interrupt is not a finished task: the transcript stays
+                // expanded, so the collapse token must not move here.
                 finalStatus = "Skipped";
-                if (isStreamSessionVisible()) {
-                  setActivityCollapseToken((value) => value + 1);
-                }
               }
               if (["execution.completed", "execution.failed", "execution.deadline_exceeded", "execution.cancelled"].includes(eventKind)) {
                 setApprovals((items) => items.filter((item) => item.session_id !== streamSessionId));
@@ -841,7 +846,13 @@ export function App() {
         flushDeltaEvents();
         const currentSessionId = activeSessionIdRef.current;
         if (streamSessionId) {
-          pendingSessionMessagesRef.current.delete(streamSessionId);
+          if (finalStatus === "Skipped") {
+            // A cancelled turn keeps the live transcript on screen: rebuilding
+            // from history would remount every activity block collapsed.
+            pendingSessionMessagesRef.current.set(streamSessionId, streamMessages);
+          } else {
+            pendingSessionMessagesRef.current.delete(streamSessionId);
+          }
         }
         if (streamSessionId && currentSessionId === streamSessionId) {
           await refreshWorkbench({ resumeExecution: false, selectSessionId: streamSessionId });
@@ -941,7 +952,12 @@ export function App() {
           sessionLiveEventsRef.current.delete(activeSessionId);
           setLiveEvents((current) => current.length ? [] : current);
           const messagesHistorySignature = sessionHistorySignature(detail);
-          if (messagesHistorySignatureRef.current !== messagesHistorySignature) {
+          const pendingLiveMessages = pendingSessionMessagesRef.current.get(activeSessionId);
+          // A transcript this client still owns (a running turn, or one kept
+          // on screen after an interrupt) wins over the persisted history
+          // snapshot, or the rebuild would remount every activity collapsed.
+          if (messagesHistorySignatureRef.current !== messagesHistorySignature
+            && !(Array.isArray(pendingLiveMessages) && pendingLiveMessages.length > 0)) {
             messagesHistorySignatureRef.current = messagesHistorySignature;
             const nextMessages = historyToMessages(detail.history || []);
             messagesRef.current = nextMessages;
@@ -1623,11 +1639,14 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
   // was silently ending the auto-follow. Re-evaluate following only after
   // real user input (wheel, touch, scrollbar) marks the user as driving.
   const transcriptUserScrollingRef = useRef(false);
-  const pinTranscriptToLatest = useCallback(() => {
+  // Only an explicit "回到最新" click animates. Session entry and stream
+  // follow must land at the bottom without a visible scroll-through of the
+  // transcript, and re-entering a long session must not reveal its top.
+  const pinTranscriptToLatest = useCallback((smooth = false) => {
     const node = transcriptRef.current;
     if (!node) return;
     followTranscriptRef.current = true;
-    scrollTranscriptToLatest(node);
+    scrollTranscriptToLatest(node, smooth);
     transcriptUserScrollingRef.current = false;
     setAwayFromLatest(false);
   }, []);
@@ -1690,7 +1709,9 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
       observer.observe(child);
     }
   }, [visibleMessages, activityCollapseToken]);
-  useEffect(() => {
+  // Layout phase: the pin lands before the first paint, so re-entering a
+  // long session never shows the top of the transcript or a scroll-through.
+  useLayoutEffect(() => {
     followTranscriptRef.current = true;
     setAwayFromLatest(false);
     setVisibleMessageLimit(INITIAL_TRANSCRIPT_MESSAGE_LIMIT);
@@ -1887,7 +1908,7 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
           </div>
         )}
 
-        {awayFromLatest && <button className="jump-latest" type="button" onClick={pinTranscriptToLatest}><ArrowDown size={14} />回到最新</button>}
+        {awayFromLatest && <button className="jump-latest" type="button" onClick={() => pinTranscriptToLatest(true)}><ArrowDown size={14} />回到最新</button>}
         <div className="composer-surface">
         <div className={`composer-box${dragOver ? " drag-over" : ""}`}
           onDragOver={(event) => { if (dataTransferHasFiles(event.dataTransfer)) { event.preventDefault(); setDragOver(true); } }}
@@ -2343,9 +2364,13 @@ export function AssistantActivity({ message, collapseToken, api }) {
   const showDetail =
     expanded && (sections.length > 0 || liveStatus || (isRunning && !hasVisibleAssistantContent(message)));
 
+  // Only the collapse token folds finished activity: the whole task ended
+  // (terminal event) or the session was reloaded from history. A bare status
+  // flip — a steering split or a cancelled turn — keeps the transcript
+  // expanded until the task actually completes.
   useEffect(() => {
     setExpanded(message.status === "running");
-  }, [collapseToken, message.id, message.status]);
+  }, [collapseToken, message.id]);
 
   return (
     <div className={expanded ? "activity expanded" : "activity"}>
@@ -2373,6 +2398,7 @@ export function AssistantActivity({ message, collapseToken, api }) {
                   key={section.id || `thinking-${index}`}
                   content={content}
                   running={isRunning && !message.content && index === sections.length - 1}
+                  closed={isRunning && (Boolean(message.content) || index !== sections.length - 1)}
                 />
               );
             }
@@ -2387,7 +2413,7 @@ export function AssistantActivity({ message, collapseToken, api }) {
 
 const THINKING_PREVIEW_LIMIT = 160;
 
-export function ThinkingActivity({ content, running }) {
+export function ThinkingActivity({ content, running, closed = false }) {
   const contentRef = useRef(null);
   const followRef = useRef(true);
   // Same rule as the transcript above: only real user input may end the
@@ -2420,22 +2446,36 @@ export function ThinkingActivity({ content, running }) {
     }
   }, [content, running, pinContentToLatest]);
 
+  // Controlled open state: an ended block (interrupt or completion) keeps
+  // whatever is on screen instead of the open attribute removal folding it
+  // abruptly; while the turn is still live, `closed` folds thinking that the
+  // answer or a later tool call replaced.
+  const [open, setOpen] = useState(Boolean(running));
+  useEffect(() => {
+    if (running) {
+      setOpen(!userClosedRef.current);
+    } else if (closed) {
+      setOpen(false);
+    }
+  }, [running, closed]);
+
   return (
     <details
       className={`thinking-activity${running ? " thinking-running" : ""}`}
-      open={running && !userClosedRef.current ? true : undefined}
+      open={open}
       onToggle={(event) => {
+        const isOpen = event.currentTarget.open;
+        setOpen(isOpen);
         if (!running) {
           // The collapsed preview shows the latest reasoning, so opening a
           // finished block lands on the same tail instead of the beginning.
-          if (event.currentTarget.open) {
+          if (isOpen) {
             pinContentToLatest();
           }
           return;
         }
-        const open = event.currentTarget.open;
-        userClosedRef.current = !open;
-        if (open) {
+        userClosedRef.current = !isOpen;
+        if (isOpen) {
           followRef.current = true;
           pinContentToLatest();
         }
@@ -2566,6 +2606,59 @@ function ToolCallRow({ call, api }) {
   );
 }
 
+// Sliding tab indicator: one shared element per tab strip eases onto the
+// active button instead of every button owning its own instant highlight.
+// "pill" strips cover the whole button; "underline" strips keep their bar
+// height in CSS and pin the bar to the button's bottom edge.
+export function placeTabIndicator(nav) {
+  if (!nav) {
+    return false;
+  }
+  const indicator = nav.querySelector(".tab-indicator");
+  const button = nav.querySelector("button.active");
+  if (!indicator || !button) {
+    return false;
+  }
+  if (nav.dataset.indicator === "underline") {
+    const barHeight = 2;
+    indicator.style.width = `${button.offsetWidth}px`;
+    indicator.style.transform = `translate(${button.offsetLeft}px, ${button.offsetTop + button.offsetHeight - barHeight}px)`;
+    return true;
+  }
+  indicator.style.width = `${button.offsetWidth}px`;
+  indicator.style.height = `${button.offsetHeight}px`;
+  indicator.style.transform = `translate(${button.offsetLeft}px, ${button.offsetTop}px)`;
+  return true;
+}
+
+// The strip's nav remounts whenever the panel mode swaps content in and out;
+// the callback ref re-attaches measurement to each new node so the indicator
+// is placed before its first paint instead of sliding in from the origin.
+function useSlidingTabIndicator(activeKey) {
+  const navRef = useRef(null);
+  const observerRef = useRef(null);
+  const attachNav = useCallback((node) => {
+    navRef.current = node;
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+      observerRef.current = null;
+    }
+    if (!node) {
+      return;
+    }
+    placeTabIndicator(node);
+    // Panel collapse/expand and window resizes reflow the strip; the
+    // observer re-measures so the indicator follows without re-renders.
+    const observer = new ResizeObserver(() => placeTabIndicator(node));
+    observer.observe(node);
+    observerRef.current = observer;
+  }, []);
+  useLayoutEffect(() => {
+    placeTabIndicator(navRef.current);
+  }, [activeKey]);
+  return attachNav;
+}
+
 export function TracePanel({ api, collapsed, contextSnapshots, events, activityEvents, activityMeta, traceMeta, settings, activeSession, onToggle }) {
   const sessionEvents = Array.isArray(activityEvents) ? activityEvents : [];
   const [panelMode, setPanelMode] = useState("Trace");
@@ -2574,6 +2667,8 @@ export function TracePanel({ api, collapsed, contextSnapshots, events, activityE
   const [expandedEventKeys, setExpandedEventKeys] = useState(() => new Set());
   const overviewTools = useMemo(() => traceToolEvents(sessionEvents), [sessionEvents]);
   const traceListRef = useRef(null);
+  const attachModesNav = useSlidingTabIndicator(panelMode);
+  const attachTabsNav = useSlidingTabIndicator(tab);
   // Tools and Changes read the session-wide activity feed; the raw event list
   // stays scoped to the current run.
   const tabSource = tab === "Tools" || tab === "Changes" ? sessionEvents : events;
@@ -2632,7 +2727,8 @@ export function TracePanel({ api, collapsed, contextSnapshots, events, activityE
         <div className="vertical-label">详情</div>
       </header>
 
-      <nav className="inspector-modes" aria-label="Inspector modes">
+      <nav className="inspector-modes" aria-label="Inspector modes" ref={attachModesNav} data-indicator="pill">
+        <span className="tab-indicator" aria-hidden="true" />
         {["Trace", "Files", "PowerShell"].map((item) => (
           <button className={item === panelMode ? "active" : ""} key={item} type="button" onClick={() => setPanelMode(item)}>
             {INSPECTOR_LABELS[item]}
@@ -2646,7 +2742,8 @@ export function TracePanel({ api, collapsed, contextSnapshots, events, activityE
         <PowerShellPanel api={api} scopeId={projectScopeId} workspaceRoot={projectScopeId ? settings.workspace_root : ""} />
       ) : (
       <div className="trace-mode-content">
-        <nav className="trace-tabs" aria-label="Trace tabs">
+        <nav className="trace-tabs" aria-label="Trace tabs" ref={attachTabsNav} data-indicator="underline">
+          <span className="tab-indicator" aria-hidden="true" />
           {TRACE_TABS.map((item) => (
             <button className={item === tab ? "tab active" : "tab"} key={item} type="button" onClick={() => setTab(item)}>
               {INSPECTOR_LABELS[item]}
@@ -2905,10 +3002,15 @@ export function scrollTraceToLatest(element) {
   }
 }
 
-export function scrollTranscriptToLatest(element) {
-  if (element) {
-    element.scrollTop = element.scrollHeight;
+export function scrollTranscriptToLatest(element, smooth = false) {
+  if (!element) {
+    return;
   }
+  if (smooth) {
+    element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
+    return;
+  }
+  element.scrollTop = element.scrollHeight;
 }
 
 export function mergeContextSnapshots(...collections) {
@@ -3401,7 +3503,9 @@ export function projectLiveAssistantEvent(message, event, now = Date.now()) {
   if (kind === "execution.cancelled") {
     return {
       ...message,
-      content: String(payload.reason || "对话已取消。"),
+      // An interrupt keeps the streamed partial answer on screen; the cancel
+      // notice only fills in when nothing was streamed.
+      content: String(message.content || payload.reason || "对话已取消。"),
       endedAt: message.endedAt ?? now,
       sections: finalizeToolSections(message.sections || []),
       status: "error",
