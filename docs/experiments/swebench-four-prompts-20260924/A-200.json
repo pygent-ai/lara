@@ -1,0 +1,3264 @@
+{
+  "schema_version": 1,
+  "experiment": "swebench-four-prompts-20260924",
+  "source_commit": "ecb0049770e42d19bf56541c2bddfdc8ef12ec7b",
+  "variant": "A",
+  "milestone": 200,
+  "passed": 175,
+  "pass_rate_valid": 0.875,
+  "passed_fraction_500": 0.35,
+  "pending_infra_at_snapshot": 0,
+  "in_progress_at_snapshot": 0,
+  "pending_at_snapshot": 300,
+  "source_sha256": "8dbe239d6191a80aa6f503bf34fe2eff7798bbadf900bbfa3eedd7b953c0709e",
+  "generated_utc": "20261014T061411726283Z",
+  "effective_call_distribution": {
+    "count": 200,
+    "min": 12,
+    "median": 35.0,
+    "p90": 67,
+    "max": 150
+  },
+  "duration_seconds_distribution": {
+    "count": 200,
+    "min": 96.5,
+    "median": 474.705,
+    "p90": 1031.53,
+    "max": 2730.69
+  },
+  "effective_usage_totals": {
+    "cached_input_tokens": 318123520,
+    "input_tokens": 348196127,
+    "output_tokens": 5075511,
+    "reasoning_tokens": 3636975,
+    "total_tokens": 353271638
+  },
+  "all_attempt_usage_totals": {
+    "cached_input_tokens": 318150144,
+    "input_tokens": 348267736,
+    "output_tokens": 5095988,
+    "reasoning_tokens": 3656654,
+    "total_tokens": 353363724
+  },
+  "usage_coverage": {
+    "calls_with_usage": 7910,
+    "calls_missing_usage": 0,
+    "fraction": 1.0
+  },
+  "all_attempt_count": 203,
+  "all_attempt_model_calls": 7910,
+  "effective_duration_seconds_total": 115673.6,
+  "duration_coverage": {
+    "recorded_in_effective_result": 198,
+    "recovered_from_original_run_for_regrade": 2,
+    "unknown": 0
+  },
+  "rows": [
+    {
+      "case": "astropy__astropy-12907",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 18,
+      "all_attempt_model_calls": 18,
+      "effective_usage": {
+        "cached_input_tokens": 227584,
+        "input_tokens": 279329,
+        "output_tokens": 6490,
+        "reasoning_tokens": 3048,
+        "total_tokens": 285819
+      },
+      "duration_seconds": 163.41,
+      "outcome": "passed"
+    },
+    {
+      "case": "astropy__astropy-13033",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 29,
+      "all_attempt_model_calls": 29,
+      "effective_usage": {
+        "cached_input_tokens": 660992,
+        "input_tokens": 759085,
+        "output_tokens": 14623,
+        "reasoning_tokens": 9544,
+        "total_tokens": 773708
+      },
+      "duration_seconds": 313.81,
+      "outcome": "passed"
+    },
+    {
+      "case": "astropy__astropy-13236",
+      "score": 0.0,
+      "attempts": 1,
+      "effective_model_calls": 36,
+      "all_attempt_model_calls": 36,
+      "effective_usage": {
+        "cached_input_tokens": 1026304,
+        "input_tokens": 1174520,
+        "output_tokens": 22599,
+        "reasoning_tokens": 15710,
+        "total_tokens": 1197119
+      },
+      "duration_seconds": 375.06,
+      "outcome": "valid_zero"
+    },
+    {
+      "case": "astropy__astropy-13398",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 84,
+      "all_attempt_model_calls": 84,
+      "effective_usage": {
+        "cached_input_tokens": 8284416,
+        "input_tokens": 8703483,
+        "output_tokens": 64498,
+        "reasoning_tokens": 42454,
+        "total_tokens": 8767981
+      },
+      "duration_seconds": 990.17,
+      "outcome": "passed"
+    },
+    {
+      "case": "astropy__astropy-13453",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 46,
+      "all_attempt_model_calls": 46,
+      "effective_usage": {
+        "cached_input_tokens": 1714944,
+        "input_tokens": 1866779,
+        "output_tokens": 17373,
+        "reasoning_tokens": 9473,
+        "total_tokens": 1884152
+      },
+      "duration_seconds": 317.3,
+      "outcome": "passed"
+    },
+    {
+      "case": "astropy__astropy-13579",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 40,
+      "all_attempt_model_calls": 40,
+      "effective_usage": {
+        "cached_input_tokens": 1929216,
+        "input_tokens": 2166812,
+        "output_tokens": 41963,
+        "reasoning_tokens": 30145,
+        "total_tokens": 2208775
+      },
+      "duration_seconds": 521.56,
+      "outcome": "passed"
+    },
+    {
+      "case": "astropy__astropy-13977",
+      "score": 0.0,
+      "attempts": 1,
+      "effective_model_calls": 25,
+      "all_attempt_model_calls": 25,
+      "effective_usage": {
+        "cached_input_tokens": 400640,
+        "input_tokens": 500822,
+        "output_tokens": 12307,
+        "reasoning_tokens": 7927,
+        "total_tokens": 513129
+      },
+      "duration_seconds": 241.31,
+      "outcome": "valid_zero"
+    },
+    {
+      "case": "astropy__astropy-14096",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 23,
+      "all_attempt_model_calls": 23,
+      "effective_usage": {
+        "cached_input_tokens": 555008,
+        "input_tokens": 678262,
+        "output_tokens": 33176,
+        "reasoning_tokens": 28330,
+        "total_tokens": 711438
+      },
+      "duration_seconds": 397.2,
+      "outcome": "passed"
+    },
+    {
+      "case": "astropy__astropy-14182",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 37,
+      "all_attempt_model_calls": 37,
+      "effective_usage": {
+        "cached_input_tokens": 1235200,
+        "input_tokens": 1388856,
+        "output_tokens": 27425,
+        "reasoning_tokens": 19293,
+        "total_tokens": 1416281
+      },
+      "duration_seconds": 394.02,
+      "outcome": "passed"
+    },
+    {
+      "case": "astropy__astropy-14309",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 32,
+      "all_attempt_model_calls": 32,
+      "effective_usage": {
+        "cached_input_tokens": 820992,
+        "input_tokens": 980721,
+        "output_tokens": 24127,
+        "reasoning_tokens": 18407,
+        "total_tokens": 1004848
+      },
+      "duration_seconds": 316.86,
+      "outcome": "passed"
+    },
+    {
+      "case": "astropy__astropy-14365",
+      "score": 0.0,
+      "attempts": 1,
+      "effective_model_calls": 21,
+      "all_attempt_model_calls": 21,
+      "effective_usage": {
+        "cached_input_tokens": 455680,
+        "input_tokens": 574892,
+        "output_tokens": 11512,
+        "reasoning_tokens": 7119,
+        "total_tokens": 586404
+      },
+      "duration_seconds": 185.97,
+      "outcome": "valid_zero"
+    },
+    {
+      "case": "astropy__astropy-14369",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 61,
+      "all_attempt_model_calls": 61,
+      "effective_usage": {
+        "cached_input_tokens": 3544576,
+        "input_tokens": 3827415,
+        "output_tokens": 41472,
+        "reasoning_tokens": 29848,
+        "total_tokens": 3868887
+      },
+      "duration_seconds": 713.03,
+      "outcome": "passed"
+    },
+    {
+      "case": "astropy__astropy-14508",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 56,
+      "all_attempt_model_calls": 56,
+      "effective_usage": {
+        "cached_input_tokens": 2392576,
+        "input_tokens": 2571121,
+        "output_tokens": 40309,
+        "reasoning_tokens": 28464,
+        "total_tokens": 2611430
+      },
+      "duration_seconds": 704.7,
+      "outcome": "passed"
+    },
+    {
+      "case": "astropy__astropy-14539",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 30,
+      "all_attempt_model_calls": 30,
+      "effective_usage": {
+        "cached_input_tokens": 1204736,
+        "input_tokens": 1357119,
+        "output_tokens": 12350,
+        "reasoning_tokens": 6884,
+        "total_tokens": 1369469
+      },
+      "duration_seconds": 237.22,
+      "outcome": "passed"
+    },
+    {
+      "case": "astropy__astropy-14598",
+      "score": 0.0,
+      "attempts": 1,
+      "effective_model_calls": 48,
+      "all_attempt_model_calls": 48,
+      "effective_usage": {
+        "cached_input_tokens": 1975296,
+        "input_tokens": 2201543,
+        "output_tokens": 52128,
+        "reasoning_tokens": 42497,
+        "total_tokens": 2253671
+      },
+      "duration_seconds": 650.11,
+      "outcome": "valid_zero"
+    },
+    {
+      "case": "astropy__astropy-14995",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 27,
+      "all_attempt_model_calls": 27,
+      "effective_usage": {
+        "cached_input_tokens": 575744,
+        "input_tokens": 684512,
+        "output_tokens": 11537,
+        "reasoning_tokens": 5769,
+        "total_tokens": 696049
+      },
+      "duration_seconds": 213.16,
+      "outcome": "passed"
+    },
+    {
+      "case": "astropy__astropy-7166",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 15,
+      "all_attempt_model_calls": 15,
+      "effective_usage": {
+        "cached_input_tokens": 177920,
+        "input_tokens": 221453,
+        "output_tokens": 9443,
+        "reasoning_tokens": 6189,
+        "total_tokens": 230896
+      },
+      "duration_seconds": 148.97,
+      "outcome": "passed"
+    },
+    {
+      "case": "astropy__astropy-7336",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 12,
+      "all_attempt_model_calls": 12,
+      "effective_usage": {
+        "cached_input_tokens": 135936,
+        "input_tokens": 180252,
+        "output_tokens": 4602,
+        "reasoning_tokens": 1560,
+        "total_tokens": 184854
+      },
+      "duration_seconds": 96.5,
+      "outcome": "passed"
+    },
+    {
+      "case": "astropy__astropy-7606",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 20,
+      "all_attempt_model_calls": 20,
+      "effective_usage": {
+        "cached_input_tokens": 231168,
+        "input_tokens": 311766,
+        "output_tokens": 13278,
+        "reasoning_tokens": 9910,
+        "total_tokens": 325044
+      },
+      "duration_seconds": 198.22,
+      "outcome": "passed"
+    },
+    {
+      "case": "astropy__astropy-7671",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 32,
+      "all_attempt_model_calls": 32,
+      "effective_usage": {
+        "cached_input_tokens": 840704,
+        "input_tokens": 956509,
+        "output_tokens": 24764,
+        "reasoning_tokens": 19280,
+        "total_tokens": 981273
+      },
+      "duration_seconds": 403.3,
+      "outcome": "passed"
+    },
+    {
+      "case": "astropy__astropy-8707",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 28,
+      "all_attempt_model_calls": 28,
+      "effective_usage": {
+        "cached_input_tokens": 922112,
+        "input_tokens": 1188198,
+        "output_tokens": 11224,
+        "reasoning_tokens": 5779,
+        "total_tokens": 1199422
+      },
+      "duration_seconds": 243.02,
+      "outcome": "passed"
+    },
+    {
+      "case": "astropy__astropy-8872",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 28,
+      "all_attempt_model_calls": 28,
+      "effective_usage": {
+        "cached_input_tokens": 598528,
+        "input_tokens": 697775,
+        "output_tokens": 25641,
+        "reasoning_tokens": 20157,
+        "total_tokens": 723416
+      },
+      "duration_seconds": 323.62,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-10097",
+      "score": 0.0,
+      "attempts": 1,
+      "effective_model_calls": 32,
+      "all_attempt_model_calls": 32,
+      "effective_usage": {
+        "cached_input_tokens": 1038080,
+        "input_tokens": 1184410,
+        "output_tokens": 39543,
+        "reasoning_tokens": 32858,
+        "total_tokens": 1223953
+      },
+      "duration_seconds": 635.78,
+      "outcome": "valid_zero"
+    },
+    {
+      "case": "django__django-10554",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 46,
+      "all_attempt_model_calls": 46,
+      "effective_usage": {
+        "cached_input_tokens": 1764608,
+        "input_tokens": 1931561,
+        "output_tokens": 38246,
+        "reasoning_tokens": 28752,
+        "total_tokens": 1969807
+      },
+      "duration_seconds": 570.16,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-10880",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 27,
+      "all_attempt_model_calls": 27,
+      "effective_usage": {
+        "cached_input_tokens": 400896,
+        "input_tokens": 478298,
+        "output_tokens": 9905,
+        "reasoning_tokens": 5090,
+        "total_tokens": 488203
+      },
+      "duration_seconds": 291.06,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-10914",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 43,
+      "all_attempt_model_calls": 43,
+      "effective_usage": {
+        "cached_input_tokens": 1724416,
+        "input_tokens": 1873657,
+        "output_tokens": 37793,
+        "reasoning_tokens": 28560,
+        "total_tokens": 1911450
+      },
+      "duration_seconds": 668.99,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-10973",
+      "score": 0.0,
+      "attempts": 1,
+      "effective_model_calls": 27,
+      "all_attempt_model_calls": 27,
+      "effective_usage": {
+        "cached_input_tokens": 500224,
+        "input_tokens": 587970,
+        "output_tokens": 15502,
+        "reasoning_tokens": 10130,
+        "total_tokens": 603472
+      },
+      "duration_seconds": 354.41,
+      "outcome": "valid_zero"
+    },
+    {
+      "case": "django__django-10999",
+      "score": 0.0,
+      "attempts": 1,
+      "effective_model_calls": 18,
+      "all_attempt_model_calls": 18,
+      "effective_usage": {
+        "cached_input_tokens": 272640,
+        "input_tokens": 351738,
+        "output_tokens": 12089,
+        "reasoning_tokens": 8833,
+        "total_tokens": 363827
+      },
+      "duration_seconds": 265.94,
+      "outcome": "valid_zero"
+    },
+    {
+      "case": "django__django-11066",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 48,
+      "all_attempt_model_calls": 48,
+      "effective_usage": {
+        "cached_input_tokens": 1878528,
+        "input_tokens": 2062551,
+        "output_tokens": 32272,
+        "reasoning_tokens": 22725,
+        "total_tokens": 2094823
+      },
+      "duration_seconds": 587.84,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11087",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 28,
+      "all_attempt_model_calls": 28,
+      "effective_usage": {
+        "cached_input_tokens": 871936,
+        "input_tokens": 967691,
+        "output_tokens": 23157,
+        "reasoning_tokens": 17196,
+        "total_tokens": 990848
+      },
+      "duration_seconds": 451.28,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11095",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 23,
+      "all_attempt_model_calls": 23,
+      "effective_usage": {
+        "cached_input_tokens": 303616,
+        "input_tokens": 383186,
+        "output_tokens": 8049,
+        "reasoning_tokens": 4345,
+        "total_tokens": 391235
+      },
+      "duration_seconds": 244.22,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11099",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 17,
+      "all_attempt_model_calls": 17,
+      "effective_usage": {
+        "cached_input_tokens": 151040,
+        "input_tokens": 191148,
+        "output_tokens": 4275,
+        "reasoning_tokens": 1232,
+        "total_tokens": 195423
+      },
+      "duration_seconds": 198.72,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11119",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 15,
+      "all_attempt_model_calls": 15,
+      "effective_usage": {
+        "cached_input_tokens": 207616,
+        "input_tokens": 261317,
+        "output_tokens": 5222,
+        "reasoning_tokens": 1935,
+        "total_tokens": 266539
+      },
+      "duration_seconds": 206.39,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11133",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 20,
+      "all_attempt_model_calls": 20,
+      "effective_usage": {
+        "cached_input_tokens": 275712,
+        "input_tokens": 346119,
+        "output_tokens": 9796,
+        "reasoning_tokens": 6273,
+        "total_tokens": 355915
+      },
+      "duration_seconds": 270.77,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11138",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 60,
+      "all_attempt_model_calls": 60,
+      "effective_usage": {
+        "cached_input_tokens": 3820544,
+        "input_tokens": 4106871,
+        "output_tokens": 39642,
+        "reasoning_tokens": 27403,
+        "total_tokens": 4146513
+      },
+      "duration_seconds": 810.06,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11141",
+      "score": 0.0,
+      "attempts": 1,
+      "effective_model_calls": 48,
+      "all_attempt_model_calls": 48,
+      "effective_usage": {
+        "cached_input_tokens": 2598400,
+        "input_tokens": 2867139,
+        "output_tokens": 46202,
+        "reasoning_tokens": 36199,
+        "total_tokens": 2913341
+      },
+      "duration_seconds": 637.28,
+      "outcome": "valid_zero"
+    },
+    {
+      "case": "django__django-11149",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 51,
+      "all_attempt_model_calls": 51,
+      "effective_usage": {
+        "cached_input_tokens": 2299648,
+        "input_tokens": 2477191,
+        "output_tokens": 33200,
+        "reasoning_tokens": 23946,
+        "total_tokens": 2510391
+      },
+      "duration_seconds": 717.48,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11163",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 16,
+      "all_attempt_model_calls": 16,
+      "effective_usage": {
+        "cached_input_tokens": 153344,
+        "input_tokens": 210227,
+        "output_tokens": 4899,
+        "reasoning_tokens": 2366,
+        "total_tokens": 215126
+      },
+      "duration_seconds": 176.27,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11179",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 15,
+      "all_attempt_model_calls": 15,
+      "effective_usage": {
+        "cached_input_tokens": 221696,
+        "input_tokens": 274577,
+        "output_tokens": 6312,
+        "reasoning_tokens": 3639,
+        "total_tokens": 280889
+      },
+      "duration_seconds": 195.66,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11206",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 26,
+      "all_attempt_model_calls": 26,
+      "effective_usage": {
+        "cached_input_tokens": 762368,
+        "input_tokens": 862665,
+        "output_tokens": 34227,
+        "reasoning_tokens": 29438,
+        "total_tokens": 896892
+      },
+      "duration_seconds": 565.19,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11211",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 37,
+      "all_attempt_model_calls": 37,
+      "effective_usage": {
+        "cached_input_tokens": 1076992,
+        "input_tokens": 1181401,
+        "output_tokens": 17832,
+        "reasoning_tokens": 10530,
+        "total_tokens": 1199233
+      },
+      "duration_seconds": 479.53,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11239",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 22,
+      "all_attempt_model_calls": 22,
+      "effective_usage": {
+        "cached_input_tokens": 420352,
+        "input_tokens": 495391,
+        "output_tokens": 18130,
+        "reasoning_tokens": 13926,
+        "total_tokens": 513521
+      },
+      "duration_seconds": 276.25,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11265",
+      "score": 0.0,
+      "attempts": 1,
+      "effective_model_calls": 80,
+      "all_attempt_model_calls": 80,
+      "effective_usage": {
+        "cached_input_tokens": 4715008,
+        "input_tokens": 4992582,
+        "output_tokens": 49724,
+        "reasoning_tokens": 37585,
+        "total_tokens": 5042306
+      },
+      "duration_seconds": 1612.33,
+      "outcome": "valid_zero"
+    },
+    {
+      "case": "django__django-11276",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 25,
+      "all_attempt_model_calls": 25,
+      "effective_usage": {
+        "cached_input_tokens": 555264,
+        "input_tokens": 658319,
+        "output_tokens": 18518,
+        "reasoning_tokens": 13974,
+        "total_tokens": 676837
+      },
+      "duration_seconds": 397.05,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11292",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 45,
+      "all_attempt_model_calls": 45,
+      "effective_usage": {
+        "cached_input_tokens": 1562368,
+        "input_tokens": 1710105,
+        "output_tokens": 32551,
+        "reasoning_tokens": 24745,
+        "total_tokens": 1742656
+      },
+      "duration_seconds": 1031.53,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11299",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 54,
+      "all_attempt_model_calls": 54,
+      "effective_usage": {
+        "cached_input_tokens": 1922560,
+        "input_tokens": 2108275,
+        "output_tokens": 22784,
+        "reasoning_tokens": 12114,
+        "total_tokens": 2131059
+      },
+      "duration_seconds": 552.64,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11333",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 32,
+      "all_attempt_model_calls": 32,
+      "effective_usage": {
+        "cached_input_tokens": 779264,
+        "input_tokens": 904157,
+        "output_tokens": 22937,
+        "reasoning_tokens": 18174,
+        "total_tokens": 927094
+      },
+      "duration_seconds": 447.33,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11400",
+      "score": 0.0,
+      "attempts": 1,
+      "effective_model_calls": 31,
+      "all_attempt_model_calls": 31,
+      "effective_usage": {
+        "cached_input_tokens": 991232,
+        "input_tokens": 1108619,
+        "output_tokens": 19860,
+        "reasoning_tokens": 13226,
+        "total_tokens": 1128479
+      },
+      "duration_seconds": 404.78,
+      "outcome": "valid_zero"
+    },
+    {
+      "case": "django__django-11433",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 32,
+      "all_attempt_model_calls": 32,
+      "effective_usage": {
+        "cached_input_tokens": 1145088,
+        "input_tokens": 1300662,
+        "output_tokens": 25671,
+        "reasoning_tokens": 19996,
+        "total_tokens": 1326333
+      },
+      "duration_seconds": 462.75,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11451",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 15,
+      "all_attempt_model_calls": 15,
+      "effective_usage": {
+        "cached_input_tokens": 180992,
+        "input_tokens": 237088,
+        "output_tokens": 6943,
+        "reasoning_tokens": 3902,
+        "total_tokens": 244031
+      },
+      "duration_seconds": 192.03,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11477",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 76,
+      "all_attempt_model_calls": 76,
+      "effective_usage": {
+        "cached_input_tokens": 3858176,
+        "input_tokens": 4111267,
+        "output_tokens": 39505,
+        "reasoning_tokens": 26350,
+        "total_tokens": 4150772
+      },
+      "duration_seconds": 1113.83,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11490",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 44,
+      "all_attempt_model_calls": 44,
+      "effective_usage": {
+        "cached_input_tokens": 1642240,
+        "input_tokens": 1780160,
+        "output_tokens": 39810,
+        "reasoning_tokens": 32643,
+        "total_tokens": 1819970
+      },
+      "duration_seconds": 626.11,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11532",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 37,
+      "all_attempt_model_calls": 37,
+      "effective_usage": {
+        "cached_input_tokens": 1217536,
+        "input_tokens": 1355356,
+        "output_tokens": 33658,
+        "reasoning_tokens": 26839,
+        "total_tokens": 1389014
+      },
+      "duration_seconds": 524.7,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11551",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 42,
+      "all_attempt_model_calls": 42,
+      "effective_usage": {
+        "cached_input_tokens": 963328,
+        "input_tokens": 1076249,
+        "output_tokens": 18800,
+        "reasoning_tokens": 12693,
+        "total_tokens": 1095049
+      },
+      "duration_seconds": 431.78,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11555",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 34,
+      "all_attempt_model_calls": 34,
+      "effective_usage": {
+        "cached_input_tokens": 822016,
+        "input_tokens": 924722,
+        "output_tokens": 17280,
+        "reasoning_tokens": 11957,
+        "total_tokens": 942002
+      },
+      "duration_seconds": 358.12,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11603",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 17,
+      "all_attempt_model_calls": 17,
+      "effective_usage": {
+        "cached_input_tokens": 196864,
+        "input_tokens": 245898,
+        "output_tokens": 8559,
+        "reasoning_tokens": 5244,
+        "total_tokens": 254457
+      },
+      "duration_seconds": 202.7,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11728",
+      "score": 0.0,
+      "attempts": 1,
+      "effective_model_calls": 28,
+      "all_attempt_model_calls": 28,
+      "effective_usage": {
+        "cached_input_tokens": 430080,
+        "input_tokens": 492139,
+        "output_tokens": 12554,
+        "reasoning_tokens": 7961,
+        "total_tokens": 504693
+      },
+      "duration_seconds": 285.41,
+      "outcome": "valid_zero"
+    },
+    {
+      "case": "django__django-11734",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 150,
+      "all_attempt_model_calls": 150,
+      "effective_usage": {
+        "cached_input_tokens": 25048576,
+        "input_tokens": 26088547,
+        "output_tokens": 79993,
+        "reasoning_tokens": 48987,
+        "total_tokens": 26168540
+      },
+      "duration_seconds": 1685.83,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11740",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 50,
+      "all_attempt_model_calls": 50,
+      "effective_usage": {
+        "cached_input_tokens": 1873664,
+        "input_tokens": 2086318,
+        "output_tokens": 32046,
+        "reasoning_tokens": 23069,
+        "total_tokens": 2118364
+      },
+      "duration_seconds": 597.86,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11749",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 41,
+      "all_attempt_model_calls": 41,
+      "effective_usage": {
+        "cached_input_tokens": 752640,
+        "input_tokens": 855093,
+        "output_tokens": 16911,
+        "reasoning_tokens": 9284,
+        "total_tokens": 872004
+      },
+      "duration_seconds": 817.61,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11790",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 34,
+      "all_attempt_model_calls": 34,
+      "effective_usage": {
+        "cached_input_tokens": 650496,
+        "input_tokens": 749419,
+        "output_tokens": 10872,
+        "reasoning_tokens": 5329,
+        "total_tokens": 760291
+      },
+      "duration_seconds": 349.03,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11815",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 35,
+      "all_attempt_model_calls": 35,
+      "effective_usage": {
+        "cached_input_tokens": 689664,
+        "input_tokens": 785294,
+        "output_tokens": 16783,
+        "reasoning_tokens": 9998,
+        "total_tokens": 802077
+      },
+      "duration_seconds": 388.89,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11820",
+      "score": 0.0,
+      "attempts": 1,
+      "effective_model_calls": 20,
+      "all_attempt_model_calls": 20,
+      "effective_usage": {
+        "cached_input_tokens": 345344,
+        "input_tokens": 429040,
+        "output_tokens": 7282,
+        "reasoning_tokens": 3566,
+        "total_tokens": 436322
+      },
+      "duration_seconds": 243.31,
+      "outcome": "valid_zero"
+    },
+    {
+      "case": "django__django-11848",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 38,
+      "all_attempt_model_calls": 38,
+      "effective_usage": {
+        "cached_input_tokens": 1555968,
+        "input_tokens": 1718144,
+        "output_tokens": 44371,
+        "reasoning_tokens": 37638,
+        "total_tokens": 1762515
+      },
+      "duration_seconds": 991.03,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11880",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 21,
+      "all_attempt_model_calls": 21,
+      "effective_usage": {
+        "cached_input_tokens": 302848,
+        "input_tokens": 387574,
+        "output_tokens": 13385,
+        "reasoning_tokens": 8369,
+        "total_tokens": 400959
+      },
+      "duration_seconds": 304.61,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11885",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 74,
+      "all_attempt_model_calls": 74,
+      "effective_usage": {
+        "cached_input_tokens": 6150912,
+        "input_tokens": 6443211,
+        "output_tokens": 37413,
+        "reasoning_tokens": 23845,
+        "total_tokens": 6480624
+      },
+      "duration_seconds": 913.03,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11951",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 27,
+      "all_attempt_model_calls": 27,
+      "effective_usage": {
+        "cached_input_tokens": 439552,
+        "input_tokens": 509641,
+        "output_tokens": 8151,
+        "reasoning_tokens": 4043,
+        "total_tokens": 517792
+      },
+      "duration_seconds": 305.56,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11964",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 37,
+      "all_attempt_model_calls": 37,
+      "effective_usage": {
+        "cached_input_tokens": 1416704,
+        "input_tokens": 1567723,
+        "output_tokens": 24845,
+        "reasoning_tokens": 18333,
+        "total_tokens": 1592568
+      },
+      "duration_seconds": 421.81,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-11999",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 47,
+      "all_attempt_model_calls": 47,
+      "effective_usage": {
+        "cached_input_tokens": 1475328,
+        "input_tokens": 1608344,
+        "output_tokens": 28935,
+        "reasoning_tokens": 20974,
+        "total_tokens": 1637279
+      },
+      "duration_seconds": 569.51,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-12039",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 42,
+      "all_attempt_model_calls": 42,
+      "effective_usage": {
+        "cached_input_tokens": 1044480,
+        "input_tokens": 1182193,
+        "output_tokens": 14695,
+        "reasoning_tokens": 7415,
+        "total_tokens": 1196888
+      },
+      "duration_seconds": 410.0,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-12050",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 55,
+      "all_attempt_model_calls": 55,
+      "effective_usage": {
+        "cached_input_tokens": 1856000,
+        "input_tokens": 2005843,
+        "output_tokens": 37836,
+        "reasoning_tokens": 29188,
+        "total_tokens": 2043679
+      },
+      "duration_seconds": 633.0,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-12125",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 65,
+      "all_attempt_model_calls": 65,
+      "effective_usage": {
+        "cached_input_tokens": 3292672,
+        "input_tokens": 3541926,
+        "output_tokens": 45793,
+        "reasoning_tokens": 31943,
+        "total_tokens": 3587719
+      },
+      "duration_seconds": 1020.91,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-12143",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 28,
+      "all_attempt_model_calls": 28,
+      "effective_usage": {
+        "cached_input_tokens": 569344,
+        "input_tokens": 650064,
+        "output_tokens": 15123,
+        "reasoning_tokens": 9677,
+        "total_tokens": 665187
+      },
+      "duration_seconds": 345.86,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-12155",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 30,
+      "all_attempt_model_calls": 30,
+      "effective_usage": {
+        "cached_input_tokens": 798464,
+        "input_tokens": 928927,
+        "output_tokens": 28100,
+        "reasoning_tokens": 21544,
+        "total_tokens": 957027
+      },
+      "duration_seconds": 431.03,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-12193",
+      "score": 0.0,
+      "attempts": 1,
+      "effective_model_calls": 49,
+      "all_attempt_model_calls": 49,
+      "effective_usage": {
+        "cached_input_tokens": 2872320,
+        "input_tokens": 3071463,
+        "output_tokens": 54395,
+        "reasoning_tokens": 44900,
+        "total_tokens": 3125858
+      },
+      "duration_seconds": 805.97,
+      "outcome": "valid_zero"
+    },
+    {
+      "case": "django__django-12209",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 69,
+      "all_attempt_model_calls": 69,
+      "effective_usage": {
+        "cached_input_tokens": 4238080,
+        "input_tokens": 4501711,
+        "output_tokens": 64733,
+        "reasoning_tokens": 51780,
+        "total_tokens": 4566444
+      },
+      "duration_seconds": 919.97,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-12262",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 38,
+      "all_attempt_model_calls": 38,
+      "effective_usage": {
+        "cached_input_tokens": 931072,
+        "input_tokens": 1075108,
+        "output_tokens": 23324,
+        "reasoning_tokens": 15074,
+        "total_tokens": 1098432
+      },
+      "duration_seconds": 540.92,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-12273",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 71,
+      "all_attempt_model_calls": 71,
+      "effective_usage": {
+        "cached_input_tokens": 3688448,
+        "input_tokens": 3944692,
+        "output_tokens": 65053,
+        "reasoning_tokens": 54651,
+        "total_tokens": 4009745
+      },
+      "duration_seconds": 985.94,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-12276",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 31,
+      "all_attempt_model_calls": 31,
+      "effective_usage": {
+        "cached_input_tokens": 538624,
+        "input_tokens": 626782,
+        "output_tokens": 9773,
+        "reasoning_tokens": 4401,
+        "total_tokens": 636555
+      },
+      "duration_seconds": 336.69,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-12304",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 38,
+      "all_attempt_model_calls": 38,
+      "effective_usage": {
+        "cached_input_tokens": 1180672,
+        "input_tokens": 1325822,
+        "output_tokens": 35366,
+        "reasoning_tokens": 28842,
+        "total_tokens": 1361188
+      },
+      "duration_seconds": 585.14,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-12308",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 27,
+      "all_attempt_model_calls": 27,
+      "effective_usage": {
+        "cached_input_tokens": 535808,
+        "input_tokens": 645677,
+        "output_tokens": 15384,
+        "reasoning_tokens": 11551,
+        "total_tokens": 661061
+      },
+      "duration_seconds": 336.08,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-12325",
+      "score": 0.0,
+      "attempts": 1,
+      "effective_model_calls": 29,
+      "all_attempt_model_calls": 29,
+      "effective_usage": {
+        "cached_input_tokens": 705280,
+        "input_tokens": 805583,
+        "output_tokens": 22082,
+        "reasoning_tokens": 16592,
+        "total_tokens": 827665
+      },
+      "duration_seconds": 419.92,
+      "outcome": "valid_zero"
+    },
+    {
+      "case": "django__django-12406",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 104,
+      "all_attempt_model_calls": 104,
+      "effective_usage": {
+        "cached_input_tokens": 6225408,
+        "input_tokens": 6535435,
+        "output_tokens": 59156,
+        "reasoning_tokens": 41196,
+        "total_tokens": 6594591
+      },
+      "duration_seconds": 1177.17,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-12419",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 27,
+      "all_attempt_model_calls": 27,
+      "effective_usage": {
+        "cached_input_tokens": 584960,
+        "input_tokens": 680453,
+        "output_tokens": 22015,
+        "reasoning_tokens": 15708,
+        "total_tokens": 702468
+      },
+      "duration_seconds": 371.31,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-12663",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 142,
+      "all_attempt_model_calls": 142,
+      "effective_usage": {
+        "cached_input_tokens": 13024000,
+        "input_tokens": 14227745,
+        "output_tokens": 127831,
+        "reasoning_tokens": 95117,
+        "total_tokens": 14355576
+      },
+      "duration_seconds": 2730.69,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-12708",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 82,
+      "all_attempt_model_calls": 82,
+      "effective_usage": {
+        "cached_input_tokens": 3375104,
+        "input_tokens": 3566274,
+        "output_tokens": 29695,
+        "reasoning_tokens": 15527,
+        "total_tokens": 3595969
+      },
+      "duration_seconds": 754.66,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-12713",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 28,
+      "all_attempt_model_calls": 28,
+      "effective_usage": {
+        "cached_input_tokens": 366336,
+        "input_tokens": 425261,
+        "output_tokens": 7359,
+        "reasoning_tokens": 2831,
+        "total_tokens": 432620
+      },
+      "duration_seconds": 268.41,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-12741",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 20,
+      "all_attempt_model_calls": 20,
+      "effective_usage": {
+        "cached_input_tokens": 210432,
+        "input_tokens": 271044,
+        "output_tokens": 7274,
+        "reasoning_tokens": 3870,
+        "total_tokens": 278318
+      },
+      "duration_seconds": 253.7,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-12754",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 65,
+      "all_attempt_model_calls": 65,
+      "effective_usage": {
+        "cached_input_tokens": 3518976,
+        "input_tokens": 3816613,
+        "output_tokens": 49397,
+        "reasoning_tokens": 32497,
+        "total_tokens": 3866010
+      },
+      "duration_seconds": 879.91,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-12774",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 43,
+      "all_attempt_model_calls": 43,
+      "effective_usage": {
+        "cached_input_tokens": 2058496,
+        "input_tokens": 2220825,
+        "output_tokens": 37038,
+        "reasoning_tokens": 28986,
+        "total_tokens": 2257863
+      },
+      "duration_seconds": 1211.47,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-12858",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 30,
+      "all_attempt_model_calls": 30,
+      "effective_usage": {
+        "cached_input_tokens": 555264,
+        "input_tokens": 630852,
+        "output_tokens": 15811,
+        "reasoning_tokens": 11167,
+        "total_tokens": 646663
+      },
+      "duration_seconds": 332.36,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-12965",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 71,
+      "all_attempt_model_calls": 71,
+      "effective_usage": {
+        "cached_input_tokens": 3180800,
+        "input_tokens": 3449211,
+        "output_tokens": 46183,
+        "reasoning_tokens": 35936,
+        "total_tokens": 3495394
+      },
+      "duration_seconds": 891.22,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13012",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 38,
+      "all_attempt_model_calls": 38,
+      "effective_usage": {
+        "cached_input_tokens": 861952,
+        "input_tokens": 998126,
+        "output_tokens": 21876,
+        "reasoning_tokens": 14452,
+        "total_tokens": 1020002
+      },
+      "duration_seconds": 456.7,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13023",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 15,
+      "all_attempt_model_calls": 15,
+      "effective_usage": {
+        "cached_input_tokens": 151040,
+        "input_tokens": 191654,
+        "output_tokens": 5126,
+        "reasoning_tokens": 2702,
+        "total_tokens": 196780
+      },
+      "duration_seconds": 179.03,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13028",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 36,
+      "all_attempt_model_calls": 36,
+      "effective_usage": {
+        "cached_input_tokens": 896512,
+        "input_tokens": 1005959,
+        "output_tokens": 18597,
+        "reasoning_tokens": 13149,
+        "total_tokens": 1024556
+      },
+      "duration_seconds": 460.36,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13033",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 50,
+      "all_attempt_model_calls": 50,
+      "effective_usage": {
+        "cached_input_tokens": 1371136,
+        "input_tokens": 1537297,
+        "output_tokens": 22547,
+        "reasoning_tokens": 15588,
+        "total_tokens": 1559844
+      },
+      "duration_seconds": 582.44,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13089",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 33,
+      "all_attempt_model_calls": 33,
+      "effective_usage": {
+        "cached_input_tokens": 726016,
+        "input_tokens": 836219,
+        "output_tokens": 16718,
+        "reasoning_tokens": 11147,
+        "total_tokens": 852937
+      },
+      "duration_seconds": 501.91,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13109",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 49,
+      "all_attempt_model_calls": 49,
+      "effective_usage": {
+        "cached_input_tokens": 1196032,
+        "input_tokens": 1324753,
+        "output_tokens": 18459,
+        "reasoning_tokens": 10543,
+        "total_tokens": 1343212
+      },
+      "duration_seconds": 499.19,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13112",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 107,
+      "all_attempt_model_calls": 107,
+      "effective_usage": {
+        "cached_input_tokens": 4522752,
+        "input_tokens": 4812662,
+        "output_tokens": 47972,
+        "reasoning_tokens": 31480,
+        "total_tokens": 4860634
+      },
+      "duration_seconds": 1064.42,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13121",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 69,
+      "all_attempt_model_calls": 69,
+      "effective_usage": {
+        "cached_input_tokens": 3631616,
+        "input_tokens": 3866319,
+        "output_tokens": 33296,
+        "reasoning_tokens": 22078,
+        "total_tokens": 3899615
+      },
+      "duration_seconds": 656.39,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13128",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 47,
+      "all_attempt_model_calls": 47,
+      "effective_usage": {
+        "cached_input_tokens": 1720832,
+        "input_tokens": 1881435,
+        "output_tokens": 35937,
+        "reasoning_tokens": 26314,
+        "total_tokens": 1917372
+      },
+      "duration_seconds": 671.33,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13158",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 29,
+      "all_attempt_model_calls": 29,
+      "effective_usage": {
+        "cached_input_tokens": 570880,
+        "input_tokens": 681921,
+        "output_tokens": 14786,
+        "reasoning_tokens": 10108,
+        "total_tokens": 696707
+      },
+      "duration_seconds": 410.83,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13195",
+      "score": 0.0,
+      "attempts": 1,
+      "effective_model_calls": 25,
+      "all_attempt_model_calls": 25,
+      "effective_usage": {
+        "cached_input_tokens": 441088,
+        "input_tokens": 535115,
+        "output_tokens": 15021,
+        "reasoning_tokens": 9894,
+        "total_tokens": 550136
+      },
+      "duration_seconds": 296.31,
+      "outcome": "valid_zero"
+    },
+    {
+      "case": "django__django-13212",
+      "score": 0.0,
+      "attempts": 1,
+      "effective_model_calls": 37,
+      "all_attempt_model_calls": 37,
+      "effective_usage": {
+        "cached_input_tokens": 898816,
+        "input_tokens": 1017487,
+        "output_tokens": 17217,
+        "reasoning_tokens": 10449,
+        "total_tokens": 1034704
+      },
+      "duration_seconds": 538.7,
+      "outcome": "valid_zero"
+    },
+    {
+      "case": "django__django-13279",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 37,
+      "all_attempt_model_calls": 37,
+      "effective_usage": {
+        "cached_input_tokens": 957184,
+        "input_tokens": 1048337,
+        "output_tokens": 15515,
+        "reasoning_tokens": 9007,
+        "total_tokens": 1063852
+      },
+      "duration_seconds": 453.83,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13297",
+      "score": 0.0,
+      "attempts": 1,
+      "effective_model_calls": 46,
+      "all_attempt_model_calls": 46,
+      "effective_usage": {
+        "cached_input_tokens": 1934336,
+        "input_tokens": 2144850,
+        "output_tokens": 28171,
+        "reasoning_tokens": 20548,
+        "total_tokens": 2173021
+      },
+      "duration_seconds": 527.64,
+      "outcome": "valid_zero"
+    },
+    {
+      "case": "django__django-13315",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 29,
+      "all_attempt_model_calls": 29,
+      "effective_usage": {
+        "cached_input_tokens": 1304576,
+        "input_tokens": 1494323,
+        "output_tokens": 19815,
+        "reasoning_tokens": 14127,
+        "total_tokens": 1514138
+      },
+      "duration_seconds": 404.3,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13343",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 27,
+      "all_attempt_model_calls": 27,
+      "effective_usage": {
+        "cached_input_tokens": 640256,
+        "input_tokens": 755809,
+        "output_tokens": 13882,
+        "reasoning_tokens": 8795,
+        "total_tokens": 769691
+      },
+      "duration_seconds": 328.2,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13344",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 73,
+      "all_attempt_model_calls": 73,
+      "effective_usage": {
+        "cached_input_tokens": 3785984,
+        "input_tokens": 3977717,
+        "output_tokens": 46579,
+        "reasoning_tokens": 32295,
+        "total_tokens": 4024296
+      },
+      "duration_seconds": 905.81,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13346",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 48,
+      "all_attempt_model_calls": 48,
+      "effective_usage": {
+        "cached_input_tokens": 1392896,
+        "input_tokens": 1535028,
+        "output_tokens": 23278,
+        "reasoning_tokens": 16357,
+        "total_tokens": 1558306
+      },
+      "duration_seconds": 513.28,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13363",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 19,
+      "all_attempt_model_calls": 19,
+      "effective_usage": {
+        "cached_input_tokens": 250368,
+        "input_tokens": 328536,
+        "output_tokens": 6858,
+        "reasoning_tokens": 2839,
+        "total_tokens": 335394
+      },
+      "duration_seconds": 210.55,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13401",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 37,
+      "all_attempt_model_calls": 37,
+      "effective_usage": {
+        "cached_input_tokens": 1248256,
+        "input_tokens": 1416311,
+        "output_tokens": 30759,
+        "reasoning_tokens": 23590,
+        "total_tokens": 1447070
+      },
+      "duration_seconds": 490.81,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13406",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 55,
+      "all_attempt_model_calls": 55,
+      "effective_usage": {
+        "cached_input_tokens": 1790976,
+        "input_tokens": 1924959,
+        "output_tokens": 27642,
+        "reasoning_tokens": 19098,
+        "total_tokens": 1952601
+      },
+      "duration_seconds": 553.34,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13410",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 14,
+      "all_attempt_model_calls": 14,
+      "effective_usage": {
+        "cached_input_tokens": 174336,
+        "input_tokens": 219990,
+        "output_tokens": 5589,
+        "reasoning_tokens": 3405,
+        "total_tokens": 225579
+      },
+      "duration_seconds": 186.78,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13417",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 37,
+      "all_attempt_model_calls": 37,
+      "effective_usage": {
+        "cached_input_tokens": 1446656,
+        "input_tokens": 1636924,
+        "output_tokens": 29990,
+        "reasoning_tokens": 22912,
+        "total_tokens": 1666914
+      },
+      "duration_seconds": 1091.33,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13449",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 53,
+      "all_attempt_model_calls": 53,
+      "effective_usage": {
+        "cached_input_tokens": 2080256,
+        "input_tokens": 2241062,
+        "output_tokens": 36463,
+        "reasoning_tokens": 27567,
+        "total_tokens": 2277525
+      },
+      "duration_seconds": 1333.41,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13512",
+      "score": 0.0,
+      "attempts": 1,
+      "effective_model_calls": 25,
+      "all_attempt_model_calls": 25,
+      "effective_usage": {
+        "cached_input_tokens": 315392,
+        "input_tokens": 389007,
+        "output_tokens": 7008,
+        "reasoning_tokens": 3121,
+        "total_tokens": 396015
+      },
+      "duration_seconds": 319.12,
+      "outcome": "valid_zero"
+    },
+    {
+      "case": "django__django-13513",
+      "score": 0.0,
+      "attempts": 1,
+      "effective_model_calls": 30,
+      "all_attempt_model_calls": 30,
+      "effective_usage": {
+        "cached_input_tokens": 561152,
+        "input_tokens": 647055,
+        "output_tokens": 18555,
+        "reasoning_tokens": 12079,
+        "total_tokens": 665610
+      },
+      "duration_seconds": 432.61,
+      "outcome": "valid_zero"
+    },
+    {
+      "case": "django__django-13516",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 37,
+      "all_attempt_model_calls": 37,
+      "effective_usage": {
+        "cached_input_tokens": 843776,
+        "input_tokens": 955912,
+        "output_tokens": 26108,
+        "reasoning_tokens": 19003,
+        "total_tokens": 982020
+      },
+      "duration_seconds": 757.45,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13551",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 16,
+      "all_attempt_model_calls": 16,
+      "effective_usage": {
+        "cached_input_tokens": 142592,
+        "input_tokens": 181934,
+        "output_tokens": 4704,
+        "reasoning_tokens": 2236,
+        "total_tokens": 186638
+      },
+      "duration_seconds": 214.88,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13568",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 32,
+      "all_attempt_model_calls": 32,
+      "effective_usage": {
+        "cached_input_tokens": 655872,
+        "input_tokens": 764545,
+        "output_tokens": 15977,
+        "reasoning_tokens": 11042,
+        "total_tokens": 780522
+      },
+      "duration_seconds": 362.0,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13569",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 36,
+      "all_attempt_model_calls": 36,
+      "effective_usage": {
+        "cached_input_tokens": 667648,
+        "input_tokens": 760722,
+        "output_tokens": 14675,
+        "reasoning_tokens": 7374,
+        "total_tokens": 775397
+      },
+      "duration_seconds": 377.98,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13590",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 33,
+      "all_attempt_model_calls": 33,
+      "effective_usage": {
+        "cached_input_tokens": 761088,
+        "input_tokens": 849527,
+        "output_tokens": 12986,
+        "reasoning_tokens": 8067,
+        "total_tokens": 862513
+      },
+      "duration_seconds": 412.81,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13658",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 29,
+      "all_attempt_model_calls": 29,
+      "effective_usage": {
+        "cached_input_tokens": 427520,
+        "input_tokens": 516964,
+        "output_tokens": 13037,
+        "reasoning_tokens": 7867,
+        "total_tokens": 530001
+      },
+      "duration_seconds": 612.34,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13670",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 16,
+      "all_attempt_model_calls": 16,
+      "effective_usage": {
+        "cached_input_tokens": 139776,
+        "input_tokens": 180665,
+        "output_tokens": 5294,
+        "reasoning_tokens": 2043,
+        "total_tokens": 185959
+      },
+      "duration_seconds": 230.52,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13741",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 50,
+      "all_attempt_model_calls": 50,
+      "effective_usage": {
+        "cached_input_tokens": 1243136,
+        "input_tokens": 1354597,
+        "output_tokens": 20178,
+        "reasoning_tokens": 11245,
+        "total_tokens": 1374775
+      },
+      "duration_seconds": 512.56,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13786",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 17,
+      "all_attempt_model_calls": 17,
+      "effective_usage": {
+        "cached_input_tokens": 242688,
+        "input_tokens": 323662,
+        "output_tokens": 5682,
+        "reasoning_tokens": 2424,
+        "total_tokens": 329344
+      },
+      "duration_seconds": 251.64,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13794",
+      "score": 0.0,
+      "attempts": 1,
+      "effective_model_calls": 51,
+      "all_attempt_model_calls": 51,
+      "effective_usage": {
+        "cached_input_tokens": 3047936,
+        "input_tokens": 3268913,
+        "output_tokens": 69866,
+        "reasoning_tokens": 58784,
+        "total_tokens": 3338779
+      },
+      "duration_seconds": 923.08,
+      "outcome": "valid_zero"
+    },
+    {
+      "case": "django__django-13807",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 37,
+      "all_attempt_model_calls": 37,
+      "effective_usage": {
+        "cached_input_tokens": 1165056,
+        "input_tokens": 1325735,
+        "output_tokens": 18274,
+        "reasoning_tokens": 11847,
+        "total_tokens": 1344009
+      },
+      "duration_seconds": 409.34,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13809",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 56,
+      "all_attempt_model_calls": 56,
+      "effective_usage": {
+        "cached_input_tokens": 2083072,
+        "input_tokens": 2271306,
+        "output_tokens": 24955,
+        "reasoning_tokens": 16565,
+        "total_tokens": 2296261
+      },
+      "duration_seconds": 875.27,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13810",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 22,
+      "all_attempt_model_calls": 22,
+      "effective_usage": {
+        "cached_input_tokens": 432384,
+        "input_tokens": 499631,
+        "output_tokens": 11119,
+        "reasoning_tokens": 7344,
+        "total_tokens": 510750
+      },
+      "duration_seconds": 300.38,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13820",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 50,
+      "all_attempt_model_calls": 50,
+      "effective_usage": {
+        "cached_input_tokens": 1522688,
+        "input_tokens": 1692935,
+        "output_tokens": 32251,
+        "reasoning_tokens": 22981,
+        "total_tokens": 1725186
+      },
+      "duration_seconds": 700.2,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13821",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 39,
+      "all_attempt_model_calls": 39,
+      "effective_usage": {
+        "cached_input_tokens": 1390080,
+        "input_tokens": 1586260,
+        "output_tokens": 27465,
+        "reasoning_tokens": 20901,
+        "total_tokens": 1613725
+      },
+      "duration_seconds": 500.83,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13837",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 48,
+      "all_attempt_model_calls": 48,
+      "effective_usage": {
+        "cached_input_tokens": 2190848,
+        "input_tokens": 2420331,
+        "output_tokens": 43465,
+        "reasoning_tokens": 34784,
+        "total_tokens": 2463796
+      },
+      "duration_seconds": 832.27,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13925",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 20,
+      "all_attempt_model_calls": 20,
+      "effective_usage": {
+        "cached_input_tokens": 324608,
+        "input_tokens": 419918,
+        "output_tokens": 11016,
+        "reasoning_tokens": 7744,
+        "total_tokens": 430934
+      },
+      "duration_seconds": 266.19,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13933",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 20,
+      "all_attempt_model_calls": 20,
+      "effective_usage": {
+        "cached_input_tokens": 312320,
+        "input_tokens": 412389,
+        "output_tokens": 12853,
+        "reasoning_tokens": 9452,
+        "total_tokens": 425242
+      },
+      "duration_seconds": 296.58,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-13964",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 37,
+      "all_attempt_model_calls": 37,
+      "effective_usage": {
+        "cached_input_tokens": 976384,
+        "input_tokens": 1105425,
+        "output_tokens": 24346,
+        "reasoning_tokens": 18731,
+        "total_tokens": 1129771
+      },
+      "duration_seconds": 470.62,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14007",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 28,
+      "all_attempt_model_calls": 28,
+      "effective_usage": {
+        "cached_input_tokens": 705792,
+        "input_tokens": 800595,
+        "output_tokens": 18977,
+        "reasoning_tokens": 13420,
+        "total_tokens": 819572
+      },
+      "duration_seconds": 497.69,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14011",
+      "score": 0.0,
+      "attempts": 1,
+      "effective_model_calls": 90,
+      "all_attempt_model_calls": 90,
+      "effective_usage": {
+        "cached_input_tokens": 7408896,
+        "input_tokens": 7728616,
+        "output_tokens": 95652,
+        "reasoning_tokens": 80213,
+        "total_tokens": 7824268
+      },
+      "duration_seconds": 2451.61,
+      "outcome": "valid_zero"
+    },
+    {
+      "case": "django__django-14017",
+      "score": 1,
+      "attempts": 2,
+      "effective_model_calls": 41,
+      "all_attempt_model_calls": 41,
+      "effective_usage": {
+        "cached_input_tokens": 1476096,
+        "input_tokens": 1601743,
+        "output_tokens": 33430,
+        "reasoning_tokens": 25893,
+        "total_tokens": 1635173
+      },
+      "duration_seconds": 670.36,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14034",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 63,
+      "all_attempt_model_calls": 63,
+      "effective_usage": {
+        "cached_input_tokens": 3499008,
+        "input_tokens": 3711261,
+        "output_tokens": 52690,
+        "reasoning_tokens": 40841,
+        "total_tokens": 3763951
+      },
+      "duration_seconds": 1159.55,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14053",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 47,
+      "all_attempt_model_calls": 47,
+      "effective_usage": {
+        "cached_input_tokens": 1698560,
+        "input_tokens": 1844513,
+        "output_tokens": 29811,
+        "reasoning_tokens": 21881,
+        "total_tokens": 1874324
+      },
+      "duration_seconds": 768.59,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14089",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 18,
+      "all_attempt_model_calls": 18,
+      "effective_usage": {
+        "cached_input_tokens": 139776,
+        "input_tokens": 178831,
+        "output_tokens": 4042,
+        "reasoning_tokens": 1573,
+        "total_tokens": 182873
+      },
+      "duration_seconds": 234.05,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14122",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 31,
+      "all_attempt_model_calls": 31,
+      "effective_usage": {
+        "cached_input_tokens": 897280,
+        "input_tokens": 1019039,
+        "output_tokens": 22831,
+        "reasoning_tokens": 16938,
+        "total_tokens": 1041870
+      },
+      "duration_seconds": 487.97,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14140",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 28,
+      "all_attempt_model_calls": 28,
+      "effective_usage": {
+        "cached_input_tokens": 1006336,
+        "input_tokens": 1137628,
+        "output_tokens": 18740,
+        "reasoning_tokens": 13578,
+        "total_tokens": 1156368
+      },
+      "duration_seconds": 491.91,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14155",
+      "score": 0.0,
+      "attempts": 1,
+      "effective_model_calls": 21,
+      "all_attempt_model_calls": 21,
+      "effective_usage": {
+        "cached_input_tokens": 268544,
+        "input_tokens": 332087,
+        "output_tokens": 10530,
+        "reasoning_tokens": 6590,
+        "total_tokens": 342617
+      },
+      "duration_seconds": 321.19,
+      "outcome": "valid_zero"
+    },
+    {
+      "case": "django__django-14170",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 44,
+      "all_attempt_model_calls": 44,
+      "effective_usage": {
+        "cached_input_tokens": 1718272,
+        "input_tokens": 1866881,
+        "output_tokens": 32564,
+        "reasoning_tokens": 22705,
+        "total_tokens": 1899445
+      },
+      "duration_seconds": 792.58,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14238",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 26,
+      "all_attempt_model_calls": 26,
+      "effective_usage": {
+        "cached_input_tokens": 572928,
+        "input_tokens": 669457,
+        "output_tokens": 17364,
+        "reasoning_tokens": 12482,
+        "total_tokens": 686821
+      },
+      "duration_seconds": 449.62,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14311",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 38,
+      "all_attempt_model_calls": 38,
+      "effective_usage": {
+        "cached_input_tokens": 1240832,
+        "input_tokens": 1370009,
+        "output_tokens": 26835,
+        "reasoning_tokens": 19389,
+        "total_tokens": 1396844
+      },
+      "duration_seconds": 874.64,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14315",
+      "score": 0.0,
+      "attempts": 1,
+      "effective_model_calls": 23,
+      "all_attempt_model_calls": 23,
+      "effective_usage": {
+        "cached_input_tokens": 489472,
+        "input_tokens": 567045,
+        "output_tokens": 9924,
+        "reasoning_tokens": 6209,
+        "total_tokens": 576969
+      },
+      "duration_seconds": 310.16,
+      "outcome": "valid_zero"
+    },
+    {
+      "case": "django__django-14349",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 26,
+      "all_attempt_model_calls": 26,
+      "effective_usage": {
+        "cached_input_tokens": 615936,
+        "input_tokens": 708844,
+        "output_tokens": 19030,
+        "reasoning_tokens": 14405,
+        "total_tokens": 727874
+      },
+      "duration_seconds": 403.05,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14351",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 67,
+      "all_attempt_model_calls": 67,
+      "effective_usage": {
+        "cached_input_tokens": 3135488,
+        "input_tokens": 3336266,
+        "output_tokens": 40038,
+        "reasoning_tokens": 26640,
+        "total_tokens": 3376304
+      },
+      "duration_seconds": 991.7,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14373",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 25,
+      "all_attempt_model_calls": 25,
+      "effective_usage": {
+        "cached_input_tokens": 351488,
+        "input_tokens": 440720,
+        "output_tokens": 11377,
+        "reasoning_tokens": 6607,
+        "total_tokens": 452097
+      },
+      "duration_seconds": 401.19,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14376",
+      "score": 0,
+      "attempts": 2,
+      "effective_model_calls": 48,
+      "all_attempt_model_calls": 48,
+      "effective_usage": {
+        "cached_input_tokens": 1706240,
+        "input_tokens": 1848514,
+        "output_tokens": 31093,
+        "reasoning_tokens": 23027,
+        "total_tokens": 1879607
+      },
+      "duration_seconds": 688.94,
+      "outcome": "valid_zero"
+    },
+    {
+      "case": "django__django-14404",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 44,
+      "all_attempt_model_calls": 44,
+      "effective_usage": {
+        "cached_input_tokens": 1891584,
+        "input_tokens": 2061456,
+        "output_tokens": 24855,
+        "reasoning_tokens": 18106,
+        "total_tokens": 2086311
+      },
+      "duration_seconds": 1225.28,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14434",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 53,
+      "all_attempt_model_calls": 53,
+      "effective_usage": {
+        "cached_input_tokens": 2020352,
+        "input_tokens": 2198403,
+        "output_tokens": 32259,
+        "reasoning_tokens": 23771,
+        "total_tokens": 2230662
+      },
+      "duration_seconds": 704.14,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14493",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 25,
+      "all_attempt_model_calls": 25,
+      "effective_usage": {
+        "cached_input_tokens": 653056,
+        "input_tokens": 755843,
+        "output_tokens": 23764,
+        "reasoning_tokens": 19450,
+        "total_tokens": 779607
+      },
+      "duration_seconds": 552.39,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14500",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 22,
+      "all_attempt_model_calls": 22,
+      "effective_usage": {
+        "cached_input_tokens": 738304,
+        "input_tokens": 866443,
+        "output_tokens": 20910,
+        "reasoning_tokens": 16235,
+        "total_tokens": 887353
+      },
+      "duration_seconds": 475.66,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14534",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 35,
+      "all_attempt_model_calls": 35,
+      "effective_usage": {
+        "cached_input_tokens": 1052160,
+        "input_tokens": 1166956,
+        "output_tokens": 24419,
+        "reasoning_tokens": 18386,
+        "total_tokens": 1191375
+      },
+      "duration_seconds": 638.05,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14539",
+      "score": 1.0,
+      "attempts": 2,
+      "effective_model_calls": 40,
+      "all_attempt_model_calls": 46,
+      "effective_usage": {
+        "cached_input_tokens": 3388160,
+        "input_tokens": 3815828,
+        "output_tokens": 32890,
+        "reasoning_tokens": 26713,
+        "total_tokens": 3848718
+      },
+      "duration_seconds": 686.77,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14559",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 41,
+      "all_attempt_model_calls": 41,
+      "effective_usage": {
+        "cached_input_tokens": 1057024,
+        "input_tokens": 1158594,
+        "output_tokens": 14340,
+        "reasoning_tokens": 8607,
+        "total_tokens": 1172934
+      },
+      "duration_seconds": 393.64,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14580",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 35,
+      "all_attempt_model_calls": 35,
+      "effective_usage": {
+        "cached_input_tokens": 1867520,
+        "input_tokens": 2048325,
+        "output_tokens": 18517,
+        "reasoning_tokens": 11533,
+        "total_tokens": 2066842
+      },
+      "duration_seconds": 467.73,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14608",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 43,
+      "all_attempt_model_calls": 43,
+      "effective_usage": {
+        "cached_input_tokens": 1096960,
+        "input_tokens": 1205277,
+        "output_tokens": 17810,
+        "reasoning_tokens": 10190,
+        "total_tokens": 1223087
+      },
+      "duration_seconds": 508.28,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14631",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 67,
+      "all_attempt_model_calls": 67,
+      "effective_usage": {
+        "cached_input_tokens": 4700672,
+        "input_tokens": 4934151,
+        "output_tokens": 60458,
+        "reasoning_tokens": 47543,
+        "total_tokens": 4994609
+      },
+      "duration_seconds": 1845.08,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14672",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 25,
+      "all_attempt_model_calls": 25,
+      "effective_usage": {
+        "cached_input_tokens": 388096,
+        "input_tokens": 450886,
+        "output_tokens": 6876,
+        "reasoning_tokens": 2930,
+        "total_tokens": 457762
+      },
+      "duration_seconds": 290.09,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14725",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 35,
+      "all_attempt_model_calls": 35,
+      "effective_usage": {
+        "cached_input_tokens": 1932032,
+        "input_tokens": 2119239,
+        "output_tokens": 48992,
+        "reasoning_tokens": 40865,
+        "total_tokens": 2168231
+      },
+      "duration_seconds": 800.66,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14752",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 14,
+      "all_attempt_model_calls": 14,
+      "effective_usage": {
+        "cached_input_tokens": 177664,
+        "input_tokens": 229145,
+        "output_tokens": 7680,
+        "reasoning_tokens": 5000,
+        "total_tokens": 236825
+      },
+      "duration_seconds": 265.3,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14765",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 31,
+      "all_attempt_model_calls": 31,
+      "effective_usage": {
+        "cached_input_tokens": 786944,
+        "input_tokens": 893114,
+        "output_tokens": 28653,
+        "reasoning_tokens": 23150,
+        "total_tokens": 921767
+      },
+      "duration_seconds": 618.94,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14771",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 29,
+      "all_attempt_model_calls": 29,
+      "effective_usage": {
+        "cached_input_tokens": 669952,
+        "input_tokens": 764829,
+        "output_tokens": 22358,
+        "reasoning_tokens": 17367,
+        "total_tokens": 787187
+      },
+      "duration_seconds": 625.92,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14787",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 33,
+      "all_attempt_model_calls": 33,
+      "effective_usage": {
+        "cached_input_tokens": 835584,
+        "input_tokens": 965314,
+        "output_tokens": 23876,
+        "reasoning_tokens": 18460,
+        "total_tokens": 989190
+      },
+      "duration_seconds": 596.77,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14792",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 26,
+      "all_attempt_model_calls": 26,
+      "effective_usage": {
+        "cached_input_tokens": 670976,
+        "input_tokens": 808147,
+        "output_tokens": 28508,
+        "reasoning_tokens": 22120,
+        "total_tokens": 836655
+      },
+      "duration_seconds": 548.92,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14855",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 26,
+      "all_attempt_model_calls": 26,
+      "effective_usage": {
+        "cached_input_tokens": 987136,
+        "input_tokens": 1194506,
+        "output_tokens": 13283,
+        "reasoning_tokens": 9388,
+        "total_tokens": 1207789
+      },
+      "duration_seconds": 437.55,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14915",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 24,
+      "all_attempt_model_calls": 24,
+      "effective_usage": {
+        "cached_input_tokens": 268544,
+        "input_tokens": 359170,
+        "output_tokens": 6922,
+        "reasoning_tokens": 3093,
+        "total_tokens": 366092
+      },
+      "duration_seconds": 327.23,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-14999",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 22,
+      "all_attempt_model_calls": 22,
+      "effective_usage": {
+        "cached_input_tokens": 338176,
+        "input_tokens": 433601,
+        "output_tokens": 12653,
+        "reasoning_tokens": 8970,
+        "total_tokens": 446254
+      },
+      "duration_seconds": 356.05,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-15022",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 87,
+      "all_attempt_model_calls": 87,
+      "effective_usage": {
+        "cached_input_tokens": 4032512,
+        "input_tokens": 4252542,
+        "output_tokens": 41580,
+        "reasoning_tokens": 25814,
+        "total_tokens": 4294122
+      },
+      "duration_seconds": 1059.25,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-15037",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 21,
+      "all_attempt_model_calls": 21,
+      "effective_usage": {
+        "cached_input_tokens": 481792,
+        "input_tokens": 575904,
+        "output_tokens": 15791,
+        "reasoning_tokens": 12085,
+        "total_tokens": 591695
+      },
+      "duration_seconds": 361.83,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-15098",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 64,
+      "all_attempt_model_calls": 64,
+      "effective_usage": {
+        "cached_input_tokens": 2304512,
+        "input_tokens": 2468347,
+        "output_tokens": 33504,
+        "reasoning_tokens": 23034,
+        "total_tokens": 2501851
+      },
+      "duration_seconds": 950.52,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-15103",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 23,
+      "all_attempt_model_calls": 23,
+      "effective_usage": {
+        "cached_input_tokens": 355328,
+        "input_tokens": 425173,
+        "output_tokens": 9047,
+        "reasoning_tokens": 4165,
+        "total_tokens": 434220
+      },
+      "duration_seconds": 271.44,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-15104",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 17,
+      "all_attempt_model_calls": 17,
+      "effective_usage": {
+        "cached_input_tokens": 272384,
+        "input_tokens": 365798,
+        "output_tokens": 7551,
+        "reasoning_tokens": 4120,
+        "total_tokens": 373349
+      },
+      "duration_seconds": 266.95,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-15127",
+      "score": 0.0,
+      "attempts": 1,
+      "effective_model_calls": 26,
+      "all_attempt_model_calls": 26,
+      "effective_usage": {
+        "cached_input_tokens": 495616,
+        "input_tokens": 588915,
+        "output_tokens": 22380,
+        "reasoning_tokens": 17982,
+        "total_tokens": 611295
+      },
+      "duration_seconds": 423.01,
+      "outcome": "valid_zero"
+    },
+    {
+      "case": "django__django-15128",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 52,
+      "all_attempt_model_calls": 52,
+      "effective_usage": {
+        "cached_input_tokens": 1516800,
+        "input_tokens": 1670988,
+        "output_tokens": 25290,
+        "reasoning_tokens": 17216,
+        "total_tokens": 1696278
+      },
+      "duration_seconds": 608.22,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-15161",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 66,
+      "all_attempt_model_calls": 66,
+      "effective_usage": {
+        "cached_input_tokens": 2822400,
+        "input_tokens": 3063093,
+        "output_tokens": 36146,
+        "reasoning_tokens": 24268,
+        "total_tokens": 3099239
+      },
+      "duration_seconds": 863.99,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-15252",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 60,
+      "all_attempt_model_calls": 60,
+      "effective_usage": {
+        "cached_input_tokens": 3487488,
+        "input_tokens": 3809827,
+        "output_tokens": 56883,
+        "reasoning_tokens": 48041,
+        "total_tokens": 3866710
+      },
+      "duration_seconds": 1727.17,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-15268",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 33,
+      "all_attempt_model_calls": 33,
+      "effective_usage": {
+        "cached_input_tokens": 812032,
+        "input_tokens": 967345,
+        "output_tokens": 21499,
+        "reasoning_tokens": 14674,
+        "total_tokens": 988844
+      },
+      "duration_seconds": 509.23,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-15277",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 22,
+      "all_attempt_model_calls": 22,
+      "effective_usage": {
+        "cached_input_tokens": 247296,
+        "input_tokens": 301780,
+        "output_tokens": 4489,
+        "reasoning_tokens": 1424,
+        "total_tokens": 306269
+      },
+      "duration_seconds": 268.41,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-15278",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 41,
+      "all_attempt_model_calls": 41,
+      "effective_usage": {
+        "cached_input_tokens": 1136384,
+        "input_tokens": 1246971,
+        "output_tokens": 19749,
+        "reasoning_tokens": 13056,
+        "total_tokens": 1266720
+      },
+      "duration_seconds": 538.45,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-15280",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 91,
+      "all_attempt_model_calls": 91,
+      "effective_usage": {
+        "cached_input_tokens": 5615104,
+        "input_tokens": 5982969,
+        "output_tokens": 51192,
+        "reasoning_tokens": 37463,
+        "total_tokens": 6034161
+      },
+      "duration_seconds": 1187.67,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-15315",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 30,
+      "all_attempt_model_calls": 30,
+      "effective_usage": {
+        "cached_input_tokens": 1021440,
+        "input_tokens": 1162762,
+        "output_tokens": 15707,
+        "reasoning_tokens": 10822,
+        "total_tokens": 1178469
+      },
+      "duration_seconds": 419.06,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-15368",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 17,
+      "all_attempt_model_calls": 17,
+      "effective_usage": {
+        "cached_input_tokens": 193792,
+        "input_tokens": 242342,
+        "output_tokens": 6498,
+        "reasoning_tokens": 3498,
+        "total_tokens": 248840
+      },
+      "duration_seconds": 222.91,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-15375",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 26,
+      "all_attempt_model_calls": 26,
+      "effective_usage": {
+        "cached_input_tokens": 773376,
+        "input_tokens": 903335,
+        "output_tokens": 25573,
+        "reasoning_tokens": 21103,
+        "total_tokens": 928908
+      },
+      "duration_seconds": 473.75,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-15380",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 20,
+      "all_attempt_model_calls": 20,
+      "effective_usage": {
+        "cached_input_tokens": 334848,
+        "input_tokens": 419447,
+        "output_tokens": 8240,
+        "reasoning_tokens": 4899,
+        "total_tokens": 427687
+      },
+      "duration_seconds": 295.56,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-15382",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 48,
+      "all_attempt_model_calls": 48,
+      "effective_usage": {
+        "cached_input_tokens": 2143488,
+        "input_tokens": 2398470,
+        "output_tokens": 28602,
+        "reasoning_tokens": 20100,
+        "total_tokens": 2427072
+      },
+      "duration_seconds": 652.98,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-15467",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 25,
+      "all_attempt_model_calls": 25,
+      "effective_usage": {
+        "cached_input_tokens": 372992,
+        "input_tokens": 469374,
+        "output_tokens": 8371,
+        "reasoning_tokens": 4892,
+        "total_tokens": 477745
+      },
+      "duration_seconds": 344.28,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-15499",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 19,
+      "all_attempt_model_calls": 19,
+      "effective_usage": {
+        "cached_input_tokens": 231168,
+        "input_tokens": 293157,
+        "output_tokens": 7857,
+        "reasoning_tokens": 4685,
+        "total_tokens": 301014
+      },
+      "duration_seconds": 254.38,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-15503",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 61,
+      "all_attempt_model_calls": 61,
+      "effective_usage": {
+        "cached_input_tokens": 3757056,
+        "input_tokens": 3975424,
+        "output_tokens": 61340,
+        "reasoning_tokens": 50784,
+        "total_tokens": 4036764
+      },
+      "duration_seconds": 2157.06,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-15525",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 75,
+      "all_attempt_model_calls": 75,
+      "effective_usage": {
+        "cached_input_tokens": 3300608,
+        "input_tokens": 3485300,
+        "output_tokens": 32548,
+        "reasoning_tokens": 19243,
+        "total_tokens": 3517848
+      },
+      "duration_seconds": 1250.62,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-15554",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 74,
+      "all_attempt_model_calls": 74,
+      "effective_usage": {
+        "cached_input_tokens": 3501312,
+        "input_tokens": 3717577,
+        "output_tokens": 49907,
+        "reasoning_tokens": 37772,
+        "total_tokens": 3767484
+      },
+      "duration_seconds": 1067.89,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-15561",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 36,
+      "all_attempt_model_calls": 36,
+      "effective_usage": {
+        "cached_input_tokens": 941568,
+        "input_tokens": 1046850,
+        "output_tokens": 17723,
+        "reasoning_tokens": 12485,
+        "total_tokens": 1064573
+      },
+      "duration_seconds": 534.62,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-15563",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 72,
+      "all_attempt_model_calls": 72,
+      "effective_usage": {
+        "cached_input_tokens": 3501312,
+        "input_tokens": 3699182,
+        "output_tokens": 49451,
+        "reasoning_tokens": 37380,
+        "total_tokens": 3748633
+      },
+      "duration_seconds": 1093.8,
+      "outcome": "passed"
+    },
+    {
+      "case": "django__django-15569",
+      "score": 1.0,
+      "attempts": 1,
+      "effective_model_calls": 36,
+      "all_attempt_model_calls": 36,
+      "effective_usage": {
+        "cached_input_tokens": 890624,
+        "input_tokens": 1001971,
+        "output_tokens": 19044,
+        "reasoning_tokens": 13230,
+        "total_tokens": 1021015
+      },
+      "duration_seconds": 510.44,
+      "outcome": "passed"
+    }
+  ],
+  "limitations": [
+    "This historical milestone contains the first 200 effective results by completion time.",
+    "Three cases had an infrastructure retry; the first valid 0/1 score for each case is retained.",
+    "Two effective regrade results omitted model runtime; their duration was recovered from the corresponding original run result.",
+    "Reasoning tokens are included in output tokens and are not added to total tokens again."
+  ]
+}
