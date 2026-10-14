@@ -976,6 +976,32 @@ test("composer sends on Enter and keeps Shift+Enter for a newline", () => {
   assert.equal(appModule.shouldSubmitComposer({ key: "a", shiftKey: false, nativeEvent: {} }), false);
 });
 
+test("syncComposerDraft stores one draft per session key and clears on empty", () => {
+  const drafts = new Map();
+  appModule.syncComposerDraft(drafts, "session-1", "hello");
+  appModule.syncComposerDraft(drafts, "new-chat:conversation", "half typed");
+  assert.deepEqual([...drafts], [["session-1", "hello"], ["new-chat:conversation", "half typed"]]);
+  appModule.syncComposerDraft(drafts, "session-1", "");
+  assert.deepEqual([...drafts], [["new-chat:conversation", "half typed"]]);
+});
+
+test("composer restores the per-session draft after a switch remounts the pane", () => {
+  const drafts = new Map([["session-1", "写了一半的任务描述"]]);
+  const restored = renderToStaticMarkup(React.createElement(appModule.ChatPane, {
+    activeSession: { session_id: "session-1", scope_id: "conversation" },
+    messages: [], settings: {}, status: "Ready", running: false, approvals: [],
+    composerDrafts: drafts,
+  }));
+  assert.match(restored, /写了一半的任务描述/);
+
+  const otherSession = renderToStaticMarkup(React.createElement(appModule.ChatPane, {
+    activeSession: { session_id: "session-2", scope_id: "conversation" },
+    messages: [], settings: {}, status: "Ready", running: false, approvals: [],
+    composerDrafts: drafts,
+  }));
+  assert.match(otherSession, /<textarea[^>]*><\/textarea>/);
+});
+
 test("initial workbench load retries transient fetch failures", async () => {
   let calls = 0;
   const result = await appModule.initializeWorkbench(
