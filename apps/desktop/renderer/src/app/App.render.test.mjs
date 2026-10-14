@@ -1050,6 +1050,15 @@ test("syncComposerDraft stores one draft per session key and clears on empty", (
   assert.deepEqual([...drafts], [["new-chat:conversation", "half typed"]]);
 });
 
+test("replayEventAgeMs separates journal replay from fresh live events", () => {
+  const now = 1_000_000;
+  assert.equal(appModule.replayEventAgeMs({ timestamp_unix_ns: (now - 20_000) * 1e6 }, now), 20_000);
+  assert.equal(appModule.replayEventAgeMs({ timestamp_unix_ns: (now - 2) * 1e6 }, now), 2);
+  assert.equal(appModule.replayEventAgeMs({ timestamp_unix_ns: (now + 5) * 1e6 }, now), 0);
+  assert.equal(appModule.replayEventAgeMs({}, now), 0);
+  assert.equal(appModule.replayEventAgeMs({ timestamp_unix_ns: 0 }, now), 0);
+});
+
 test("composer restores the per-session draft after a switch remounts the pane", () => {
   const drafts = new Map([["session-1", "写了一半的任务描述"]]);
   const restored = renderToStaticMarkup(React.createElement(appModule.ChatPane, {

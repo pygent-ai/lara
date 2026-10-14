@@ -100,6 +100,10 @@ const TOOL_ARGUMENT_PREVIEW_LIMIT = 4_000;
 const TOOL_RESULT_PREVIEW_LIMIT = 6_000;
 const TRACE_RENDER_LIMIT = 300;
 const INITIAL_TRANSCRIPT_MESSAGE_LIMIT = 60;
+// Re-attach replay catch-up: an event recorded within this window counts as
+// live, and while catching up the view paints at most once per flush window.
+const REPLAY_LIVE_THRESHOLD_MS = 15000;
+const REPLAY_VIEW_FLUSH_MS = 1000;
 const EMPTY_SESSION_ACTIVITY = { events: [], shown: 0, total: 0, truncated: false };
 const EMPTY_TRACE_WINDOW = { shown: 0, total: 0, truncated: false };
 
@@ -657,11 +661,46 @@ export function App() {
         pendingSessionMessagesRef.current.set(streamSessionId, next);
       };
 
+      // Re-attaching to a running execution replays its journal from the
+      // start (no attach cursor yet — see the comment at the streamChat call
+      // below). Replayed events still project into the cache immediately,
+      // but the view only paints on the slow flush cadence, so the backlog
+      // does not re-stream through the transcript.
+      let replayCatchup = Boolean(recovery);
+      let replayFlushTimer = null;
+      const flushReplayView = () => {
+        replayFlushTimer = null;
+        if (isStreamSessionVisible()) {
+          setMessages(streamMessages);
+          setLiveEvents(streamEvents);
+        }
+      };
+      const scheduleReplayViewFlush = () => {
+        if (replayFlushTimer !== null) {
+          return;
+        }
+        replayFlushTimer = globalThis.setTimeout(flushReplayView, REPLAY_VIEW_FLUSH_MS);
+      };
+      const endReplayCatchup = () => {
+        const wasReplaying = replayCatchup;
+        replayCatchup = false;
+        if (replayFlushTimer !== null) {
+          globalThis.clearTimeout(replayFlushTimer);
+          replayFlushTimer = null;
+        }
+        return wasReplaying;
+      };
+
       const updateVisibleMessages = (updater) => {
         updateCachedMessages(updater);
-        if (isStreamSessionVisible()) {
-          setMessages(updater);
+        if (!isStreamSessionVisible()) {
+          return;
         }
+        if (replayCatchup) {
+          scheduleReplayViewFlush();
+          return;
+        }
+        setMessages(updater);
       };
 
       // Stream deltas arrive in bursts faster than frames: buffer them and
@@ -716,6 +755,13 @@ export function App() {
       setMessages(nextMessages);
 
       try {
+        // Recovery attaches without afterSequence, and pygent then subscribes
+        // from the execution's first event: the whole journal streams back
+        // before the live tail. The replay-catchup mode around
+        // updateVisibleMessages only hides the re-streaming visuals; the
+        // transfer and projection cost remains. If that cost matters, the
+        // fix is a protocol change: an attach cursor (last-seen sequence or
+        // turn-start marker) honored by the server and sent by this client.
         await api.streamChat(
           {
             message,
@@ -735,6 +781,16 @@ export function App() {
             },
             onEvent: ({ data }) => {
               const eventKind = data.kind || "";
+              if (replayCatchup && replayEventAgeMs(data) <= REPLAY_LIVE_THRESHOLD_MS) {
+                // A freshly recorded event means the replay reached the live
+                // tail: paint the accumulated state once and resume normal
+                // streaming cadence.
+                endReplayCatchup();
+                if (isStreamSessionVisible()) {
+                  setMessages(streamMessages);
+                  setLiveEvents(streamEvents);
+                }
+              }
               const eventData = data.data || {};
               const eventSessionId = eventKind === "lara.chat.started" ? String(eventData.session_id || "") : "";
               if (eventSessionId && !streamSessionId) {
@@ -784,7 +840,11 @@ export function App() {
                 apiEventToTraceEvent(data),
               );
               if (isStreamSessionVisible()) {
-                setLiveEvents(streamEvents);
+                if (replayCatchup) {
+                  scheduleReplayViewFlush();
+                } else {
+                  setLiveEvents(streamEvents);
+                }
               }
               const isStreamDelta = eventKind === "model.text.delta" || eventKind === "model.reasoning.delta";
               if (isStreamDelta) {
@@ -843,6 +903,11 @@ export function App() {
             },
           },
         );
+        const wasReplaying = endReplayCatchup();
+        if (wasReplaying && isStreamSessionVisible()) {
+          setMessages(streamMessages);
+          setLiveEvents(streamEvents);
+        }
         flushDeltaEvents();
         const currentSessionId = activeSessionIdRef.current;
         if (streamSessionId) {
@@ -4148,6 +4213,16 @@ export function shouldSubmitComposer(event) {
 export function syncComposerDraft(drafts, key, value) {
   if (value) drafts.set(key, value);
   else drafts.delete(key);
+}
+
+export function replayEventAgeMs(event, now = Date.now()) {
+  const timestamp = Number(event?.timestamp_unix_ns);
+  // No usable timestamp: treat as live so unknown event shapes keep the
+  // current always-paint behavior.
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return 0;
+  }
+  return Math.max(0, now - timestamp / 1e6);
 }
 
 export async function initializeWorkbench(
