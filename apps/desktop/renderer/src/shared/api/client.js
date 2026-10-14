@@ -317,6 +317,7 @@ async function streamChatTurn({ baseUrl, fetchImpl, request, onEvent, onConnecti
         baseUrl,
         fetchImpl,
         request: { ...request, executionId, afterSequence },
+        onActivity: armStallTimer,
         onEvent: (event) => {
           armStallTimer();
           const data = event?.data || {};
@@ -369,7 +370,7 @@ async function streamChatTurn({ baseUrl, fetchImpl, request, onEvent, onConnecti
   }
 }
 
-async function streamChatAttempt({ baseUrl, fetchImpl, request, onEvent, signal }) {
+async function streamChatAttempt({ baseUrl, fetchImpl, request, onEvent, onActivity, signal }) {
   const response = await fetchImpl(`${baseUrl}/chat/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -407,6 +408,11 @@ async function streamChatAttempt({ baseUrl, fetchImpl, request, onEvent, signal 
     if (done) {
       break;
     }
+    // Any bytes from the wire count as liveness, including keep-alive
+    // comment lines that never surface as parsed events. Without this the
+    // caller's stall timer fires on healthy streams whose turn is merely
+    // quiet (for example while the model is generating).
+    onActivity?.();
     buffer += decoder.decode(value, { stream: true });
     const nextBuffer = emitCompleteSseBlocks(buffer, onEvent);
     buffer = nextBuffer;
