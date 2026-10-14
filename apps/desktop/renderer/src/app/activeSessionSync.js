@@ -1,8 +1,60 @@
 export const SESSION_HISTORY_LIMIT = 200;
 export const TRACE_EVENT_LIMIT = 500;
 export const CONTEXT_SNAPSHOT_LIMIT = 50;
+const EXECUTION_ID_POLL_MS = 2500;
 
 const EMPTY_ACTIVITY = { events: [], events_total: 0, events_truncated: false };
+
+// A running turn publishes runtime_execution_id only once the runtime has
+// started it, and context preparation can take tens of seconds. Nothing else
+// re-triggers this refresh while the run stays running, so poll lightly and
+// attach the moment the id exists instead of leaving the open session
+// spinning unattached for the whole turn.
+async function waitForRunningExecutionId({
+  api, sessionId, scopeId, signal, current, detail, pollMs,
+}) {
+  while (current()
+    && detail.session?.last_case_run_status === "running"
+    && !detail.runtime_execution_id) {
+    await delay(pollMs, signal);
+    if (!current()) return detail;
+    detail = await api.getSession(sessionId, {
+      scopeId,
+      historyLimit: 1,
+      signal,
+    });
+  }
+  if (current() && detail.runtime_execution_id) {
+    // The resume path rebuilds the transcript from history, so re-read the
+    // full detail once before handing it to onResume.
+    detail = await api.getSession(sessionId, {
+      scopeId,
+      historyLimit: SESSION_HISTORY_LIMIT,
+      signal,
+    });
+  }
+  return detail;
+}
+
+function delay(ms, signal) {
+  return new Promise((resolve, reject) => {
+    let timer = null;
+    const finish = () => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    };
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    timer = setTimeout(finish, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
 
 export async function refreshActiveSession({
   api,
@@ -13,15 +65,23 @@ export async function refreshActiveSession({
   onResume,
   onSnapshot,
   includeContextSnapshots = true,
+  executionIdPollMs = EXECUTION_ID_POLL_MS,
 }) {
   const current = () => !signal.aborted && isCurrent();
   if (!current()) return;
-  const detail = await api.getSession(sessionId, {
+  let detail = await api.getSession(sessionId, {
     scopeId,
     historyLimit: SESSION_HISTORY_LIMIT,
     signal,
   });
   if (!current()) return;
+  if (!detail.runtime_execution_id
+    && detail.session?.last_case_run_status === "running") {
+    detail = await waitForRunningExecutionId({
+      api, sessionId, scopeId, signal, current, detail, pollMs: executionIdPollMs,
+    });
+    if (!current()) return;
+  }
   if (detail.runtime_execution_id) {
     onResume(detail);
     return;
