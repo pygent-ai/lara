@@ -832,6 +832,7 @@ button:focus-visible {
 
 .markdown-content > * {
   margin: 0;
+  min-width: 0;
 }
 
 .markdown-content h1,
@@ -913,6 +914,14 @@ button:focus-visible {
   display: grid;
   gap: 6px;
   padding-left: 22px;
+}
+
+/* Lists are grids, so each li is a grid item: without min-width:0 an
+   unbreakable code line inside a fenced block nested in a step keeps the
+   item's min-content width and stretches the whole transcript sideways
+   instead of scrolling inside the block. */
+.markdown-content li {
+  min-width: 0;
 }
 
 .markdown-content blockquote {
