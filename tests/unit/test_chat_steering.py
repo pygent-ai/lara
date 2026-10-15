@@ -97,6 +97,82 @@ async def test_http_steering_reaches_running_react_and_persists_once(tmp_path: P
 
 
 @pytest.mark.asyncio
+async def test_http_steering_carries_attachments(tmp_path: Path) -> None:
+    attempts_started = [asyncio.Event() for _ in range(2)]
+    release = asyncio.Event()
+    requests = []
+
+    class Invoker:
+        def validate_model(self, model):
+            pass
+
+        def execute(self, *, message, context, **kwargs):
+            requests.append((message, context))
+            index = len(requests)
+
+            async def invoke(emit):
+                attempts_started[index - 1].set()
+                await release.wait()
+                return ModelProviderResponse(message=AIMessage(content=f"answer-{index}"), usage={})
+            return ModelExecution(invoke)
+
+        async def aclose(self):
+            pass
+
+    config = native_runtime_config(tmp_path)
+    config.eternal_conversation.enabled = False
+    manager = SessionManager(config)
+    session = manager.create("chat", mode="chat")
+    run = manager.start_case_run(session.session_id, "chat", run_config=config)
+    shot = tmp_path / "shot.png"
+    shot.write_bytes(b"\x89PNG\r\n\x1a\nrest-of-image")
+    service = LaraRuntimeService(config)
+    invoker = Invoker()
+    service._model_invokers[config.resolved_agent.alias] = invoker
+    for agent in service._agent_definitions.values():
+        agent.llm = invoker
+    try:
+        handle = await service.start_turn(
+            manager=manager, message="original task", run_ref=run, turn_id="steering-attachments",
+            interactive_approvals=False, deadline=time.monotonic() + 30,
+        )
+        await asyncio.wait_for(attempts_started[0].wait(), 10)
+        active = SimpleNamespace(run_ref=run, runtime_service=service)
+        coordinator = SimpleNamespace(find_execution=AsyncMock(return_value=active))
+        app = FastAPI()
+        app.include_router(router)
+        app.dependency_overrides[get_api_context] = lambda: SimpleNamespace(chat_registry=ChatRunRegistry(coordinator))
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            url = f"/chat/executions/{handle.execution_id}/steering"
+            body = {"session_id": session.session_id, "input_id": "input-1", "attachments": ["shot.png"]}
+            assert (await client.post(url, json={**body, "attachments": ["missing.png"]})).status_code == 400
+            response = await client.post(url, json=body)
+            assert response.status_code == 200, response.text
+            assert response.json()["status"] == "accepted"
+            await asyncio.wait_for(attempts_started[1].wait(), 10)
+            release.set()
+            await asyncio.wait_for(handle.result(), 10)
+        message, context = requests[1]
+        drained = [
+            item for item in (message, *context.messages)
+            if getattr(item, "kind", None) == "lara.user.steering"
+        ]
+        assert len(drained) == 1
+        assert drained[0].content == ""
+        assert list(drained[0].data["attachments"]) == ["shot.png"]
+        assert len(drained[0].media) == 1
+        assert drained[0].media[0].mime_type == "image/png"
+        history = manager.load(session.session_id).history
+        persisted = [item for item in history if item.get("kind") == "lara.user.steering"]
+        assert persisted[0]["content"] == ""
+        assert persisted[0]["data"]["attachments"] == ["shot.png"]
+        assert persisted[0]["media"]
+    finally:
+        release.set()
+        await service.close()
+
+
+@pytest.mark.asyncio
 async def test_steering_announces_its_react_boundary_once(tmp_path: Path) -> None:
     started, release = asyncio.Event(), asyncio.Event()
     requests = []

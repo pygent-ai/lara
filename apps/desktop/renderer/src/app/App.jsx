@@ -664,7 +664,7 @@ export function App() {
   const handleSendMessage = useCallback(
     async (message, recovery = null, attachments = []) => {
       const initialSessionId = recovery?.session.session_id || activeSessionIdRef.current;
-      if ((!recovery && !message.trim()) || (initialSessionId && runningSessionIdsRef.current[initialSessionId])) {
+      if ((!recovery && !message.trim() && !attachments.length) || (initialSessionId && runningSessionIdsRef.current[initialSessionId])) {
         return;
       }
       if (initialSessionId) {
@@ -915,6 +915,7 @@ export function App() {
                 const newAssistantId = `assistant-${Date.now()}`;
                 const nextMessages = splitAssistantForSteering(
                   streamMessages, activeAssistantId, inputId, String(eventData.content || ""), newAssistantId,
+                  Date.now(), eventData.data?.attachments,
                 );
                 if (nextMessages !== streamMessages) {
                   streamMessages = nextMessages;
@@ -1090,17 +1091,17 @@ export function App() {
     return () => controller.abort();
   }, [api, activeSessionId, activeSession?.scope_id, activeSessionListSignature, running]);
 
-  const handleSteering = useCallback(async (message, inputId) => {
+  const handleSteering = useCallback(async (message, inputId, attachments = []) => {
     const sessionId = activeSessionIdRef.current;
     const execution = activeExecutionsRef.current.get(sessionId);
     if (!execution || !runningSessionIdsRef.current[sessionId]) {
       throw new Error("执行尚未连接或已经结束，请稍后重试。");
     }
-    await api.steerChat(execution.executionId, { sessionId, inputId, message });
+    await api.steerChat(execution.executionId, { sessionId, inputId, message, attachments });
     // Show the input right away, but keep it pending: the runtime decides where
     // the ReAct boundary falls, and only its boundary event moves the activity
     // and places the input into the transcript.
-    setPendingSteerings((items) => addPendingSteering(items, sessionId, { inputId, text: message }));
+    setPendingSteerings((items) => addPendingSteering(items, sessionId, { inputId, text: message, attachments }));
     if (activeSessionIdRef.current === sessionId) {
       setNotice("指令已送达，将打断当前步骤并立即生效。");
     }
@@ -1986,7 +1987,8 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
 
   async function submit() {
     const text = draft.trim();
-    if (!text || sendingRef.current || configuring) {
+    const attachments = pendingAttachments;
+    if ((!text && !attachments.length) || sendingRef.current || configuring) {
       return;
     }
     setConfigError("");
@@ -1994,12 +1996,15 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
       if (!steeringReady) return;
       sendingRef.current = true;
       setSending(true);
-      if (pendingSteeringRef.current?.text !== text) {
+      // The input id also keys the runtime's idempotency window, so a failed
+      // submit retries the same input; a cleared composer starts a new one.
+      if (pendingSteeringRef.current?.text !== text || pendingSteeringRef.current?.attachments !== attachments) {
         pendingSteeringRef.current = { text, inputId: crypto.randomUUID() };
       }
       try {
-        await onSteering(text, pendingSteeringRef.current.inputId);
+        await onSteering(text, pendingSteeringRef.current.inputId, attachments);
         updateDraft("");
+        setPendingAttachments([]);
         pendingSteeringRef.current = null;
         followTranscriptRef.current = true;
       } catch (err) {
@@ -2013,7 +2018,7 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
     updateDraft("");
     setPendingAttachments([]);
     followTranscriptRef.current = true;
-    onSendMessage(text, null, pendingAttachments);
+    onSendMessage(text, null, attachments);
   }
 
   async function pickFiles(event) {
@@ -2141,6 +2146,13 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
             <div className="bubble">
               <span className="pending-steering-label">{item.stale ? "未生效 · 本轮已结束" : "待生效 · 即将打断当前步骤"}</span>
               {item.text}
+              {Array.isArray(item.attachments) && item.attachments.length > 0 && (
+                <span className="message-attachments">
+                  {item.attachments.map((path) => (
+                    <AttachmentPreview key={path} api={api} scopeId={selectedScope} path={path} variant="message" />
+                  ))}
+                </span>
+              )}
             </div>
           </article>
         ))}
@@ -2227,9 +2239,9 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
             options={(activeSession.selectable_models || []).map((model) => ({ value: model.model_key, label: model.model_key, description: `${model.provider} / ${model.model_id}` }))} />}
           <div className="composer-send-actions">
             <input ref={fileInputRef} type="file" multiple hidden aria-hidden="true" tabIndex={-1} onChange={(event) => void pickFiles(event)} />
-            {!running && <button className="attach" aria-label="添加附件" title="添加工作区文件作为附件（图片/视频原生识别，其他文件转 XML）" disabled={sending || configuring || pendingAttachments.length >= 10} type="button" onClick={() => fileInputRef.current?.click()}>
+            <button className="attach" aria-label="添加附件" title="添加工作区文件作为附件（图片/视频原生识别，其他文件转 XML）" disabled={sending || configuring || pendingAttachments.length >= 10} type="button" onClick={() => fileInputRef.current?.click()}>
               <Paperclip aria-hidden="true" />
-            </button>}
+            </button>
             <span className="composer-hint">{uploadingCount > 0 ? `正在上传附件…（${uploadingCount}）` : running ? (steeringReady ? "Enter 追加指令 · 立即打断当前步骤" : "正在连接执行，连接后可追加指令") : "Enter 发送 · Shift + Enter 换行 · 可粘贴或拖入文件"}</span>
             {running && onCancelTurn && <button className="stop" aria-label="取消当前任务" title="取消当前任务" disabled={cancelling} type="button" onClick={() => {
               if (cancelling) return;
@@ -2238,7 +2250,7 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
             }}>
               <Square aria-hidden="true" />
             </button>}
-            <button className="send" aria-label={running ? (steeringReady ? "追加指令" : "正在连接") : "发送"} title={running ? (steeringReady ? "追加指令" : "正在连接") : "发送"} disabled={(running && !steeringReady) || sending || configuring || uploadingCount > 0 || !draft.trim()} type="button" onClick={submit}>
+            <button className="send" aria-label={running ? (steeringReady ? "追加指令" : "正在连接") : "发送"} title={running ? (steeringReady ? "追加指令" : "正在连接") : "发送"} disabled={(running && !steeringReady) || sending || configuring || uploadingCount > 0 || (!draft.trim() && !pendingAttachments.length)} type="button" onClick={submit}>
               <ArrowUp aria-hidden="true" />
             </button>
           </div>
@@ -3430,8 +3442,10 @@ export function historyToMessages(history) {
   while (index < history.length) {
     const message = history[index] || {};
     const content = displayMessageContent(message);
-    if (content) {
-      const attachments = historyAttachments(message);
+    // An attachment-only turn persists with empty text; the chips alone must
+    // keep the user message visible across reloads.
+    const attachments = historyAttachments(message);
+    if (content || attachments) {
       rendered.push({ id: `history-${index}`, role: messageDisplayRole(message), content,
         ...(message.created_at ? { createdAt: message.created_at } : {}),
         ...(message.kind === "lara.user.steering" ? { steeringInputId: message.data?.input_id } : {}),
@@ -3562,10 +3576,16 @@ function tracePreviewPayload(payload) {
   return preview;
 }
 
-export function splitAssistantForSteering(items, assistantId, inputId, content, newAssistantId, now = Date.now()) {
+export function splitAssistantForSteering(items, assistantId, inputId, content, newAssistantId, now = Date.now(), attachments) {
   // Deduplicate steering boundaries already rendered from history or an earlier event.
   if (items.some((item) => item.steeringInputId === inputId || item.id === `steering-${inputId}`)) return items;
-  const user = { id: `steering-${inputId}`, role: "user", content, steeringInputId: inputId };
+  const user = {
+    id: `steering-${inputId}`,
+    role: "user",
+    content,
+    steeringInputId: inputId,
+    ...(Array.isArray(attachments) && attachments.length ? { attachments } : {}),
+  };
   const index = items.findIndex((item) => item.id === assistantId);
   const newAssistant = {
     id: newAssistantId,
