@@ -794,8 +794,11 @@ test("new chat stays enabled while another session is running", () => {
       collapsed: false,
       settings: { workspace_root: "", agent: "default", routes: [] },
       projects: [],
-      sessionGroups: [],
-      activeScopeId: "",
+      sessionGroups: [
+        { scope: { scope_id: "conversation", label: "Chat", workspace_root: null },
+          sessions: [{ session_id: "running-session", title: "Running chat", last_case_run_status: "running" }] },
+      ],
+      activeScopeId: "conversation",
       activeSessionId: "running-session",
       running: true,
       onCreateSession() {},
@@ -806,8 +809,32 @@ test("new chat stays enabled while another session is running", () => {
     }),
   );
 
-  assert.match(html, /class="icon-button header-action"[^>]*title="New chat"/);
-  assert.doesNotMatch(html, /title="New chat"[^>]*disabled/);
+  assert.match(html, /aria-label="New chat in Chat"/);
+  assert.doesNotMatch(html, /aria-label="New chat in Chat"[^>]*disabled/);
+});
+
+test("sidebar sections name recent chats and projects without agent echo", () => {
+  const sidebarProps = (agent) => ({
+    collapsed: false,
+    settings: { workspace_root: "", agent, routes: [] },
+    projects: [{ workspace_root: "C:/Projects/lara" }, { workspace_root: "C:/Projects/other" }],
+    sessionGroups: [],
+    activeScopeId: "",
+    activeSessionId: "",
+    onCreateSession() {},
+    onDeleteSession() {},
+    onSelectSession() {},
+    onOpenSettings() {},
+    onToggle() {},
+  });
+
+  const fallbackHtml = renderToStaticMarkup(React.createElement(appModule.SessionSidebar, sidebarProps("default")));
+  assert.match(fallbackHtml, /section-label recent-label">最近对话</);
+  assert.match(fallbackHtml, /<span>项目<\/span>/);
+  assert.doesNotMatch(fallbackHtml, / · default/);
+
+  const customHtml = renderToStaticMarkup(React.createElement(appModule.SessionSidebar, sidebarProps("dev")));
+  assert.doesNotMatch(customHtml, / · dev/);
 });
 
 test("live tool calls appear before results and update the same inspector row", () => {
@@ -975,6 +1002,28 @@ test("model tool completion backfills a row created by an early started event", 
   const [row] = completed.sections[0].calls;
   assert.equal(row.name, "edit");
   assert.match(row.arguments, /a\.py/);
+});
+
+test("long grep and glob patterns render as compact tool row labels", () => {
+  const longPattern = "\\.history-bottom|\\.plain-action|\\.session-more|\\.empty-state|\\.scheduled-rail|\\.history-shell \\{\n\\.history \\{";
+  const initial = { role: "assistant", content: "", status: "running", sections: [] };
+  const grep = appModule.projectLiveAssistantEvent(initial, {
+    kind: "model.tool_call.completed",
+    data: { call_id: "call-grep", name: "grep", arguments: { pattern: longPattern } },
+  });
+  const grepHtml = renderToStaticMarkup(React.createElement(appModule.AssistantActivity, { message: grep }));
+  assert.ok(
+    grepHtml.includes('tool-call-name">Grep \\.history-bottom|\\.plain-action|\\.session-mor...</span>'),
+    `label should be truncated, got: ${grepHtml}`,
+  );
+  assert.doesNotMatch(grepHtml, /scheduled-rail/);
+
+  const glob = appModule.projectLiveAssistantEvent(initial, {
+    kind: "model.tool_call.completed",
+    data: { call_id: "call-glob", name: "glob", arguments: { pattern: "**/*.py" } },
+  });
+  const globHtml = renderToStaticMarkup(React.createElement(appModule.AssistantActivity, { message: glob }));
+  assert.ok(globHtml.includes('tool-call-name">Glob **/*.py</span>'));
 });
 
 test("trace tools hide runtime internal bookkeeping calls", () => {
@@ -1901,8 +1950,111 @@ test("sidebar caps visible sessions per project and offers the full list on dema
     onReorderProjects() {}, onReorderSessions() {}, onChooseProject() {}, onOpenSettings() {},
     onOpenScheduled() {}, scheduledActive: false, onToggle() {},
   }));
-  assert.equal((html.match(/class="session-row"/g) || []).length, appModule.MAX_VISIBLE_SESSIONS);
+  // Rows carry extra state classes; count the project rows, not recents.
+  // Exclude recent rows and the session-row-actions container.
+  assert.equal((html.match(/class="session-row(?![-\w])(?! recent-row)[^"]*"/g) || []).length, appModule.MAX_VISIBLE_SESSIONS);
   assert.match(html, /显示全部 7 个会话/);
+});
+
+function recentTestGroups() {
+  const day = (n) => `2026-01-${String(n).padStart(2, "0")}T00:00:00Z`;
+  return [
+    { scope: { scope_id: "project:p", label: "P", workspace_root: "" }, sessions: [
+      { session_id: "s-old", title: "Old pinned", updated_at: day(1), pinned: true },
+      { session_id: "s-mid", title: "Middle", updated_at: day(4) },
+    ] },
+    { scope: { scope_id: "conversation", label: "Chat", workspace_root: null }, sessions: [
+      { session_id: "s-7", title: "Seventh", updated_at: day(7) },
+      { session_id: "s-6", title: "Sixth", updated_at: day(6) },
+      { session_id: "s-5", title: "Fifth", updated_at: day(5) },
+      { session_id: "s-2", title: "Second", updated_at: day(2) },
+    ] },
+  ];
+}
+
+test("recents lead with pinned sessions and cap at five until expanded", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.SessionSidebar, {
+    collapsed: false,
+    settings: {},
+    projects: [],
+    sessionGroups: recentTestGroups(),
+    activeScopeId: "",
+    activeSessionId: "",
+    onCreateSession() {}, onDeleteSession() {}, onSelectSession() {},
+    onToggleSessionPin() {}, onChooseProject() {}, onOpenSettings() {},
+    onOpenScheduled() {}, scheduledActive: false, onToggle() {},
+  }));
+
+  // Pinned leads even though it is the oldest; the rest follows recency.
+  // "Second" still renders in its project group below, so the cap is checked
+  // against the recent rows only.
+  const recentTitles = [...html.matchAll(/class="session-row recent-row[^"]*"[\s\S]*?title="([^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(recentTitles, ["Old pinned", "Seventh", "Sixth", "Fifth", "Middle"]);
+  assert.match(html, /显示全部 6 个会话/);
+});
+
+test("sidebar rows split affordances: recents pin, projects delete", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.SessionSidebar, {
+    collapsed: false,
+    settings: {},
+    projects: [],
+    sessionGroups: recentTestGroups(),
+    activeScopeId: "",
+    activeSessionId: "",
+    onCreateSession() {}, onDeleteSession() {}, onDeleteProject() {}, onSelectSession() {},
+    onToggleSessionPin() {}, onChooseProject() {}, onOpenSettings() {},
+    onOpenScheduled() {}, scheduledActive: false, onToggle() {},
+  }));
+
+  // 定时任务 reads as a section label like 最近对话/项目, not an icon button.
+  assert.match(html, /class="section-label scheduled-label" type="button">定时任务<\/button>/);
+  assert.doesNotMatch(html, /lucide-calendar-clock/);
+  // Project headers show the bare name without a folder glyph.
+  assert.doesNotMatch(html, /lucide-folder-code/);
+
+  const recentPart = html.slice(html.indexOf('class="recent-list"'), html.indexOf("projects-label"));
+  const projectPart = html.slice(html.indexOf('class="session-list"'));
+  assert.ok(recentPart.includes("session-pin"), "recent rows should offer pinning");
+  assert.ok(!recentPart.includes("session-delete"), "recent rows should not offer delete");
+  assert.ok(projectPart.includes("session-delete"), "project rows should offer delete");
+  assert.ok(!projectPart.includes("session-pin"), "project rows should not offer pinning");
+});
+
+test("recent pool orders pinned first, then recency, across scopes", () => {
+  const pool = appModule.buildRecentConversations(recentTestGroups(), "");
+  assert.deepEqual(
+    pool.map((item) => item.session.session_id),
+    ["s-old", "s-7", "s-6", "s-5", "s-mid", "s-2"],
+  );
+
+  // Searching filters the pool with the same title/id/scope match as the tree.
+  const filtered = appModule.buildRecentConversations(recentTestGroups(), "sixth");
+  assert.deepEqual(filtered.map((item) => item.session.session_id), ["s-6"]);
+});
+
+test("scheduled tasks render under the sidebar entry", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.SessionSidebar, {
+    collapsed: false,
+    settings: {},
+    projects: [],
+    sessionGroups: [],
+    automations: [
+      { automation_id: "a-1", name: "每晚回归", status: "active" },
+      { automation_id: "a-2", name: "周报整理", status: "paused" },
+      { automation_id: "a-3", name: "迁移执行", status: "completed" },
+    ],
+    activeScopeId: "",
+    activeSessionId: "",
+    onCreateSession() {}, onDeleteSession() {}, onSelectSession() {},
+    onToggleSessionPin() {}, onChooseProject() {}, onOpenSettings() {},
+    onOpenScheduled() {}, scheduledActive: false, onToggle() {},
+  }));
+  assert.match(html, /scheduled-name">每晚回归</);
+  assert.match(html, /aria-label="暂停 每晚回归"/);
+  assert.match(html, /aria-label="恢复 周报整理"/);
+  assert.equal((html.match(/class="scheduled-action"/g) || []).length, 2);
+  assert.equal((html.match(/class="scheduled-status"/g) || []).length, 1);
+  assert.equal((html.match(/class="scheduled-row"/g) || []).length, 3);
 });
 
 test("sidebar is memoized so chat streaming cannot re-render it", () => {

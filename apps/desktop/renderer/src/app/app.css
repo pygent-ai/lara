@@ -30,10 +30,33 @@
   --input-bg: #f7f6f2;
   --row-active-bg: #e5eaf0;
   --shadow: 0 24px 70px rgba(35, 67, 105, 0.12);
-  --history-width: 272px;
+  --history-width: 280px;
   --trace-width: 420px;
   --font-ui: "Segoe UI Variable Text", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
   --font-mono: "Cascadia Code", "Cascadia Mono", Consolas, "Microsoft YaHei UI", "PingFang SC", monospace;
+  /* Sidebar typography spec v1.0 — faces follow the app UI stack. */
+  --font-logo: 20px;
+  --font-section: 12px;
+  --font-navigation: 14px;
+  --font-project: 14px;
+  --font-session: 13px;
+  --font-meta: 11px;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --text-primary: #1c2733;
+  --text-secondary: #333f4f;
+  --text-muted: #8794a8;
+  --text-subtle: #98a4b5;
+  --text-active: #315c9c;
+  --selection-bg: #e9effa;
+  --sidebar-padding: 16px;
+  --project-height: 38px;
+  --session-height: 34px;
+  --session-indent: 16px;
+  --icon-size: 16px;
+  --item-radius: 8px;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring: cubic-bezier(0.34, 1.3, 0.64, 1);
   --dur-fast: 140ms;
@@ -125,7 +148,7 @@ button:focus-visible {
   flex-direction: column;
   gap: 14px;
   overflow: hidden;
-  padding: 18px 14px;
+  padding: 14px 16px;
   border-right: 1px solid var(--line);
   color: var(--muted);
   background: var(--bg-sidebar);
@@ -144,31 +167,44 @@ button:focus-visible {
 
 .history-top {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 6px;
   align-items: center;
 }
 
 .brand {
   min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.brand-spark {
+  width: var(--icon-size);
+  height: var(--icon-size);
+  color: var(--accent-deep);
+}
+
+.app-shell.history-collapsed .brand-spark {
+  display: none;
 }
 
 .brand-title {
   margin: 0;
-  color: var(--text);
-  font-size: 24px;
-  font-weight: 760;
-  line-height: 1.05;
+  color: #202c40;
+  font-size: var(--font-logo);
+  font-weight: 650;
+  line-height: 28px;
 }
 
 .history-header-actions {
   display: flex;
-  gap: 5px;
+  gap: 4px;
 }
 
 .history-header-actions .header-action {
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   border: 1px solid var(--line);
   background: var(--button-bg);
 }
@@ -218,8 +254,7 @@ button:focus-visible {
 .icon-button svg,
 .plain-action svg,
 .send svg,
-.session-delete svg,
-.session-group-header svg {
+.session-delete svg {
   width: 17px;
   height: 17px;
   flex: 0 0 auto;
@@ -293,12 +328,12 @@ button:focus-visible {
 
 .session-group-header {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 7px;
   align-items: center;
-  min-height: 34px;
-  padding: 7px 8px;
-  border: 1px solid transparent;
+  min-height: 32px;
+  padding: 4px 0;
+  border: 0;
   border-radius: 4px;
   color: var(--muted);
   background: transparent;
@@ -326,6 +361,31 @@ button:focus-visible {
   white-space: nowrap;
 }
 
+.session-group-chevron {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  color: var(--soft);
+  background: transparent;
+  cursor: pointer;
+}
+
+.session-group-chevron:hover { color: var(--accent-deep); background: var(--surface); }
+
+.session-group-chevron svg {
+  width: 16px;
+  height: 16px;
+}
+
+.recent-list {
+  display: grid;
+  gap: 2px;
+}
+
 .session-list {
   display: grid;
   gap: 8px;
@@ -334,12 +394,12 @@ button:focus-visible {
 .session-row {
   position: relative;
   display: grid;
-  grid-template-columns: 2px minmax(0, 1fr) 28px;
+  grid-template-columns: minmax(0, 1fr) 28px;
   gap: 10px;
   align-items: center;
   width: 100%;
   min-height: 38px;
-  padding: 6px 8px 6px 0;
+  padding: 6px 0;
   border: 0;
   border-radius: 4px;
   color: var(--muted);
@@ -379,30 +439,20 @@ button:focus-visible {
 }
 .session-more {
   width: fit-content;
-  margin: 2px 0 0 22px;
-  padding: 4px 10px;
+  margin: 0 0 0 16px;
+  padding: 2px 10px;
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: #657891;
-  font-size: 12px;
+  color: var(--text-subtle);
+  font-size: var(--font-meta);
+  line-height: 16px;
   text-align: left;
   cursor: pointer;
 }
 .session-more:hover {
-  color: #263e60;
+  color: var(--text-secondary);
   background: var(--button-hover-bg);
-}
-
-.session-rail {
-  width: 2px;
-  align-self: stretch;
-  border-radius: 0;
-  background: transparent;
-}
-
-.session-row.active .session-rail {
-  background: #8c99a4;
 }
 
 .session-copy {
@@ -511,13 +561,6 @@ button:focus-visible {
   font-size: 11px;
 }
 
-.history-bottom {
-  flex: 0 0 auto;
-  margin-top: auto;
-  display: grid;
-  gap: 10px;
-}
-
 .plain-action {
   height: 38px;
   display: flex;
@@ -534,30 +577,6 @@ button:focus-visible {
 
 .plain-action:hover {
   background: var(--button-hover-bg);
-}
-
-.runtime-card {
-  display: grid;
-  gap: 4px;
-  padding: 12px 2px;
-  border: 0;
-  border-top: 1px solid var(--line);
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.runtime-card strong {
-  color: var(--text);
-  font-size: 12px;
-}
-
-.runtime-card span {
-  color: var(--muted);
-  font-size: 11px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .app-shell.history-collapsed .history {
@@ -601,7 +620,6 @@ button:focus-visible {
 .app-shell.history-collapsed .section-label,
 .app-shell.history-collapsed .session-groups,
 .app-shell.history-collapsed .session-list,
-.app-shell.history-collapsed .runtime-card,
 .app-shell.history-collapsed .plain-action-label {
   display: none;
 }
@@ -620,11 +638,6 @@ button:focus-visible {
 }
 
 .app-shell.history-collapsed .history-header-actions { flex-direction: column; }
-
-.app-shell.history-collapsed .history-bottom {
-  width: 44px;
-  justify-items: center;
-}
 
 .chat {
   min-width: 0;
@@ -1385,8 +1398,7 @@ input:focus,
   font: inherit;
 }
 
-.scheduled-nav { display:flex; align-items:center; gap:9px; width:100%; margin:6px 0; padding:8px 10px; border:0; border-radius:8px; color:var(--muted); background:transparent; cursor:pointer; }
-.scheduled-nav:hover, .scheduled-nav.active, .scheduled-rail.active { color:var(--accent-deep); background:var(--row-active-bg); }
+.scheduled-rail.active { color:var(--accent-deep); background:var(--row-active-bg); }
 .scheduled-rail { align-self:center; margin:8px auto; }
 .scheduled-page { min-width:0; min-height:0; overflow:auto; padding:34px clamp(24px,5vw,72px); background:var(--bg-content); }
 .scheduled-header { display:flex; justify-content:space-between; align-items:flex-start; gap:24px; max-width:980px; margin:0 auto 24px; }
@@ -2409,16 +2421,17 @@ input:focus,
   gap: 6px;
 }
 
-.session-group-header.has-new-chat { padding-right: 38px; }
-.session-group-header.has-project-actions { padding-right: 68px; }
+.session-group-header.has-new-chat { padding-right: 60px; }
+.session-group-header.has-project-actions { padding-right: 92px; }
 
 .session-group-actions {
   position: absolute;
-  top: 3px;
-  right: 4px;
+  top: 2px;
+  right: 0;
   z-index: 1;
   display: flex;
   align-items: center;
+  gap: 4px;
 }
 
 .session-group-new-chat,
@@ -3009,34 +3022,92 @@ input:focus,
 }
 
 /* Task-focused desktop workbench */
-.new-task-button { display:flex; align-items:center; justify-content:flex-start; gap:9px; min-height:38px; padding:0 12px; border:1px solid #dce3ed; border-radius:8px; background:var(--surface); color:#334155; font-size:13px; font-weight:550; cursor:pointer; }
-.new-task-button:hover { border-color:var(--accent); background:var(--surface); }
-.history:not(.collapsed) .new-task-button + .session-search { margin-top:0; }
 .session-search { display:flex; align-items:center; gap:8px; color:var(--soft); padding:0 11px; border:1px solid transparent; border-radius:7px; background:var(--bg-quiet); }
 .session-search input { padding:8px 0; border:0; background:transparent; font-size:12px; box-shadow:none; }
 .session-search:focus-within { outline:2px solid var(--accent); outline-offset:1px; }
-.session-list { gap:0; margin-left:0; padding-left:22px; }
-.session-group-header:not(.has-project-actions) ~ .session-list { padding-left:0; }
-.session-row { min-height:32px; padding:2px 8px 2px 0; border-radius:7px; margin:0; gap:8px; }
-.session-title { font-size:14px; font-weight:450; color:#526073; }
-.session-row.active { background:var(--row-active-bg); }
-.session-row.active .session-title { font-weight:550; color:#263e60; }
-.session-row.active .session-rail { background:transparent; }
-.history-shell { gap:12px; }
+.session-list { gap:0; padding-left:16px; }
+.session-row { min-height:30px; padding:1px 0; border-radius:7px; margin:0; gap:8px; }
+.scheduled-list { display:grid; gap:2px; margin:2px 0 0 16px; }
+.scheduled-row { min-height:30px; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:1px 0; border-radius:7px; cursor:pointer; }
+.scheduled-row:hover { background:var(--button-hover-bg); }
+.scheduled-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--font-session); font-weight:var(--weight-regular); line-height:20px; color:var(--text-secondary); }
+.scheduled-action, .scheduled-status {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 0;
+  padding: 0;
+  border-radius: 7px;
+  color: var(--muted);
+  background: transparent;
+}
+.scheduled-action { cursor: pointer; transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out); }
+.scheduled-action:hover { color: var(--accent-deep); background: var(--button-hover-bg); }
+.scheduled-action svg, .scheduled-status svg { width: 12px; height: 12px; }
+.session-title { font-size:var(--font-session); font-weight:var(--weight-regular); line-height:20px; color:var(--text-secondary); }
+.session-row.active { background:var(--selection-bg); }
+.session-row.active .session-title { font-weight:var(--weight-medium); color:var(--text-primary); }
+.history { font-family: var(--sidebar-font); }
+.history-shell { gap:8px; }
+.history .empty-state { color: var(--text-subtle); line-height: 18px; }
+.history .empty-state.compact { font-size: var(--font-section); }
 .history .section-label { margin:8px 8px 0; font-size:10px; font-weight:550; color:#8b95a4; }
-.session-groups { gap:18px; }
-.session-group { gap:4px; }
+.history .recent-label,
+.history .projects-label,
+.history .scheduled-label { display:flex; align-items:center; margin:6px 0 0; min-height:24px; font-size:var(--font-section); font-weight:var(--weight-semibold); line-height:18px; color:var(--text-muted); text-transform:none; letter-spacing:0; }
+.history .projects-label { justify-content:space-between; }
+.history .scheduled-label { width:100%; border:0; padding:0; background:transparent; cursor:pointer; text-align:left; font-family:inherit; }
+.history .scheduled-label:hover, .history .scheduled-label.active { color:var(--accent-deep); }
+.history .recent-list { margin:4px 0 0 16px; }
+.section-label-actions { display:flex; align-items:center; gap:4px; }
+.section-action { width:28px; height:28px; }
+.section-action svg { width:16px; height:16px; }
+.section-action.active { color:var(--accent-deep); }
+.session-pin {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  color: var(--soft);
+  background: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+.session-row:hover .session-pin,
+.session-row:focus-within .session-pin,
+.session-pin.pinned { opacity: 1; pointer-events: auto; }
+.session-row:hover .session-pin,
+.session-row:focus-within .session-pin { right: 32px; }
+.session-pin:hover { color: var(--accent-deep); }
+.session-pin svg { width: 16px; height: 16px; }
+.session-pin.pinned { color: var(--accent-deep); }
+.session-pin.pinned svg { fill: currentColor; }
+/* Unpinned rows reveal the pin on hover only; a status dot owns the cell
+   until hover, then the pin takes its place. */
+.has-status:not(:hover) .session-pin { opacity: 0; pointer-events: none; }
+.session-groups { gap:10px; }
+.session-group { gap:2px; }
 .session-group-header { border-radius:7px; }
 .session-group-header.active { background:transparent; }
-.session-group-header .group-label { font-size:14px; font-weight:650; color:#34445a; }
-.session-group-header > svg { width:16px; height:16px; color:#657891; }
-.session-group-actions { opacity:0; transition:opacity var(--dur-fast) var(--ease-out); }
-.session-group:hover .session-group-actions, .session-group:focus-within .session-group-actions { opacity:1; }
+.session-group-header .group-label { font-size:var(--font-project); font-weight:var(--weight-semibold); line-height:20px; color:var(--text-primary); }
+.session-group-new-chat, .session-group-delete { opacity:0; pointer-events:none; transition:opacity var(--dur-fast) var(--ease-out); }
+.session-group:hover .session-group-new-chat, .session-group:focus-within .session-group-new-chat,
+.session-group:hover .session-group-delete, .session-group:focus-within .session-group-delete { opacity:1; pointer-events:auto; }
 .history-header-actions .header-action { border-color:transparent; background:transparent; }
 .history .brand-title { font-weight:650; }
-.history-top { gap:8px; }
-.history:not(.history-collapsed) .brand-title { font-size:23px; letter-spacing:-.6px; }
-.app-shell:not(.history-collapsed) .history-header-actions .header-action:first-child { display:none; }
+.history-top { gap:8px; min-height:52px; }
 .chat-header { padding:20px 28px; background:var(--bg-content); }
 .chat-title h2 { font-size:18px; font-weight:650; line-height:1.5; }
 .chat-title p { font-size:13px; line-height:1.5; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

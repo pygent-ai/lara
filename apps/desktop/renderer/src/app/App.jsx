@@ -4,8 +4,11 @@ export { SettingsPanel };
 export { modelGroupValidationError, settingsForSave, protocolLabel, providerSelectionValue, renamedConnectionValue, protocolChoicesForConnection, capabilityPresetLabel } from "../features/settings/settingsModel.js";
 import React, { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
+  ChevronDown,
+  ChevronUp,
   Folder,
   FolderCode,
+  FolderPlus,
   ArrowDown,
   ArrowUp,
   ChevronRight,
@@ -20,10 +23,14 @@ import {
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
+  Pause,
+  Pin,
+  Play,
   Plus,
   Search,
+  Settings2,
+  Sparkles,
   Square,
-  Settings as SettingsIcon,
   Trash2,
   X,
 } from "lucide-react";
@@ -165,6 +172,7 @@ export function App() {
   const [savingSettings, setSavingSettings] = useState(false);
   const settingsSaveBusyRef = useRef(false);
   const [activeView, setActiveView] = useState("chat");
+  const [automations, setAutomations] = useState([]);
   const projectChooserBusyRef = useRef(false);
   const activeSessionIdRef = useRef("");
   const messagesRef = useRef([]);
@@ -587,6 +595,49 @@ export function App() {
       sessionGroupSync.refresh().catch(() => {});
     }
   }, [api, sessionGroupSync]);
+
+  const handleToggleSessionPin = useCallback(async (session, scope, pinned) => {
+    const scopeId = scope?.scope_id || "";
+    setSessionGroups((current) => current.map((group) => (
+      group.scope?.scope_id !== scopeId ? group : {
+        ...group,
+        sessions: (group.sessions || []).map((item) => (
+          item.session_id === session.session_id ? { ...item, pinned } : item
+        )),
+      }
+    )));
+    try {
+      await api.updateSessionPin(session.session_id, { pinned, scopeId });
+    } catch (err) {
+      setError(readableError(err));
+      sessionGroupSync.refresh().catch(() => {});
+    }
+  }, [api, sessionGroupSync]);
+
+  const refreshAutomations = useCallback(async () => {
+    try {
+      const result = await api.listAutomations();
+      const next = result.automations || [];
+      setAutomations((current) => JSON.stringify(current) === JSON.stringify(next) ? current : next);
+    } catch {
+      // The sidebar keeps the last known list; the scheduled view surfaces errors.
+    }
+  }, [api]);
+  useEffect(() => { refreshAutomations(); }, [refreshAutomations, activeView]);
+  useEffect(() => {
+    const timer = setInterval(() => refreshAutomations(), 60000);
+    return () => clearInterval(timer);
+  }, [refreshAutomations]);
+
+  const handleToggleAutomation = useCallback(async (item) => {
+    try {
+      if (item.status === "active") await api.pauseAutomation(item.automation_id);
+      else if (item.status === "paused") await api.resumeAutomation(item.automation_id);
+      await refreshAutomations();
+    } catch (err) {
+      setError(readableError(err));
+    }
+  }, [api, refreshAutomations]);
 
   const handleSelectSession = useCallback(
     async (session, scope) => {
@@ -1171,6 +1222,8 @@ export function App() {
         settings={settings}
         projects={projects}
         sessionGroups={visibleSessionGroups}
+        automations={automations}
+        onToggleAutomation={handleToggleAutomation}
         activeScopeId={activeScopeId}
         activeSessionId={activeSessionId}
         onCreateSession={handleCreateSession}
@@ -1179,6 +1232,7 @@ export function App() {
         onSelectSession={handleSelectSession}
         onReorderProjects={handleReorderProjects}
         onReorderSessions={handleReorderSessions}
+        onToggleSessionPin={handleToggleSessionPin}
         onChooseProject={handleChooseProject}
         onOpenSettings={handleOpenSettings}
         onOpenScheduled={handleOpenScheduled}
@@ -1301,6 +1355,27 @@ export function appLayoutClassName(layout) {
 }
 
 export const MAX_VISIBLE_SESSIONS = 5;
+// The recents section shows a short default list and a wider expanded one;
+// pinned sessions always lead it and occupy slots like any other entry.
+export const RECENT_VISIBLE_SESSIONS = 5;
+export const RECENT_MAX_SESSIONS = 20;
+
+// Merge every scope's sessions into the recents pool: pinned lead in their
+// pin order, the rest follows by recency, and the caller caps the slice.
+export function buildRecentConversations(sessionGroups, search) {
+  const items = sessionGroups.flatMap((group) => (group.sessions || []).map((session) => ({ session, scope: group.scope })));
+  const matches = (item) => `${item.session.title || ""} ${item.session.session_id || ""} ${item.scope?.label || ""}`.toLocaleLowerCase().includes(search);
+  const pool = search ? items.filter(matches) : items;
+  const recency = (item) => {
+    const parsed = Date.parse(item.session.updated_at || "");
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const byRecency = (a, b) => recency(b) - recency(a);
+  return [
+    ...pool.filter((item) => item.session.pinned).sort(byRecency),
+    ...pool.filter((item) => !item.session.pinned).sort(byRecency),
+  ];
+}
 
 // Insert `fromId` where `toId` sits: dragging upward places the item before
 // the target, dragging downward after it, so a drop always swaps positions.
@@ -1318,6 +1393,8 @@ export const SessionSidebar = memo(function SessionSidebar({
   settings,
   projects,
   sessionGroups,
+  automations = [],
+  onToggleAutomation,
   activeScopeId,
   activeSessionId,
   onCreateSession,
@@ -1326,6 +1403,7 @@ export const SessionSidebar = memo(function SessionSidebar({
   onSelectSession,
   onReorderProjects,
   onReorderSessions,
+  onToggleSessionPin,
   onChooseProject,
   onOpenSettings,
   onOpenScheduled,
@@ -1337,6 +1415,8 @@ export const SessionSidebar = memo(function SessionSidebar({
   const [dragItem, setDragItem] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
   const [query, setQuery] = useState("");
+  const [recentExpanded, setRecentExpanded] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const search = query.trim().toLocaleLowerCase();
   // Searching rebuilds the filtered tree; without a query reuse the poll
   // payload identity so memoization below can actually skip work.
@@ -1345,6 +1425,12 @@ export const SessionSidebar = memo(function SessionSidebar({
         .map((group) => ({ ...group, sessions: (group.sessions || []).filter((session) => `${session.title || ""} ${session.session_id || ""} ${group.scope?.label || ""}`.toLocaleLowerCase().includes(search)) }))
         .filter((group) => group.sessions.length)
     : sessionGroups;
+  const recentPool = useMemo(
+    () => buildRecentConversations(sessionGroups, search),
+    [sessionGroups, search],
+  );
+  const recentLimit = recentExpanded ? RECENT_MAX_SESSIONS : RECENT_VISIBLE_SESSIONS;
+  const visibleRecent = recentPool.slice(0, recentLimit);
   const [acknowledgedStatuses, setAcknowledgedStatuses] = useState(loadAcknowledgedSessionStatuses);
   const [badgeBaseline, setBadgeBaseline] = useState(loadBadgeBaseline);
   const [badgeReady, setBadgeReady] = useState(false);
@@ -1449,31 +1535,127 @@ export const SessionSidebar = memo(function SessionSidebar({
       <div className="history-shell">
         <div className="history-top">
           <div className="brand">
+            <Sparkles className="brand-spark" aria-hidden="true" />
             <h1 className="brand-title">{collapsed ? "L" : "Lara"}</h1>
           </div>
-          <div className="history-header-actions" aria-label="Create">
-            <button className="icon-button header-action" title="New chat" aria-label="New chat in current project"
-              type="button" onClick={() => onCreateSession()}><Plus aria-hidden="true" /></button>
-            <button className="icon-button header-action" title="Open project" aria-label="Open project"
-              aria-haspopup="dialog" type="button" onClick={onChooseProject}><Folder aria-hidden="true" /></button>
+          <div className="history-header-actions">
+            <button className="icon-button header-action" title="Settings" aria-label="Settings" type="button" onClick={onOpenSettings}>
+              <Settings2 aria-hidden="true" />
+            </button>
+            <button
+              className="icon-button rail-button"
+              title={collapsed ? "Expand history" : "Collapse history"}
+              type="button"
+              onClick={onToggle}
+            >
+              {collapsed ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}
+            </button>
           </div>
-          <button
-            className="icon-button rail-button"
-            title={collapsed ? "Expand history" : "Collapse history"}
-            type="button"
-            onClick={onToggle}
-          >
-            {collapsed ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}
-          </button>
         </div>
 
         {!collapsed && <>
-          <button className="new-task-button" type="button" onClick={() => onCreateSession()}><Plus size={18} aria-hidden="true" />新建任务</button>
-          <button className={scheduledActive ? "scheduled-nav active" : "scheduled-nav"} type="button" onClick={onOpenScheduled}><CalendarClock size={17} aria-hidden="true" />定时任务</button>
-          <label className="session-search"><Search size={16} aria-hidden="true" /><input aria-label="搜索任务" placeholder="搜索任务或项目" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+          <div className="section-label recent-label">最近对话</div>
+          <div className="recent-list">
+            {recentPool.length === 0 && <div className="empty-state compact">暂无会话</div>}
+            {visibleRecent.map(({ session, scope }) => (
+              <SessionRow
+                active={session.session_id === activeSessionId}
+                key={session.session_id}
+                scope={scope}
+                session={session}
+                statusAcknowledged={acknowledgedStatuses[session.session_id] === sessionStatusIdentity(session)}
+                onAcknowledgeStatus={acknowledgeSessionStatus}
+                onSelectSession={onSelectSession}
+                onTogglePin={onToggleSessionPin}
+                recent
+              />
+            ))}
+            {recentPool.length > recentLimit && (
+              <button className="session-more" type="button" onClick={() => setRecentExpanded((current) => !current)}>
+                {recentExpanded ? "收起" : `显示全部 ${recentPool.length} 个会话`}
+              </button>
+            )}
+          </div>
+          <button className={scheduledActive ? "section-label scheduled-label active" : "section-label scheduled-label"} type="button" onClick={onOpenScheduled}>定时任务</button>
+          {automations.length > 0 && (
+            <div className="scheduled-list">
+              {automations.map((item) => (
+                <div
+                  className="scheduled-row"
+                  key={item.automation_id}
+                  role="button"
+                  tabIndex={0}
+                  title={item.prompt || item.name}
+                  onClick={() => onOpenScheduled()}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onOpenScheduled();
+                    }
+                  }}
+                >
+                  <span className="scheduled-name">{item.name}</span>
+                  {item.status === "active" ? (
+                    <button className="scheduled-action" type="button" title="暂停"
+                      aria-label={`暂停 ${item.name}`}
+                      onClick={(event) => { event.stopPropagation(); onToggleAutomation(item); }}>
+                      <Pause aria-hidden="true" />
+                    </button>
+                  ) : item.status === "paused" ? (
+                    <button className="scheduled-action" type="button" title="恢复"
+                      aria-label={`恢复 ${item.name}`}
+                      onClick={(event) => { event.stopPropagation(); onToggleAutomation(item); }}>
+                      <Play aria-hidden="true" />
+                    </button>
+                  ) : (
+                    <span className="scheduled-status" aria-hidden="true"><Check /></span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="section-label projects-label">
+            <span>项目</span>
+            <span className="section-label-actions">
+              <button
+                className={searchOpen ? "icon-button section-action active" : "icon-button section-action"}
+                title="搜索会话"
+                aria-label="搜索会话"
+                aria-expanded={searchOpen}
+                type="button"
+                onClick={() => {
+                  if (searchOpen && query) {
+                    setQuery("");
+                    return;
+                  }
+                  setSearchOpen((current) => !current);
+                }}
+              ><Search aria-hidden="true" /></button>
+              <button className="icon-button section-action" title="Open project" aria-label="Open project"
+                aria-haspopup="dialog" type="button" onClick={onChooseProject}><FolderPlus aria-hidden="true" /></button>
+            </span>
+          </div>
+          {searchOpen && (
+            <label className="session-search">
+              <Search size={16} aria-hidden="true" />
+              <input
+                autoFocus
+                aria-label="搜索任务"
+                placeholder="搜索任务或项目"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onBlur={() => { if (!query) setSearchOpen(false); }}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    if (query) setQuery("");
+                    else setSearchOpen(false);
+                  }
+                }}
+              />
+            </label>
+          )}
         </>}
         {collapsed && <button className={scheduledActive ? "icon-button scheduled-rail active" : "icon-button scheduled-rail"} title="定时任务" type="button" onClick={onOpenScheduled}><CalendarClock aria-hidden="true" /></button>}
-        <div className="section-label">项目与任务</div>
         <div className="session-groups">
           {sessionGroups.length === 0 && <div className="empty-state">No chats yet</div>}
           {search && filteredGroups.length === 0 && <div className="empty-state">没有匹配的任务，试试其他关键词。</div>}
@@ -1506,7 +1688,6 @@ export const SessionSidebar = memo(function SessionSidebar({
                   onDragEnd={endDrag}
                   onClick={() => toggleGroup(scope.scope_id)}
                 >
-                  {scope.workspace_root && <FolderCode aria-hidden="true" />}
                   <span className="group-label">{scope.label || "Workspace"}</span>
                 </button>
                 <div className="session-group-actions">
@@ -1525,6 +1706,15 @@ export const SessionSidebar = memo(function SessionSidebar({
                       <Trash2 aria-hidden="true" />
                     </button>
                   )}
+                  <button
+                    className="session-group-chevron"
+                    type="button"
+                    aria-label={isCollapsed ? `Expand ${scope.label || "project"}` : `Collapse ${scope.label || "project"}`}
+                    title={isCollapsed ? "展开" : "折叠"}
+                    onClick={() => toggleGroup(scope.scope_id)}
+                  >
+                    {isCollapsed ? <ChevronDown aria-hidden="true" /> : <ChevronUp aria-hidden="true" />}
+                  </button>
                 </div>
                 {!isCollapsed && (
                   <div className="session-list">
@@ -1562,18 +1752,6 @@ export const SessionSidebar = memo(function SessionSidebar({
             );
           })}
         </div>
-
-        <div className="history-bottom">
-          <div className="runtime-card">
-            <strong>{settings.agent || "default"}</strong>
-            <span>{primaryModel(settings)}</span>
-            <span>{projects.length ? `${projects.length} workspace` : "active workspace only"}</span>
-          </div>
-          <button className="plain-action" title="Settings" type="button" onClick={onOpenSettings}>
-            <SettingsIcon aria-hidden="true" />
-            <span className="plain-action-label">设置</span>
-          </button>
-        </div>
       </div>
     </aside>
   );
@@ -1587,6 +1765,8 @@ function SessionRow({
   onAcknowledgeStatus,
   onDeleteSession,
   onSelectSession,
+  onTogglePin,
+  recent = false,
   dragEnabled = false,
   dropActive = false,
   onDragStart,
@@ -1598,15 +1778,21 @@ function SessionRow({
   const statusKind = sessionStatusKind(session.last_case_run_status);
   const showStatus = statusKind === "running" || !statusAcknowledged;
   const canDelete = statusKind !== "running";
+  const pinned = Boolean(session.pinned);
 
   function selectSession() {
     onAcknowledgeStatus(session);
     onSelectSession(session, scope);
   }
 
+  function togglePin(event) {
+    event.stopPropagation();
+    onTogglePin?.(session, scope, !pinned);
+  }
+
   return (
     <div
-      className={`session-row${active ? " active" : ""}${dropActive ? " drop-target" : ""}`}
+      className={`session-row${recent ? " recent-row" : ""}${active ? " active" : ""}${dropActive ? " drop-target" : ""}${showStatus ? " has-status" : ""}`}
       role="button"
       tabIndex={0}
       draggable={dragEnabled}
@@ -1623,7 +1809,6 @@ function SessionRow({
         }
       }}
     >
-      <div className="session-rail" />
       <div className="session-copy">
         <div className="session-title" title={title}>
           {title}
@@ -1631,7 +1816,19 @@ function SessionRow({
       </div>
       <div className="session-row-actions">
         {showStatus && <span className={`session-indicator ${statusKind}`} aria-label={sessionStatusLabel(statusKind)} />}
-        {canDelete && (
+        {onTogglePin && (
+          <button
+            className={pinned ? "session-pin pinned" : "session-pin"}
+            title={pinned ? "取消固定" : "固定到最近对话"}
+            aria-label={pinned ? `Unpin ${title}` : `Pin ${title}`}
+            aria-pressed={pinned}
+            type="button"
+            onClick={togglePin}
+          >
+            <Pin aria-hidden="true" />
+          </button>
+        )}
+        {canDelete && onDeleteSession && (
           <button
             className="session-delete"
             title="Delete session"
@@ -4475,10 +4672,10 @@ function shortToolTarget(name, args) {
     return compactText(String(parsed.command || parsed.cmd || ""));
   }
   if (normalized === "grep") {
-    return String(parsed.pattern || parsed.query || parsed.regex || "").trim();
+    return compactText(String(parsed.pattern || parsed.query || parsed.regex || "").trim());
   }
   if (normalized === "glob") {
-    return String(parsed.pattern || parsed.glob_pattern || parsed.glob || parsed.include || "").trim();
+    return compactText(String(parsed.pattern || parsed.glob_pattern || parsed.glob || parsed.include || "").trim());
   }
   const path = String(parsed.path || parsed.file_path || parsed.file || parsed.target || parsed.filename || "").trim();
   return path ? shortPathLabel(path) : "";

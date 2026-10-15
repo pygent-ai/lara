@@ -157,6 +157,12 @@ export function createApiClient(options = {}) {
         method: "PATCH",
         body: { scope_id: scopeId, ordered_session_ids: orderedSessionIds },
       }),
+    updateSessionPin: (sessionId, { pinned, scopeId, ...options } = {}) =>
+      jsonRequest(`/sessions/${encodeURIComponent(sessionId)}/pin`, {
+        ...options,
+        method: "PATCH",
+        body: { pinned, scope_id: scopeId || undefined },
+      }),
     createSession: (request = {}, options = {}) =>
       jsonRequest("/sessions", {
         ...options,
