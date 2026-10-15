@@ -1246,6 +1246,13 @@ test("history, chat, and trace share one non-overlay grid", async () => {
   assert.doesNotMatch(css, /\.workbench\s*{/);
 });
 
+test("markdown grid items cannot stretch the transcript with unbreakable code lines", async () => {
+  const css = await readFile(new URL("./app.css", import.meta.url), "utf8");
+
+  assert.match(css, /\.markdown-content > \*\s*{[^}]*min-width:\s*0/);
+  assert.match(css, /\.markdown-content li\s*{[^}]*min-width:\s*0/);
+});
+
 test("layout mode is represented by the same state that drives panel toggles", () => {
   assert.equal(
     appModule.appLayoutClassName({ compact: true, historyCollapsed: true, traceCollapsed: false }),
