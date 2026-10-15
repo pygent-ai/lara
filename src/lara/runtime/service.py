@@ -355,7 +355,7 @@ class LaraRuntimeService:
                 max_waiters=max_live_executions + max_queue_size,
                 max_child_depth=max(8, config.delegation.max_depth + 2),
                 max_children_per_execution=max(
-                    1024, (config.max_steps if config.max_steps > 0 else 128) * 16
+                    4096, (config.max_steps if config.max_steps > 0 else 128) * 64
                 ),
                 max_external_wait_seconds=config.runtime_approvals.timeout_seconds,
             ),
