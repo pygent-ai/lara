@@ -54,6 +54,7 @@ class SessionRecordResponse(BaseModel):
     last_case_run_status: str | None = None
     model_group_name: str = ""
     selected_model_key: str = ""
+    pinned: bool = False
 
 
 class SessionListResponse(BaseModel):

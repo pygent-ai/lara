@@ -160,6 +160,10 @@ async def session_groups_response(context: ApiContext) -> SessionGroupListRespon
         )
         await reconcile_stale_running_sessions(context, manager, records)
         records = _apply_session_order(context.project_state, scope.scope_id, records)
+        pinned_ids = set(context.project_state.pinned_session_ids(scope.scope_id))
+        if pinned_ids:
+            for record in records:
+                record.pinned = record.session_id in pinned_ids
         groups.append(
             SessionGroupResponse(
                 scope=SessionScopeResponse(
