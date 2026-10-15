@@ -3416,14 +3416,19 @@ function historyAttachments(message) {
 export function historyToMessages(history) {
   const rendered = [];
   let index = 0;
+  // The display window can start mid-turn (the history limit cuts into a long
+  // run), so the messages before the first user message are one partial turn.
+  // Grouping them keeps the run's timing and status on a single activity
+  // block; one block per streamed round would repeat the run's failure header
+  // for every round.
+  while (index < history.length && String(history[index]?.role || "assistant") !== "user") {
+    index += 1;
+  }
+  if (index > 0) {
+    rendered.push(...renderTurnSegment(history.slice(0, index), `history-${index}`));
+  }
   while (index < history.length) {
     const message = history[index] || {};
-    const role = String(message.role || "assistant");
-    if (role !== "user") {
-      rendered.push(...renderTurnSegment([message], `history-${index}`));
-      index += 1;
-      continue;
-    }
     const content = displayMessageContent(message);
     if (content) {
       const attachments = historyAttachments(message);

@@ -1576,6 +1576,41 @@ test("missing or mismatched historical timing does not become a fabricated zero 
   assert.equal(activityHeaderText({ status: "error" }, 6000), "失败");
 });
 
+test("a history window that starts mid-turn groups the partial head into one activity block", () => {
+  const failedTiming = {
+    case_run_id: "run-long", started_at: "2026-09-04T10:00:00Z",
+    finished_at: "2026-09-04T10:46:34Z", status: "error",
+  };
+  const nextTiming = {
+    case_run_id: "run-next", started_at: "2026-09-04T11:00:00Z",
+    finished_at: "2026-09-04T11:00:07Z", status: "passed",
+  };
+  const history = [
+    { role: "assistant", content: "", run_timing: failedTiming,
+      tool_calls: [{ id: "call-a", function: { name: "bash", arguments: "{}" } }] },
+    { role: "tool", content: "out", tool_call_id: "call-a", name: "bash", run_timing: failedTiming },
+    { role: "assistant", content: "Still working", run_timing: failedTiming,
+      tool_calls: [{ id: "call-b", function: { name: "read", arguments: "{}" } }] },
+    { role: "tool", content: "out", tool_call_id: "call-b", name: "read", run_timing: failedTiming },
+    { role: "user", content: "Next question", run_timing: nextTiming },
+    { role: "assistant", content: "Next answer", run_timing: nextTiming },
+  ];
+  const restored = appModule.historyToMessages(history);
+  const assistantBlocks = restored.filter((message) => message.role === "assistant");
+  assert.equal(assistantBlocks.length, 2);
+  assert.equal(activityHeaderText(assistantBlocks[0], 90000), "46 分 34 秒后失败");
+  // Mid-turn text streams into an activity section; only a trailing content
+  // round becomes the block's answer.
+  assert.equal(assistantBlocks[0].content, "");
+  const textSections = (assistantBlocks[0].sections || []).filter(
+    (section) => section.type === "text" && section.title === "Assistant content",
+  );
+  assert.equal(textSections.length, 1);
+  assert.equal(textSections[0].content, "Still working");
+  assert.equal(assistantBlocks[0].caseRunId, "run-long");
+  assert.equal(activityHeaderText(assistantBlocks[1], 90000), "已完成 7 秒");
+});
+
 test("thinking streams with a live preview and completes when the answer or tools begin", () => {
   const section = { type: "text", title: "Thinking", content: "First line\nSecond line" };
   const live = renderToStaticMarkup(React.createElement(appModule.AssistantActivity, {
