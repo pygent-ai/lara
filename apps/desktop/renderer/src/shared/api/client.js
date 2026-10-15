@@ -210,10 +210,15 @@ export function createApiClient(options = {}) {
         method: "POST",
         body: { approved, comment },
       }),
-    steerChat: (executionId, { sessionId, inputId, message }, options = {}) =>
+    steerChat: (executionId, { sessionId, inputId, message, attachments }, options = {}) =>
       jsonRequest(`/chat/executions/${encodeURIComponent(executionId)}/steering`, {
         ...options, method: "POST",
-        body: { session_id: sessionId, input_id: inputId, message },
+        body: {
+          session_id: sessionId,
+          input_id: inputId,
+          message: message || null,
+          ...(Array.isArray(attachments) && attachments.length ? { attachments } : {}),
+        },
       }),
     cancelChatTurn: (executionId, { sessionId }, options = {}) =>
       jsonRequest(`/chat/executions/${encodeURIComponent(executionId)}/cancel`, {
@@ -381,7 +386,7 @@ async function streamChatAttempt({ baseUrl, fetchImpl, request, onEvent, onActiv
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      message: request.executionId ? null : request.message,
+      message: request.executionId || !request.message ? null : request.message,
       session_id: request.sessionId || null,
       scope_id: request.scopeId || null,
       case_id: request.caseId || "chat",

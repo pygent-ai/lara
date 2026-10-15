@@ -18,6 +18,28 @@ test("steering targets one execution and preserves the idempotent input identity
   assert.equal(calls[0].method, "POST");
 });
 
+test("steering forwards attachments and sends attachment-only inputs", async () => {
+  const calls = [];
+  const client = createApiClient({ fetchImpl: async (url, init) => {
+    calls.push(JSON.parse(init.body));
+    return new Response(JSON.stringify({ status: "accepted", input_id: "input-1" }));
+  } });
+  await client.steerChat("exec/1", {
+    sessionId: "session-1", inputId: "input-1", message: "look at this", attachments: ["shots/a.png"],
+  });
+  await client.steerChat("exec/1", {
+    sessionId: "session-1", inputId: "input-2", message: "", attachments: ["shots/b.png"],
+  });
+  await client.steerChat("exec/1", { sessionId: "session-1", inputId: "input-3", message: "text only" });
+  assert.deepEqual(calls[0], {
+    session_id: "session-1", input_id: "input-1", message: "look at this", attachments: ["shots/a.png"],
+  });
+  assert.deepEqual(calls[1], {
+    session_id: "session-1", input_id: "input-2", message: null, attachments: ["shots/b.png"],
+  });
+  assert.deepEqual(calls[2], { session_id: "session-1", input_id: "input-3", message: "text only" });
+});
+
 test("permission settings preserve false and omit unspecified modes", () => {
   assert.equal(settingsPayload({ approvalsEnabled: false }).approvals_enabled, false);
   assert.equal(settingsPayload({ approvalsEnabled: true }).approvals_enabled, true);
@@ -579,6 +601,9 @@ test("streamChat forwards workspace attachment paths in the request body", async
   assert.deepEqual(calls[0].attachments, ["shots/a.png", "logs/b.log"]);
   await client.streamChat({ message: "plain" }, { onEvent: () => {} });
   assert.equal("attachments" in calls[1], false);
+  await client.streamChat({ message: "", attachments: ["shots/c.png"] }, { onEvent: () => {} });
+  assert.equal(calls[2].message, null);
+  assert.deepEqual(calls[2].attachments, ["shots/c.png"]);
 });
 
 test("streamChat reconnects when the event stream goes silent mid-run", async (t) => {

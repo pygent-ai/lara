@@ -451,7 +451,14 @@ class ConversationCheckpointModelModule(Module[PygentMessage, AIMessage]):
                         "kind": "lara.user.steering",
                         "content": candidate.content,
                         "message_type": "conversation.user_message",
-                        "data": {"input_id": data["input_id"]},
+                        "data": {
+                            "input_id": data["input_id"],
+                            **(
+                                {"attachments": data["attachments"]}
+                                if data.get("attachments")
+                                else {}
+                            ),
+                        },
                         "is_delta": False,
                     },
                 )

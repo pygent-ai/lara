@@ -129,6 +129,26 @@ def test_chat_resume_uses_execution_identity_and_sequence() -> None:
     assert request.after_sequence == 7
 
 
+def test_chat_turn_accepts_attachments_without_message() -> None:
+    request = ChatTurnRequest(attachments=["shots/2026-10-15.png"])
+    assert request.message is None
+    assert request.attachments == ["shots/2026-10-15.png"]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"message": ""},
+        {"execution_id": "exec-1", "message": "hello"},
+        {"execution_id": "exec-1", "attachments": ["shot.png"]},
+    ],
+)
+def test_chat_turn_rejects_empty_and_mixed_start_or_resume(payload: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        ChatTurnRequest(**payload)
+
+
 @pytest.mark.parametrize(
     "payload",
     [

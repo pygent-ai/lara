@@ -906,10 +906,16 @@ class LaraRuntimeService:
         return handle
 
     async def send_steering(
-        self, execution_id: str, *, input_id: str, message: str, case_run_id: str,
+        self, execution_id: str, *, input_id: str, message: str | None,
+        case_run_id: str, attachments: Sequence[str] = (),
     ) -> Any:
         from pygent.agent import StandaloneUserMessage, SteeringMode
 
+        resolved_attachments: tuple[ResolvedAttachment, ...] = ()
+        if attachments:
+            resolved_attachments = resolve_attachments(
+                attachments, self.config.workspace_root
+            )
         handle = await self.runtime.get_execution_handle(execution_id)
         return await handle.send_input(
             input_id=input_id,
@@ -917,9 +923,22 @@ class LaraRuntimeService:
             value=encode_react_projection_operation(
                 StandaloneUserMessage(
                     UserMessage(
-                        content=message,
+                        content=message or "",
                         kind="lara.user.steering",
-                        data={"input_id": input_id, "case_run_id": case_run_id},
+                        data={
+                            "input_id": input_id,
+                            "case_run_id": case_run_id,
+                            **(
+                                {
+                                    "attachments": [
+                                        item.relative for item in resolved_attachments
+                                    ]
+                                }
+                                if resolved_attachments
+                                else {}
+                            ),
+                        },
+                        media=build_media_blocks(resolved_attachments),
                     ),
                     mode=(
                         SteeringMode.IMMEDIATE

@@ -249,6 +249,8 @@ test("running chat allows editing and offers steering", () => {
   assert.doesNotMatch(textarea, /disabled/);
   assert.match(html, /aria-label="追加指令"/);
   assert.match(html, /立即打断当前步骤/);
+  // Steering accepts attachments too, so the attach button stays mounted.
+  assert.match(html, /aria-label="添加附件"/);
   // A sent steering input stays visibly pending until the runtime reports its boundary.
   assert.match(html, /待生效 · 即将打断当前步骤/);
   assert.match(html, /未生效 · 本轮已结束/);
@@ -298,6 +300,35 @@ test("a steering boundary already rendered from history does not split twice", (
   assert.equal(split.length, restored.length + 2);
   assert.equal(split[2].content, "use Chinese");
   assert.equal(split.at(-1).id, "assistant-3");
+});
+
+test("a steering boundary carries its attachments into the split transcript", () => {
+  const running = [
+    { id: "user-1", role: "user", content: "original task" },
+    { id: "assistant-1", role: "assistant", content: "working", status: "running", sections: [] },
+  ];
+  const split = appModule.splitAssistantForSteering(
+    running, "assistant-1", "input-1", "", "assistant-2", Date.now(), [".lara/uploads/shot.png"],
+  );
+  const steering = split.find((item) => item.steeringInputId === "input-1");
+  assert.deepEqual(steering.attachments, [".lara/uploads/shot.png"]);
+  const withoutAttachments = appModule.splitAssistantForSteering(
+    running, "assistant-1", "input-2", "text only", "assistant-3",
+  );
+  assert.equal("attachments" in withoutAttachments[2], false);
+});
+
+test("attachment-only user turns survive history reload", () => {
+  const restored = appModule.historyToMessages([
+    { role: "user", content: "<user-context><user-message></user-message></user-context>", data: { raw_content: "", attachments: ["shots/a.png"] } },
+    { role: "assistant", content: "done" },
+    { role: "user", content: "", kind: "lara.user.steering", data: { input_id: "input-1", attachments: [".lara/uploads/b.png"] } },
+  ]);
+  const userTurn = restored.find((item) => item.role === "user" && !item.steeringInputId);
+  assert.deepEqual(userTurn.attachments, ["shots/a.png"]);
+  const steering = restored.find((item) => item.steeringInputId === "input-1");
+  assert.deepEqual(steering.attachments, [".lara/uploads/b.png"]);
+  assert.equal(steering.content, "");
 });
 
 test("steering waits for the react boundary, then moves new activity below it", () => {

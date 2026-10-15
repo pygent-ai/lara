@@ -49,10 +49,13 @@ class ChatTurnRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_start_or_resume(self) -> "ChatTurnRequest":
-        if bool(self.message) == bool(self.execution_id):
-            raise ValueError("provide exactly one of message or execution_id")
         if self.after_sequence is not None and self.execution_id is None:
             raise ValueError("after_sequence requires execution_id")
+        if self.execution_id is not None:
+            if self.message is not None or self.attachments:
+                raise ValueError("resume accepts neither message nor attachments")
+        elif self.message is None and not self.attachments:
+            raise ValueError("provide message or attachments when not resuming")
         return self
 
 
@@ -60,7 +63,14 @@ class ChatSteeringRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     session_id: str = Field(min_length=1)
     input_id: str = Field(min_length=1, max_length=128)
-    message: str = Field(min_length=1)
+    message: str | None = Field(default=None, min_length=1)
+    attachments: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_message_or_attachments(self) -> "ChatSteeringRequest":
+        if not self.message and not self.attachments:
+            raise ValueError("provide message or attachments")
+        return self
 
 class ChatCancelRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)

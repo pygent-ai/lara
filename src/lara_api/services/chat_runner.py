@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -341,8 +341,8 @@ class ChatRunRegistry:
                 raise
             await recovered.wait_ready()
             return ActiveChatRun(recovered)
-        if not request.message:
-            raise ValueError("message is required when execution_id is not provided")
+        if not request.message and not request.attachments:
+            raise ValueError("message or attachments is required when execution_id is not provided")
         service = session_service_for_scope(
             context,
             request.scope_id,
@@ -360,7 +360,7 @@ class ChatRunRegistry:
             config=manager.config,
             manager=manager,
             session_id=request.session_id,
-            message=request.message,
+            message=request.message or "",
             case_id=request.case_id,
             turn_id=request.turn_id,
             model_group_name=request.model_group_name,
@@ -396,14 +396,22 @@ class ChatRunRegistry:
             await lease.release()
 
     async def deliver_steering(
-        self, execution_id: str, *, session_id: str, input_id: str, message: str,
+        self, execution_id: str, *, session_id: str, input_id: str,
+        message: str | None, attachments: Sequence[str] = (),
     ) -> Any:
         active = await self.coordinator.find_execution(execution_id)
         if active is None or active.run_ref is None or active.run_ref.session_id != session_id:
             raise LookupError("当前会话没有对应的运行中执行，请等待连接恢复后重试。")
+        if attachments:
+            # Fail before the input is queued: send_steering resolves again
+            # against the same workspace root.
+            resolve_attachments(
+                attachments, active.runtime_service.config.workspace_root
+            )
         return await active.runtime_service.send_steering(
             execution_id, input_id=input_id, message=message,
             case_run_id=active.run_ref.case_run_id,
+            attachments=attachments,
         )
 
     async def cancel_turn(

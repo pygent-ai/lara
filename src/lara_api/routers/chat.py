@@ -51,9 +51,12 @@ async def deliver_steering(
         receipt = await context.chat_registry.deliver_steering(
             execution_id, session_id=request.session_id,
             input_id=request.input_id, message=request.message,
+            attachments=request.attachments,
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if receipt.status == "execution_finished":
         raise HTTPException(status_code=409, detail="当前执行已结束，无法追加指令；请作为新消息发送。")
     return {"execution_id": execution_id, "input_id": receipt.input_id, "status": receipt.status}
