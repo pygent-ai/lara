@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
 
+from lara.core.io import validate_path_id
 from lara_api.dependencies import ApiContext, get_api_context
-from lara_api.models.requests import CreateSessionRequest, ReorderSessionsRequest, UpdateSessionModelRequest
+from lara_api.models.requests import CreateSessionRequest, PinSessionRequest, ReorderSessionsRequest, UpdateSessionModelRequest
 from lara_api.models.responses import (
     DeleteResponse,
     SessionDetailResponse,
@@ -15,6 +17,7 @@ from lara_api.models.responses import (
     SessionListResponse,
     SessionRecordResponse,
 )
+from lara_api.project_state import active_project_scope_id
 from lara_api.services.session_service import SessionService, session_groups_etag, session_groups_response, session_service_for_scope
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -69,6 +72,30 @@ async def reorder_session_groups(
     context: ApiContext = Depends(get_api_context),
 ) -> SessionGroupListResponse:
     context.project_state.reorder_sessions(request.scope_id, request.ordered_session_ids)
+    return await session_groups_response(context)
+
+
+@router.patch("/{session_id}/pin", response_model=SessionGroupListResponse)
+async def pin_session(
+    session_id: str,
+    request: PinSessionRequest,
+    context: ApiContext = Depends(get_api_context),
+) -> SessionGroupListResponse:
+    """Toggle the sidebar pin state of one chat and serve the refreshed groups."""
+    try:
+        service = session_service_for_scope(context, request.scope_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    validate_path_id(session_id, "session_id")
+    sessions_root = Path(service.manager.sessions_root).resolve()
+    metadata_path = sessions_root / session_id / "metadata.json"
+    if not metadata_path.is_relative_to(sessions_root) or not metadata_path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Session {session_id!r} is unavailable in the current workspace",
+        )
+    scope_id = request.scope_id or active_project_scope_id(context.config.workspace_root)
+    context.project_state.pin_session(scope_id, session_id, request.pinned)
     return await session_groups_response(context)
 
 
@@ -137,6 +164,8 @@ def delete_session(
     scope_id: str | None = None,
     context: ApiContext = Depends(get_api_context),
 ) -> DeleteResponse:
-    return DeleteResponse(
-        deleted=session_service_for_scope(context, scope_id).delete_session(session_id)
-    )
+    deleted = session_service_for_scope(context, scope_id).delete_session(session_id)
+    # A deleted session keeps no pin entry behind, whether or not it still
+    # existed on disk when the delete arrived.
+    context.project_state.forget_session(session_id)
+    return DeleteResponse(deleted=deleted)

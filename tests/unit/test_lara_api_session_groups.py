@@ -557,6 +557,72 @@ async def test_session_groups_etag_follows_gui_state_changes(tmp_path, monkeypat
         assert updated.headers["ETag"] != etag
 
 
+def test_pin_session_flags_the_record_and_persists_across_contexts(tmp_path: Path) -> None:
+    from lara_api.models.requests import PinSessionRequest
+    from lara_api.routers.sessions import pin_session
+    from lara_api.services.session_service import session_groups_response
+
+    context = ApiContext(workspace_root=str(tmp_path), state_path=str(tmp_path / "state.json"))
+    service = SessionService(context.manager)
+    oldest = service.create_session().session_id
+    newest = service.create_session().session_id
+    scope_id = f"project:{tmp_path.resolve()}"
+
+    pinned = asyncio.run(pin_session(oldest, PinSessionRequest(pinned=True), context=context))
+    records = {
+        record.session_id: record
+        for group in pinned.groups if group.scope.scope_id == scope_id
+        for record in group.sessions
+    }
+    assert records[oldest].pinned is True
+    assert records[newest].pinned is False
+
+    # The pin lives in the gui state, so a fresh context reads the same flag.
+    reloaded = ApiContext(workspace_root=str(tmp_path), state_path=str(tmp_path / "state.json"))
+    groups = {group.scope.scope_id: group for group in asyncio.run(session_groups_response(reloaded)).groups}
+    records = {record.session_id: record for record in groups[scope_id].sessions}
+    assert records[oldest].pinned is True
+
+    unpinned = asyncio.run(pin_session(oldest, PinSessionRequest(pinned=False), context=context))
+    records = {
+        record.session_id: record
+        for group in unpinned.groups if group.scope.scope_id == scope_id
+        for record in group.sessions
+    }
+    assert records[oldest].pinned is False
+
+
+def test_deleting_a_session_drops_its_pin_entry(tmp_path: Path) -> None:
+    from lara_api.models.requests import PinSessionRequest
+    from lara_api.routers.sessions import delete_session, pin_session
+
+    context = ApiContext(workspace_root=str(tmp_path), state_path=str(tmp_path / "state.json"))
+    session_id = SessionService(context.manager).create_session().session_id
+    scope_id = f"project:{tmp_path.resolve()}"
+
+    asyncio.run(pin_session(session_id, PinSessionRequest(pinned=True), context=context))
+    assert context.project_state.pinned_session_ids(scope_id) == [session_id]
+
+    deleted = delete_session(session_id, scope_id=scope_id, context=context)
+    assert deleted.deleted is True
+    assert context.project_state.pinned_session_ids(scope_id) == []
+
+
+def test_pin_rejects_sessions_missing_from_the_scope(tmp_path: Path) -> None:
+    from fastapi import HTTPException
+
+    from lara_api.models.requests import PinSessionRequest
+    from lara_api.routers.sessions import pin_session
+
+    context = ApiContext(workspace_root=str(tmp_path), state_path=str(tmp_path / "state.json"))
+
+    with pytest.raises(HTTPException) as captured:
+        asyncio.run(pin_session("chat-ghost", PinSessionRequest(pinned=True), context=context))
+
+    assert captured.value.status_code == 404
+    assert context.project_state.pinned_session_ids(f"project:{tmp_path.resolve()}") == []
+
+
 class _MissingExecutionRuntime:
     async def get_execution_handle(self, execution_id: str):
         raise KeyError(execution_id)

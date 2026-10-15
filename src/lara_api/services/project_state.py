@@ -19,6 +19,7 @@ class GuiProjectState:
     recent_project_paths: list[str] | None = None
     collapsed_scope_ids: list[str] | None = None
     session_order: dict[str, list[str]] | None = None
+    pinned_sessions: dict[str, list[str]] | None = None
 
     @classmethod
     def load(cls, state_path: str | Path | None = None) -> "GuiProjectState":
@@ -39,6 +40,7 @@ class GuiProjectState:
             recent_project_paths=_unique(recent),
             collapsed_scope_ids=_unique([item for item in collapsed if item]),
             session_order=_session_order_from(raw_session_order),
+            pinned_sessions=_pinned_sessions_from(data.get("pinned_sessions")),
         )
 
     @property
@@ -75,6 +77,8 @@ class GuiProjectState:
         ]
         if self.session_order:
             self.session_order.pop(scope_id, None)
+        if self.pinned_sessions:
+            self.pinned_sessions.pop(scope_id, None)
         self.save()
         return True
 
@@ -124,6 +128,41 @@ class GuiProjectState:
         self.session_order = orders
         self.save()
 
+    def pinned_session_ids(self, scope_id: str) -> list[str]:
+        return list((self.pinned_sessions or {}).get(_normalize_scope_id(scope_id)) or [])
+
+    def pin_session(self, scope_id: str, session_id: str, pinned: bool) -> None:
+        normalized_scope = _normalize_scope_id(scope_id)
+        session_id = session_id.strip()
+        if not normalized_scope or not session_id:
+            return
+        pinned_map = {key: list(value) for key, value in (self.pinned_sessions or {}).items()}
+        # Newest pin first: the recents section reads this order directly, and
+        # re-pinning an already pinned session moves it back to the top.
+        ids = [item for item in pinned_map.get(normalized_scope, []) if item != session_id]
+        if pinned:
+            ids.insert(0, session_id)
+        if ids:
+            pinned_map[normalized_scope] = ids
+        else:
+            pinned_map.pop(normalized_scope, None)
+        self.pinned_sessions = pinned_map or None
+        self.save()
+
+    def forget_session(self, session_id: str) -> None:
+        """Drop pin entries for a deleted session so state.json cannot silt up."""
+        if not (self.pinned_sessions or {}) or not session_id.strip():
+            return
+        pinned_map = {
+            scope: [item for item in ids if item != session_id]
+            for scope, ids in (self.pinned_sessions or {}).items()
+        }
+        cleaned = {scope: ids for scope, ids in pinned_map.items() if ids}
+        if cleaned == self.pinned_sessions:
+            return
+        self.pinned_sessions = cleaned or None
+        self.save()
+
     def save(self) -> None:
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         self.state_path.write_text(
@@ -133,6 +172,7 @@ class GuiProjectState:
                     "recent_project_paths": self.recent_project_paths or [],
                     "collapsed_scope_ids": self.collapsed_scope_ids or [],
                     "session_order": self.session_order or {},
+                    "pinned_sessions": self.pinned_sessions or {},
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -226,6 +266,20 @@ def _session_order_from(raw: object) -> dict[str, list[str]]:
         if cleaned:
             orders[scope_id] = _unique(cleaned)
     return orders
+
+
+def _pinned_sessions_from(raw: object) -> dict[str, list[str]] | None:
+    if not isinstance(raw, dict):
+        return None
+    pinned: dict[str, list[str]] = {}
+    for scope_id, session_ids in raw.items():
+        normalized = _normalize_scope_id(scope_id)
+        if not normalized or not isinstance(session_ids, list):
+            continue
+        cleaned = [item for item in session_ids if isinstance(item, str) and item.strip()]
+        if cleaned:
+            pinned[normalized] = _unique(cleaned)
+    return pinned or None
 
 
 def _unique(values: list[str]) -> list[str]:

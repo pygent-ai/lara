@@ -28,6 +28,12 @@ class ReorderSessionsRequest(BaseModel):
     ordered_session_ids: list[str] = Field(default_factory=list)
 
 
+class PinSessionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    pinned: bool
+    scope_id: str | None = None
+
+
 class ChatTurnRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     message: str | None = Field(default=None, min_length=1)
