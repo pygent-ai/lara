@@ -49,9 +49,9 @@ function GroupModelSelect({ draft, groupName, selected, onSelect }) {
   </details>;
 }
 
-export function GroupSettings({ draft, setDraft, activeSection, setField, renameGroup, toggleGroupModel, moveGroupModel }) {
+export function GroupSettings({ draft, setDraft, activeSection, activeModelTab, setField, renameGroup, toggleGroupModel, moveGroupModel }) {
   return <>
-    <section hidden={activeSection !== "model-config"} className="fallback-editor" aria-label="Model groups">
+    <section hidden={activeSection !== "model-config" || activeModelTab !== "groups"} className="fallback-editor" aria-label="Model groups">
       <div className="model-group-heading">
         <div>
           <strong>模型组</strong>

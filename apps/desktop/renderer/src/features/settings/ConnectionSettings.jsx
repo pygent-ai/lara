@@ -12,6 +12,7 @@ export function ConnectionSettings({
   setDraft,
   catalogs,
   activeSection,
+  activeModelTab,
   addConnection,
   removeConnection,
   renameConnection,
@@ -22,9 +23,9 @@ export function ConnectionSettings({
   removeConnectionProtocol,
   addConnectionProtocol,
 }) {
-  return <section hidden={activeSection !== "model-config"} className="model-group-editor" aria-label="Native Pygent connections">
+  return <section hidden={activeSection !== "model-config" || activeModelTab !== "connections"} className="model-group-editor" aria-label="Native Pygent connections">
     <div className="model-group-heading">
-      <div><strong>1 · 服务连接</strong></div>
+      <div><strong>资源池</strong></div>
       <button className="route-add" type="button" onClick={addConnection}><Plus aria-hidden="true" /> 添加连接</button>
     </div>
     {!Object.keys(draft.connections).length && <p className="settings-inline-empty">还没有服务连接，请点击“添加连接”开始。</p>}

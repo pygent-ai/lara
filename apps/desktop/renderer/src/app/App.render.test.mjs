@@ -1779,7 +1779,11 @@ test("settings separate native model identity from connection fields", () => {
 
   assert.match(html, /模型信息/);
   assert.match(html, /决定调用谁、使用哪种 API 格式；不属于连接/);
-  assert.match(html, /1 · 服务连接/);
+  assert.match(html, /模型配置分层/);
+  assert.match(html, /资源池/);
+  assert.doesNotMatch(html.match(/<section([^>]*)aria-label="Native Pygent connections"/)[1], /hidden/);
+  assert.match(html.match(/<section([^>]*)aria-label="Native Pygent models"/)[1], /hidden=""/);
+  assert.match(html.match(/<section([^>]*)aria-label="Model groups"/)[1], /hidden=""/);
   assert.match(html, /连接名称/);
   assert.match(html, /供应商/);
   assert.match(html, /Pygent 内置/);
@@ -1798,7 +1802,8 @@ test("settings separate native model identity from connection fields", () => {
   } };
   assert.deepEqual(appModule.protocolChoicesForConnection("openai", catalogs), ["openai_responses", "openai_chat_completions"]);
   assert.deepEqual(appModule.protocolChoicesForConnection("company-gateway", catalogs), ["openai_responses", "openai_chat_completions", "anthropic_messages", "gemini_generate_content"]);
-  assert.match(html, /2 · 模型目录/);
+  assert.match(html, /启用模型/);
+  assert.match(html, /模型组/);
   assert.match(html, /openai-main · openai/);
   assert.match(html, /OpenAI Responses/);
   assert.match(html, /本地名称/);
