@@ -1357,12 +1357,13 @@ export function appLayoutClassName(layout) {
 
 export const MAX_VISIBLE_SESSIONS = 5;
 // The recents section shows a short default list and a wider expanded one;
-// pinned sessions always lead it and occupy slots like any other entry.
+// pinned sessions always lead it and occupy slots like any other entry. The
+// pool itself never exceeds RECENT_MAX_SESSIONS, so "更多" stays truthful.
 export const RECENT_VISIBLE_SESSIONS = 5;
 export const RECENT_MAX_SESSIONS = 20;
 
 // Merge every scope's sessions into the recents pool: pinned lead in their
-// pin order, the rest follows by recency, and the caller caps the slice.
+// pin order, the rest follows by recency, then the pool is capped.
 export function buildRecentConversations(sessionGroups, search) {
   const items = sessionGroups.flatMap((group) => (group.sessions || []).map((session) => ({ session, scope: group.scope })));
   const matches = (item) => `${item.session.title || ""} ${item.session.session_id || ""} ${item.scope?.label || ""}`.toLocaleLowerCase().includes(search);
@@ -1375,7 +1376,7 @@ export function buildRecentConversations(sessionGroups, search) {
   return [
     ...pool.filter((item) => item.session.pinned).sort(byRecency),
     ...pool.filter((item) => !item.session.pinned).sort(byRecency),
-  ];
+  ].slice(0, RECENT_MAX_SESSIONS);
 }
 
 // Insert `fromId` where `toId` sits: dragging upward places the item before
@@ -1571,9 +1572,9 @@ export const SessionSidebar = memo(function SessionSidebar({
                 recent
               />
             ))}
-            {recentPool.length > recentLimit && (
+            {recentPool.length > RECENT_VISIBLE_SESSIONS && (
               <button className="session-more" type="button" onClick={() => setRecentExpanded((current) => !current)}>
-                {recentExpanded ? "收起" : `显示全部 ${recentPool.length} 个会话`}
+                {recentExpanded ? "折叠更多会话" : "展开显示更多"}
               </button>
             )}
           </div>

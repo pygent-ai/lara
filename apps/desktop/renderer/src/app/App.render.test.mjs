@@ -1811,7 +1811,8 @@ test("settings separate native model identity from connection fields", () => {
   assert.match(html, /本地名称/);
   assert.match(html, /仅供 Lara 的模型组引用/);
   assert.doesNotMatch(html, /逗号分隔/);
-  assert.match(html, /type="checkbox" checked=""/);
+  // Membership is edited in the 模型组 tab; the model card summary lists it.
+  assert.match(html, /<span>coding<\/span>/);
 });
 
 test("existing idle chat exposes only child models from its fixed group", () => {
@@ -2004,7 +2005,7 @@ test("essential connection and model fields remain visible before optional detai
   const connection = html.slice(html.indexOf('connection-route-card'), html.indexOf('aria-label="Native Pygent models"'));
   const model = html.slice(html.indexOf('aria-label="Native Pygent models"'), html.indexOf('aria-label="Model groups"'));
   for (const field of ['连接名称', 'API Key', 'Base URL']) assert.ok(connection.indexOf(field) >= 0 && connection.indexOf(field) < connection.indexOf('<details'));
-  for (const field of ['使用连接', '服务商模型 ID', '所属模型组']) assert.ok(model.indexOf(field) >= 0 && model.indexOf(field) < model.indexOf('<details'));
+  for (const field of ['使用连接', '服务商模型 ID', '能力模板']) assert.ok(model.indexOf(field) >= 0 && model.indexOf(field) < model.indexOf('<details'));
   assert.match(html, /连接未验证|请填写 API Key/);
   assert.match(html.match(/<button[^>]*aria-label="Save and Reload"[^>]*>/)[0], /disabled/);
   assert.match(html, /默认模型组 · /);
@@ -2070,7 +2071,7 @@ test("recents lead with pinned sessions and cap at five until expanded", () => {
   // against the recent rows only.
   const recentTitles = [...html.matchAll(/class="session-row recent-row[^"]*"[\s\S]*?title="([^"]+)"/g)].map((match) => match[1]);
   assert.deepEqual(recentTitles, ["Old pinned", "Seventh", "Sixth", "Fifth", "Middle"]);
-  assert.match(html, /显示全部 6 个会话/);
+  assert.match(html, /展开显示更多/);
 });
 
 test("sidebar rows split affordances: recents pin, projects delete", () => {
@@ -2110,6 +2111,19 @@ test("recent pool orders pinned first, then recency, across scopes", () => {
   // Searching filters the pool with the same title/id/scope match as the tree.
   const filtered = appModule.buildRecentConversations(recentTestGroups(), "sixth");
   assert.deepEqual(filtered.map((item) => item.session.session_id), ["s-6"]);
+
+  // The pool is capped at RECENT_MAX_SESSIONS, so the oldest tail drops.
+  const bulk = Array.from({ length: 22 }, (_, index) => ({
+    session_id: `bulk-${index}`,
+    title: `Bulk ${index}`,
+    updated_at: `2026-02-${String(index + 1).padStart(2, "0")}T00:00:00Z`,
+  }));
+  const capped = appModule.buildRecentConversations(
+    [{ scope: { scope_id: "conversation", label: "Chat", workspace_root: null }, sessions: bulk }],
+    "",
+  );
+  assert.equal(capped.length, appModule.RECENT_MAX_SESSIONS);
+  assert.equal(capped.at(-1).session.session_id, "bulk-2");
 });
 
 test("scheduled tasks render under the sidebar entry", () => {
