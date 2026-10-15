@@ -12,6 +12,7 @@ import { settingsPayload } from "../shared/api/client.js";
 const desktopRoot = fileURLToPath(new URL("../../../", import.meta.url));
 let appModule;
 let errorBoundaryModule;
+let addModelModule;
 let vite;
 
 test("completion, replay, and history replacement share the durable run duration", () => {
@@ -42,6 +43,7 @@ before(async () => {
   });
   appModule = await vite.ssrLoadModule("/renderer/src/app/App.jsx");
   errorBoundaryModule = await vite.ssrLoadModule("/renderer/src/app/ErrorBoundary.jsx");
+  addModelModule = await vite.ssrLoadModule("/renderer/src/features/settings/AddModelForm.jsx");
 });
 
 after(async () => {
@@ -2133,6 +2135,29 @@ test("scheduled tasks render under the sidebar entry", () => {
   assert.equal((html.match(/class="scheduled-action"/g) || []).length, 2);
   assert.equal((html.match(/class="scheduled-status"/g) || []).length, 1);
   assert.equal((html.match(/class="scheduled-row"/g) || []).length, 3);
+});
+
+test("add-model id field uses a scrollable combobox instead of a datalist", () => {
+  const { AddModelForm, filterDiscoveredModels } = addModelModule;
+  const draft = {
+    connections: { az: { protocols: { openai_chat_completions: {} } } },
+    modelGroups: { main: [] },
+    defaultModelGroup: "main",
+  };
+  const html = renderToStaticMarkup(React.createElement(AddModelForm, {
+    draft, setDraft() {}, catalogs: {}, api: null, onDone() {}, onCancel() {},
+  }));
+  assert.doesNotMatch(html, /<datalist/);
+  assert.match(html, /role="combobox"/);
+  assert.doesNotMatch(html, /role="listbox"/);
+  assert.deepEqual(
+    filterDiscoveredModels(
+      [{ id: "gpt-4o", owned_by: "openai" }, { id: "claude-3", owned_by: "anthropic" }],
+      "GPT",
+    ),
+    [{ id: "gpt-4o", owned_by: "openai" }],
+  );
+  assert.equal(filterDiscoveredModels([{ id: "gpt-4o" }], "  ").length, 1);
 });
 
 test("sidebar is memoized so chat streaming cannot re-render it", () => {
