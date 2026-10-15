@@ -4,21 +4,21 @@ import { AddModelForm } from "./AddModelForm.jsx";
 import { Plus, Trash2 } from "lucide-react";
 import { protocolLabel } from "./settingsModel.js";
 
-export function ModelSettings({ draft, setDraft, catalogs, activeSection, discovered, discoveryState, api, removeModel, renameModel, setModel, setModelId, discoverModelIds }) {
+export function ModelSettings({ draft, setDraft, catalogs, activeSection, activeModelTab, discovered, discoveryState, api, removeModel, renameModel, setModel, setModelId, discoverModelIds }) {
   const [adding, setAdding] = useState(false);
   return <>
-          <section hidden={activeSection !== "model-config"} className="model-group-editor" aria-label="Native Pygent models">
+          <section hidden={activeSection !== "model-config" || activeModelTab !== "models"} className="model-group-editor" aria-label="Native Pygent models">
 
             <div className="model-group-heading">
               <div>
-                <strong>2 · 模型目录</strong>
+                <strong>启用模型</strong>
                 <span>模型只选择已有连接、协议和真实 Model ID；连接参数不会重复保存。</span>
               </div>
               <button className="route-add" type="button" disabled={adding || !Object.values(draft.connections).some(connection => Object.keys(connection.protocols || {}).length)} onClick={() => setAdding(true)}>
                 <Plus aria-hidden="true" /> 添加模型
               </button>
             </div>
-            {!Object.keys(draft.models).length && <p className="settings-inline-empty">还没有模型。先添加服务连接，再点击“添加模型”。</p>}
+            {!Object.keys(draft.models).length && <p className="settings-inline-empty">还没有模型。先在“资源池”中添加服务连接，再点击“添加模型”。</p>}
             {adding && <AddModelForm draft={draft} setDraft={setDraft} catalogs={catalogs} api={api} onDone={() => setAdding(false)} onCancel={() => setAdding(false)} />}
             <div className="model-route-list">
               {Object.entries(draft.models).map(([modelKey, model], index) => {

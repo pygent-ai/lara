@@ -12,6 +12,7 @@ import { RuntimeSettings } from "./RuntimeSettings.jsx";
 export function SettingsPage({ settings, disabled, onClose, onSave, api }) {
 
   const [activeSection, setActiveSection] = useState("model-config");
+  const [activeModelTab, setActiveModelTab] = useState("connections");
   const [confirmClose, setConfirmClose] = useState(false);
 
   const settingsRef = useRef(null);
@@ -20,9 +21,14 @@ export function SettingsPage({ settings, disabled, onClose, onSave, api }) {
   const { draft } = controller;
   const dirty = JSON.stringify(draft) !== JSON.stringify(settingsToDraft(settings));
   const sections = [
-    ["model-config", "模型配置", "服务连接、模型与模型组"],
+    ["model-config", "模型配置", "资源池、启用模型与模型组"],
     ["workspace", "项目与 Agent", "工作目录与执行角色"],
     ["runtime", "运行与权限", "执行步数、上下文与审批"],
+  ];
+  const modelTabs = [
+    ["connections", "资源池"],
+    ["models", "启用模型"],
+    ["groups", "模型组"],
   ];
   const currentSection = sections.find(([id]) => id === activeSection);
   function requestClose() {
@@ -71,11 +77,14 @@ export function SettingsPage({ settings, disabled, onClose, onSave, api }) {
           </nav>
           <div className="settings-form">
             <div className="settings-page-heading"><h3>{currentSection[1]}</h3></div>
+            {activeSection === "model-config" && <nav className="settings-subtabs" aria-label="模型配置分层">
+              {modelTabs.map(([id, title]) => <button type="button" key={id} aria-current={activeModelTab === id ? "true" : undefined} onClick={() => setActiveModelTab(id)}>{title}</button>)}
+            </nav>}
             <fieldset className="settings-fields" disabled={disabled}>
           <WorkspaceSettings {...controller} activeSection={activeSection} />
-          <ConnectionSettings {...controller} activeSection={activeSection} />
-          <ModelSettings {...controller} activeSection={activeSection} />
-          <GroupSettings {...controller} activeSection={activeSection} />
+          <ConnectionSettings {...controller} activeSection={activeSection} activeModelTab={activeModelTab} />
+          <ModelSettings {...controller} activeSection={activeSection} activeModelTab={activeModelTab} />
+          <GroupSettings {...controller} activeSection={activeSection} activeModelTab={activeModelTab} />
           <RuntimeSettings {...controller} activeSection={activeSection} />
             </fieldset>
           </div>
