@@ -221,7 +221,7 @@ class RegressionRunner:
                 "message_count": 0,
             },
         )
-        self.session_manager.finish_case_run(ref, "error")
+        self.session_manager.finish_case_run(ref, "error", error=str(exc))
         return {
             "path": case_spec.path,
             "resolved_path": str(case_path),

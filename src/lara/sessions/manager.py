@@ -17,6 +17,7 @@ from lara.core.io import (
     write_json,
     write_json_atomic,
 )
+from lara.core.process import current_owner
 from lara.core.redaction import redact_secrets
 from lara.schema import AgentSession, CaseRunRef, RunConfig, SessionRef, SessionSpec
 
@@ -193,6 +194,7 @@ class SessionManager:
                 "status": "running",
                 "started_at": utc_now(),
                 "history_start_index": len(session.history),
+                "owner": current_owner(),
                 **ref.to_dict(),
             },
         )
@@ -209,13 +211,23 @@ class SessionManager:
         )
         return ref
 
-    def finish_case_run(self, case_run_ref: CaseRunRef, status: str) -> None:
+    def finish_case_run(
+        self, case_run_ref: CaseRunRef, status: str, *, error: str | None = None
+    ) -> bool:
         if status not in {"passed", "failed", "error", "skipped"}:
             raise ValueError("status must be one of passed, failed, error, skipped")
         run_dir = Path(case_run_ref.run_dir)
         metadata_path = run_dir / "run_metadata.json"
         metadata = read_json(metadata_path)
+        if metadata.get("status") != "running":
+            # A case run has exactly one terminal. A second finish call means a
+            # lifecycle bug elsewhere (for example a peer host reconciling a run
+            # it does not own); keep the first verdict and the single terminal
+            # session event the UI consumes instead of regressing the outcome.
+            return False
         metadata.update({"status": status, "finished_at": utc_now()})
+        if error is not None:
+            metadata["error"] = error
         write_json_atomic(metadata_path, metadata)
         metadata_path = self._session_dir(case_run_ref.session_id) / "metadata.json"
         session_metadata = read_json(metadata_path)
@@ -249,8 +261,10 @@ class SessionManager:
                 "case_id": case_run_ref.case_id,
                 "case_run_id": case_run_ref.case_run_id,
                 "status": status,
+                "error": error,
             },
         )
+        return True
 
     def show(self, session_id: str) -> dict[str, Any]:
         session = self.load(session_id)
@@ -391,6 +405,13 @@ class SessionManager:
             "finished_at": metadata.get("finished_at"),
             "status": metadata.get("status"),
         }
+
+    def run_owner(self, ref: CaseRunRef) -> dict[str, Any] | None:
+        """Return the process stamp recorded when the run started, if any."""
+
+        metadata = read_json(Path(ref.run_dir) / "run_metadata.json", default={})
+        owner = metadata.get("owner")
+        return owner if isinstance(owner, dict) else None
 
     def load_run_config(
         self,

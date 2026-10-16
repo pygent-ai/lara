@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from lara.core.io import read_json, validate_path_id
+from lara.core.process import owner_is_foreign_and_alive
 from lara.runtime.reminders import ReminderService
 from lara.schema import CaseRunRef, RunConfig
 from lara.sessions import SessionManager
@@ -201,8 +202,16 @@ async def reconcile_stale_running_sessions(
             continue
         if await _execution_is_live(context, manager, run_ref):
             continue
+        if owner_is_foreign_and_alive(manager.run_owner(run_ref)):
+            # A live foreign host owns this run's terminal verdict; recording
+            # error here would overwrite its later real outcome.
+            continue
         try:
-            manager.finish_case_run(run_ref, "error")
+            manager.finish_case_run(
+                run_ref,
+                "error",
+                error="reconciled as error: no live execution handle exists for the run",
+            )
         except OSError:
             # Metadata repair must not fail the list; the next rebuild retries.
             continue

@@ -131,6 +131,7 @@ class SessionExecutionCoordinator:
 
     async def _drive_in_session_lane(self, turn: ManagedSessionTurn) -> None:
         status = "error"
+        error_detail: str | None = None
         try:
             turn.state = TurnState.STARTING
             if turn.run_ref is None:
@@ -169,18 +170,25 @@ class SessionExecutionCoordinator:
             assert output is not None
             result = plain_object(plain_object(output.data).get("result"))
             status = str(result.get("status") or "passed")
+            if status == "error":
+                error_detail = str(result.get("error") or "") or None
         except asyncio.CancelledError:
             status = "skipped"
             if turn.execution_handle is not None:
                 await turn.execution_handle.cancel()
         except BaseException as exc:
             turn.startup_error = exc
+            # The startup error otherwise lives only in memory; persisting it
+            # with the terminal is what makes a failed start diagnosable.
+            error_detail = f"{type(exc).__name__}: {exc}"
         finally:
             turn.state = TurnState.FINALIZING
             terminal = _terminal_state(status)
             if turn.run_ref is not None:
                 # The next turn cannot enter until final metadata is durable.
-                turn.manager.finish_case_run(turn.run_ref, terminal.value)
+                turn.manager.finish_case_run(
+                    turn.run_ref, terminal.value, error=error_detail
+                )
             turn.state = terminal
             turn.ready.set()
             turn.finalized.set()

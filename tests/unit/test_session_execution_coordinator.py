@@ -112,7 +112,7 @@ async def test_close_seals_a_turn_cancelled_before_start(tmp_path) -> None:
                 run_dir=str(tmp_path / "run-1"),
             )
 
-        def finish_case_run(self, _ref, _status):
+        def finish_case_run(self, _ref, _status, *, error=None):
             return None
 
     class _Runtime:
@@ -132,3 +132,42 @@ async def test_close_seals_a_turn_cancelled_before_start(tmp_path) -> None:
     assert turn.finalized.is_set()
     assert lease.released is True
     assert coordinator._managed_runs == {}
+
+
+@pytest.mark.asyncio
+async def test_startup_error_terminal_persists_error_detail(tmp_path) -> None:
+    coordinator = SessionExecutionCoordinator()
+    terminals: list[tuple[str, str | None]] = []
+
+    class _Manager:
+        sessions_root = tmp_path / "sessions"
+        config = SimpleNamespace()
+
+        def start_case_run(self, session_id, case_id, *, run_config):
+            del run_config
+            return CaseRunRef(
+                session_id=session_id,
+                case_id=case_id,
+                case_run_id="run-err",
+                run_dir=str(tmp_path / "run-err"),
+            )
+
+        def finish_case_run(self, _ref, status, *, error=None):
+            terminals.append((status, error))
+            return True
+
+    class _Runtime:
+        async def start_turn(self, **_kwargs):
+            raise RuntimeError("model group missing")
+
+    lease = _Lease(_Manager(), _Runtime())
+    turn = await coordinator.submit_turn(
+        lease=lease,
+        command=TurnCommand(session_id="session-1", message="hello"),
+    )
+
+    await turn.wait_finalized()
+
+    assert turn.state is TurnState.ERROR
+    assert turn.startup_error is not None
+    assert terminals == [("error", "RuntimeError: model group missing")]

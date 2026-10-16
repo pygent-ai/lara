@@ -11,6 +11,7 @@ from typing import Any
 from pygent import thaw_json
 
 from lara.core.io import append_jsonl, read_json
+from lara.core.process import owner_is_foreign_and_alive
 from lara.orchestration import (
     ManagedSessionTurn,
     SessionExecutionCoordinator,
@@ -24,6 +25,21 @@ from lara_api.models.requests import ChatTurnRequest
 from lara_api.services.session_service import session_service_for_scope
 
 CHAT_KEEPALIVE_SECONDS = 10.0
+
+
+def _should_finalize_on_resume_miss(manager: Any, run_ref: CaseRunRef) -> bool:
+    """Decide whether a resume miss may record an error terminal for `run_ref`.
+
+    Only a run whose owning process cannot finalize it anymore (this process,
+    or a dead owner) is reconciled here; a live foreign owner keeps authority
+    over its own terminal verdict.
+    """
+
+    if manager.run_timing(run_ref).get("status") != "running":
+        return False
+    return not owner_is_foreign_and_alive(manager.run_owner(run_ref))
+
+
 _TERMINAL_EVENTS = {
     "execution.completed",
     "execution.failed",
@@ -307,17 +323,27 @@ class ChatRunRegistry:
                     request.execution_id
                 )
             except KeyError:
-                # This process owns execution liveness: a resume miss means the
-                # turn died with its host process, so finalize the run the
-                # metadata still reports as running instead of retrying the
-                # resume forever.
-                if manager.run_timing(run_ref).get("status") == "running":
-                    try:
-                        manager.finish_case_run(run_ref, "error")
-                    except OSError:
-                        # Metadata repair must not mask the resume miss; the
-                        # next resume attempt reconciles again.
-                        pass
+                # A resume miss is only a death certificate for a run this
+                # process could own. Hosts share one project's sessions root,
+                # so the execution can also live in another live process (a
+                # CLI turn the UI attached to); finalizing that run here wrote
+                # a false error terminal over the owner's later real verdict.
+                if not _should_finalize_on_resume_miss(manager, run_ref):
+                    await lease.release()
+                    return None
+                try:
+                    manager.finish_case_run(
+                        run_ref,
+                        "error",
+                        error=(
+                            "resume miss: this process holds no execution "
+                            f"handle for {request.execution_id}"
+                        ),
+                    )
+                except OSError:
+                    # Metadata repair must not mask the resume miss; the
+                    # next resume attempt reconciles again.
+                    pass
                 await lease.release()
                 return None
             try:
