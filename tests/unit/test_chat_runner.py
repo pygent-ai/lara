@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -10,7 +12,8 @@ from pygent import AIMessage, Context
 
 from lara.orchestration import ManagedSessionTurn, TurnCommand, TurnState
 from lara.core.io import write_json
-from lara.schema import CaseRunRef
+from lara.schema import CaseRunRef, RunConfig
+from lara.sessions import SessionManager
 from lara_api.models.requests import ChatTurnRequest
 from lara_api.services import chat_runner
 from lara_api.services.chat_runner import (
@@ -274,8 +277,11 @@ async def test_nonterminal_durable_execution_is_recovered_instead_of_only_attach
             assert credential_source is self.config
             return self.config
 
-        def finish_case_run(self, ref: CaseRunRef, status: str) -> None:
+        def finish_case_run(self, ref: CaseRunRef, status: str, *, error: str | None = None) -> None:
             self.finished.append((ref, status))
+
+        def run_owner(self, _ref: CaseRunRef):
+            return None
 
     service = _RecoveryService()
     manager = _Manager()
@@ -416,7 +422,10 @@ async def test_resume_miss_finalizes_the_stale_running_run(
         def run_timing(self, ref: CaseRunRef) -> dict[str, str]:
             return {"status": self.status}
 
-        def finish_case_run(self, ref: CaseRunRef, status: str) -> None:
+        def run_owner(self, _ref: CaseRunRef):
+            return None
+
+        def finish_case_run(self, ref: CaseRunRef, status: str, *, error: str | None = None) -> None:
             self.finished.append((ref, status))
 
     class _Context:
@@ -492,7 +501,7 @@ async def test_resume_miss_keeps_terminal_runs_unchanged(
         def run_timing(self, ref: CaseRunRef) -> dict[str, str]:
             return {"status": "passed"}
 
-        def finish_case_run(self, ref: CaseRunRef, status: str) -> None:
+        def finish_case_run(self, ref: CaseRunRef, status: str, *, error: str | None = None) -> None:
             self.finished.append((ref, status))
 
     class _Context:
@@ -566,7 +575,7 @@ async def test_same_session_creates_next_case_run_only_after_finalization(
                 run_dir=str(tmp_path / run_id),
             )
 
-        def finish_case_run(self, ref, status):
+        def finish_case_run(self, ref, status, *, error=None):
             assert status == "passed"
             self.finished.append(ref.case_run_id)
 
@@ -650,3 +659,25 @@ async def test_closing_frontend_subscription_does_not_cancel_execution():
 
 async def _async_value(value):
     return value
+
+
+def test_resume_miss_finalize_decision_respects_the_run_owner(tmp_path) -> None:
+    manager = SessionManager(
+        RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
+    )
+    chat = manager.create("chat", mode="chat")
+    ref = manager.start_case_run(chat.session_id, "chat")
+
+    # This process owns the stamp, so it may reconcile its own abandoned run.
+    assert chat_runner._should_finalize_on_resume_miss(manager, ref) is True
+
+    metadata_path = Path(ref.run_dir) / "run_metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["owner"] = {"pid": os.getpid(), "process_token": "another-host-token"}
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    # A live foreign owner keeps terminal authority over its own run.
+    assert chat_runner._should_finalize_on_resume_miss(manager, ref) is False
+
+    manager.finish_case_run(ref, "passed")
+    assert chat_runner._should_finalize_on_resume_miss(manager, ref) is False

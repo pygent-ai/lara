@@ -55,7 +55,7 @@ def execute_case_run(
     if result.status != "error":
         result.status = evaluation.status  # type: ignore[assignment]
     write_json(run_dir / "result.json", result.to_dict())
-    manager.finish_case_run(ref, result.status)
+    manager.finish_case_run(ref, result.status, error=result.error)
     return {
         **ref.to_dict(),
         **result.to_dict(),

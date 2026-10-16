@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
 
 import pytest
 
-from lara.schema import ResolvedAgentConfig, RunConfig, SessionSpec
+from lara.schema import (
+    CaseRunRef,
+    ResolvedAgentConfig,
+    RunConfig,
+    SessionSpec,
+)
 from lara.sessions import SessionManager
 from tests.unit.test_model_configuration import native_mapping
 
@@ -385,3 +391,77 @@ def test_old_session_selection_resolves_default_and_persists_on_save(
 
     manager.save(loaded)
     assert json.loads(path.read_text(encoding="utf-8"))["model_group_name"] == "coding"
+
+    def test_finish_case_run_writes_one_terminal_and_persists_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = SessionManager(
+                RunConfig(workspace_root=tmp, lara_root=str(Path(tmp) / ".lara"))
+            )
+            chat = manager.create("chat", mode="chat")
+            ref = manager.start_case_run(chat.session_id, "chat")
+
+            self.assertTrue(
+                manager.finish_case_run(ref, "error", error="boom: adapter down")
+            )
+
+            metadata = json.loads(
+                (Path(ref.run_dir) / "run_metadata.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(metadata["status"], "error")
+            self.assertEqual(metadata["error"], "boom: adapter down")
+
+            events_path = (
+                Path(manager.sessions_root)
+                / chat.session_id
+                / "logs"
+                / "session-events.jsonl"
+            )
+            events = [
+                json.loads(line)
+                for line in events_path.read_text(encoding="utf-8").splitlines()
+                if line
+            ]
+            self.assertEqual(
+                [event["type"] for event in events],
+                ["case.started", "case.finished"],
+            )
+            self.assertEqual(events[-1]["payload"]["error"], "boom: adapter down")
+
+            # A second finish call is a lifecycle bug; the first terminal and
+            # its single session event must survive untouched.
+            self.assertFalse(manager.finish_case_run(ref, "passed"))
+            metadata = json.loads(
+                (Path(ref.run_dir) / "run_metadata.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(metadata["status"], "error")
+            events = [
+                json.loads(line)
+                for line in events_path.read_text(encoding="utf-8").splitlines()
+                if line
+            ]
+            self.assertEqual(
+                [event["type"] for event in events],
+                ["case.started", "case.finished"],
+            )
+
+    def test_start_case_run_records_owner_stamp(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = SessionManager(
+                RunConfig(workspace_root=tmp, lara_root=str(Path(tmp) / ".lara"))
+            )
+            chat = manager.create("chat", mode="chat")
+            ref = manager.start_case_run(chat.session_id, "chat")
+
+            owner = manager.run_owner(ref)
+            self.assertIsInstance(owner, dict)
+            self.assertEqual(owner["pid"], os.getpid())
+            self.assertTrue(owner["process_token"])
+            self.assertEqual(manager.run_timing(ref)["status"], "running")
+
+            missing = CaseRunRef(
+                session_id=chat.session_id,
+                case_id="chat",
+                case_run_id="run-none",
+                run_dir=str(Path(tmp) / "missing"),
+            )
+            self.assertIsNone(manager.run_owner(missing))
