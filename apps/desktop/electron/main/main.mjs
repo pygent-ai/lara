@@ -99,6 +99,7 @@ async function createWindow() {
     show: false,
     backgroundColor: "#f1f0ec",
     title: "Lara Desktop",
+    icon: path.join(__dirname, "assets", "lara.ico"),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

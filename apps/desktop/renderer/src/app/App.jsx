@@ -29,11 +29,11 @@ import {
   Plus,
   Search,
   Settings2,
-  Sparkles,
   Square,
   Trash2,
   X,
 } from "lucide-react";
+import laraLogo from "../assets/lara-logo.png";
 
 import { createApiClient } from "../shared/api/client.js";
 import { attachmentFileName, attachmentMediaType, isDocumentAttachment, isUploadedAttachment } from "../shared/media/mediaTypes.js";
@@ -1537,7 +1537,7 @@ export const SessionSidebar = memo(function SessionSidebar({
       <div className="history-shell">
         <div className="history-top">
           <div className="brand">
-            <Sparkles className="brand-spark" aria-hidden="true" />
+            <img className="brand-spark" src={laraLogo} alt="" aria-hidden="true" />
             <h1 className="brand-title">{collapsed ? "L" : "Lara"}</h1>
           </div>
           <div className="history-header-actions">

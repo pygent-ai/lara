@@ -60,6 +60,7 @@
       "target": [
         "nsis"
       ],
+      "icon": "electron/main/assets/lara.ico",
       "artifactName": "${productName}-${version}-setup.${ext}"
     },
     "portable": {

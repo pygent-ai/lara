@@ -182,7 +182,9 @@ button:focus-visible {
 .brand-spark {
   width: var(--icon-size);
   height: var(--icon-size);
-  color: var(--accent-deep);
+  border-radius: 4px;
+  /* Hairline ring keeps the white mark legible on the near-white sidebar. */
+  box-shadow: 0 0 0 1px rgba(35, 67, 105, 0.1);
 }
 
 .app-shell.history-collapsed .brand-spark {
