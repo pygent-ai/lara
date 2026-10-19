@@ -70,6 +70,8 @@ MODEL_RETRYABLE_ERROR_KINDS = (
 )
 LARA_PROJECTION_READY_KIND = "lara.react.projection.ready.v1"
 
+_MEDIA_OUTPUT_MODALITIES = frozenset({"image", "audio", "video"})
+
 
 def _model_trace_payload(
     config: RunConfig,
@@ -157,6 +159,7 @@ class LaraAgent(Agent[UserMessage, AIMessage]):
         memory_harness: EternalConversationHarness | None = None,
         reminders: ReminderService | None = None,
         bash_tasks: BashTaskObservations | None = None,
+        selected_model_key: str | None = None,
     ) -> None:
         super().__init__()
         self.config = config
@@ -172,6 +175,7 @@ class LaraAgent(Agent[UserMessage, AIMessage]):
         self.model_group_name = model_group_name or resolved.default_model_group
         if self.model_group_name not in native.model_groups:
             raise ValueError(f"unknown model group {self.model_group_name!r}")
+        self.selected_model_key = selected_model_key
         self.prompt_registry = prompt_registry
         self.managed_model = managed_model
         self.interactive_approvals = interactive_approvals
@@ -210,6 +214,26 @@ class LaraAgent(Agent[UserMessage, AIMessage]):
         assert self.config.model_config is not None
         return self.config.model_config.model_groups[self.model_group_name].models
 
+    def _media_output_modalities(self) -> tuple[str, ...]:
+        """Non-text output modalities the selected main model can produce.
+
+        Only the foreground managed path resolves a session-selected model;
+        internal ReAct jobs (memory, evaluation) stay text-only. Pygent's
+        invoker validates these against the candidate model's declared
+        capabilities, so a wrong capability only routes away from the model.
+        """
+
+        if not self.managed_model or not self.selected_model_key:
+            return ()
+        for entry in self._model_entries():
+            if entry.key == self.selected_model_key:
+                return tuple(
+                    modality
+                    for modality in entry.spec.capabilities.modalities.output
+                    if modality in _MEDIA_OUTPUT_MODALITIES
+                )
+        return ()
+
     def new_model_layer(self) -> ModelCallLayer:
         if self.llm is None:
             raise RuntimeError("model invoker is not configured")
@@ -235,7 +259,9 @@ class LaraAgent(Agent[UserMessage, AIMessage]):
                     multiplier=retry.backoff_multiplier,
                 ),
             ),
-            generation=GenerationConfig(),
+            generation=GenerationConfig(
+                output_modalities=self._media_output_modalities()
+            ),
             tools=self.tool_definitions,
             invoker=None if self.managed_model else self.llm,
         )

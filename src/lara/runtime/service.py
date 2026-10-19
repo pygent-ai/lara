@@ -405,12 +405,13 @@ class LaraRuntimeService:
             if config.resolved_agent is not None and config.model_config is not None
             else None
         )
-        self._agent_definitions: dict[tuple[int, bool, str], LaraAgent] = (
+        self._agent_definitions: dict[tuple[int, bool, str, str | None], LaraAgent] = (
             {
                 (
                     id(config),
                     False,
                     config.resolved_agent.default_model_group,
+                    None,
                 ): template
             }
             if template is not None and config.resolved_agent is not None
@@ -720,13 +721,21 @@ class LaraRuntimeService:
         interactive_approvals: bool,
         model_group_name: str | None = None,
         config: RunConfig | None = None,
+        selected_model_key: str | None = None,
     ) -> LaraAgent:
         effective_config = config or self.config
         resolved = effective_config.resolved_agent
         if resolved is None:
             raise ValueError("resolved agent configuration is required")
         selected_group = model_group_name or resolved.default_model_group
-        key = (id(effective_config), interactive_approvals, selected_group)
+        # The selected model decides the layer's media output modalities, so
+        # agents must not be shared across different session selections.
+        key = (
+            id(effective_config),
+            interactive_approvals,
+            selected_group,
+            selected_model_key,
+        )
         existing = self._agent_definitions.get(key)
         if existing is not None:
             return existing
@@ -744,6 +753,7 @@ class LaraRuntimeService:
             memory_harness=self.memory_harness,
             reminders=self.reminders,
             bash_tasks=self.bash_tasks,
+            selected_model_key=selected_model_key,
         )
         if resolved is not None and agent.llm is not None:
             self._model_invokers.setdefault(resolved.alias, agent.llm)
@@ -860,6 +870,7 @@ class LaraRuntimeService:
         agent = self.new_agent(
             interactive_approvals=interactive_approvals,
             model_group_name=group_name,
+            selected_model_key=selected_model_key,
         )
         turn_message, turn_context = await self._prepare_turn(
             manager=manager,
@@ -979,12 +990,13 @@ class LaraRuntimeService:
         )
         if not isinstance(recovered_context, LaraContext):
             raise TypeError("durable execution context is not a LaraContext")
-        group_name, _ = SessionManager(self.config).model_selection(
+        group_name, selected_model_key = SessionManager(self.config).model_selection(
             recovered_context.session_id
         )
         agent = self.new_agent(
             interactive_approvals=True,
             model_group_name=group_name,
+            selected_model_key=selected_model_key,
         )
         bound = await self.bind(agent, agent)
         await self.runtime.recover_tool_jobs(bound)
@@ -1091,6 +1103,7 @@ class LaraRuntimeService:
         agent = self.new_agent(
             interactive_approvals=False,
             model_group_name=group_name,
+            selected_model_key=selected_model_key,
         )
         turn_message, turn_context = await self._prepare_turn(
             manager=manager,
