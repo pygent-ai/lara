@@ -3357,6 +3357,28 @@ input:focus,
 .attachment-icon-chip { width:20px; height:20px; }
 .attachment-icon-message { width:26px; height:26px; border-radius:8px; }
 
+/* Native media blocks on transcript messages (assistant image/audio/video
+   output); degrade to an icon chip when bytes are unavailable. */
+.message-media { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; align-items:flex-start; }
+.markdown-content img { max-width: 100%; height: auto; }
+
+/* Shared image display: small thumbnail first, hover ghost buttons for
+   copy/download, click opens the zoom lightbox. */
+.media-image-frame { position: relative; display: inline-flex; }
+.markdown-image-thumb { display:block; max-width:220px; max-height:180px; width:auto; height:auto; border:1px solid var(--line-strong); border-radius:8px; background:var(--surface); cursor:zoom-in; }
+.message-media-image { display:block; max-width:280px; max-height:200px; width:auto; height:auto; object-fit:contain; border:1px solid var(--line-strong); border-radius:8px; background:var(--surface); cursor:zoom-in; }
+.media-image-actions { position:absolute; top:6px; right:6px; display:flex; gap:4px; opacity:0; transition:opacity .15s ease; }
+.media-image-frame:hover .media-image-actions, .media-image-frame:focus-within .media-image-actions { opacity:1; }
+.media-image-action { display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; padding:0; border:1px dashed rgba(255,255,255,.75); border-radius:6px; background:rgba(15,18,24,.45); color:#fff; cursor:pointer; backdrop-filter:blur(4px); }
+.media-image-action:hover { background:rgba(15,18,24,.72); border-style:solid; }
+.media-image-notice { position:absolute; bottom:6px; left:6px; padding:2px 8px; border-radius:6px; background:rgba(15,18,24,.68); color:#fff; font-size:11px; pointer-events:none; }
+.media-lightbox { position:fixed; inset:0; z-index:1200; display:flex; align-items:center; justify-content:center; padding:24px; background:rgba(8,10,14,.74); cursor:zoom-out; }
+.media-lightbox img { max-width:92vw; max-height:92vh; border-radius:8px; box-shadow:0 16px 56px rgba(0,0,0,.55); }
+.media-lightbox-close { position:absolute; top:16px; right:16px; width:32px; height:32px; }
+.message-media-video { display:block; width:280px; max-width:100%; border:1px solid var(--line-strong); border-radius:8px; background:var(--surface); }
+.message-media-audio { display:block; width:260px; max-width:100%; }
+.media-fallback { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border:1px dashed var(--line-strong); border-radius:8px; color:#4a5568; font-size:12px; }
+
 /* Add-model form: the model ID suggestions render in a capped, scrollable
    listbox because the native datalist popup clips at the window edge. */
 .add-model-id-control { position: relative; display: flex; align-items: center; gap: 6px; }
