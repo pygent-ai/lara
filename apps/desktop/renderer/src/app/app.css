@@ -524,7 +524,7 @@ button:focus-visible {
 }
 
 .session-row:hover .session-delete,
-.session-row:focus-within .session-delete {
+.session-row:is(:focus-visible, :has(:focus-visible)) .session-delete {
   opacity: 1;
   pointer-events: auto;
 }
@@ -3065,6 +3065,17 @@ input:focus,
 .scheduled-action:hover { color: var(--accent-deep); background: var(--button-hover-bg); }
 .scheduled-action svg, .scheduled-status svg { width: 12px; height: 12px; }
 .session-title { font-size:var(--font-session); font-weight:var(--weight-regular); line-height:20px; color:var(--text-secondary); }
+/* 平时标题铺满整列；悬停让位给 pin/删除按钮，同时文字滚动展示被截断的部分
+   （滚动距离 --title-shift 由 SessionRow 按 80% 悬停宽度实测写入）。 */
+.session-row:hover .session-title,
+.session-row:is(:focus-visible, :has(:focus-visible)) .session-title { max-width:80%; text-overflow:clip; }
+.session-row:hover .session-title-text,
+.session-row:is(:focus-visible, :has(:focus-visible)) .session-title-text { display:inline-block; animation:session-title-scroll 7s linear infinite; }
+@keyframes session-title-scroll {
+  0%, 15% { transform:translateX(0); }
+  50%, 65% { transform:translateX(calc(-1 * var(--title-shift, 0px))); }
+  100% { transform:translateX(0); }
+}
 .session-row.active { background:var(--selection-bg); }
 .session-row.active .session-title { font-weight:var(--weight-medium); color:var(--text-primary); }
 .history { font-family: var(--sidebar-font); }
@@ -3104,10 +3115,10 @@ input:focus,
     color var(--dur-fast) var(--ease-out);
 }
 .session-row:hover .session-pin,
-.session-row:focus-within .session-pin,
+.session-row:is(:focus-visible, :has(:focus-visible)) .session-pin,
 .session-pin.pinned { opacity: 1; pointer-events: auto; }
 .session-row:hover .session-pin,
-.session-row:focus-within .session-pin { right: 32px; }
+.session-row:is(:focus-visible, :has(:focus-visible)) .session-pin { right: 32px; }
 .session-pin:hover { color: var(--accent-deep); }
 .session-pin svg { width: 16px; height: 16px; }
 .session-pin.pinned { color: var(--accent-deep); }
@@ -3202,6 +3213,8 @@ input:focus,
   .app-shell, .history { transition:none; }
   .tab-indicator { transition:none; }
   .session-indicator.running { animation:none; }
+  .session-row:hover .session-title-text,
+  .session-row:is(:focus-visible, :has(:focus-visible)) .session-title-text { animation:none; }
 }
 .route-secret, .route-advanced { grid-column:1 / -1; }
 .route-advanced { font-size:13px; color:var(--muted); }
