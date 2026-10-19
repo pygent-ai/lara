@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { CalendarClock, Pause, Play, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { CalendarClock, CircleStop, Pause, Play, Plus, RefreshCw, Trash2, X } from "lucide-react";
 
 const EMPTY = {
   name: "",
@@ -92,6 +92,14 @@ export function ScheduledPage({ api, projects, activeSession, settings, onOpenSe
     } catch (err) { setError(String(err.message || err)); }
   }
 
+  async function cancelRun(item, run) {
+    await action(async () => {
+      await api.cancelAutomationRun(item.automation_id, run.run_id);
+      const result = await api.listAutomationRuns(item.automation_id);
+      setRuns((current) => ({ ...current, [item.automation_id]: result.runs || [] }));
+    });
+  }
+
   return <section className="scheduled-page" aria-label="定时任务">
     <header className="scheduled-header">
       <div><span className="scheduled-eyebrow">AUTOMATIONS</span><h2>定时任务</h2><p>让 Lara 在后台按计划执行项目任务。</p></div>
@@ -119,9 +127,12 @@ export function ScheduledPage({ api, projects, activeSession, settings, onOpenSe
           <button className="danger" type="button" disabled={busy} onClick={() => action(() => api.deleteAutomation(item.automation_id))}><Trash2 size={14} /></button>
         </div>
         {runs[item.automation_id] && <div className="automation-runs">{runs[item.automation_id].length === 0 ? <span>暂无运行记录</span> : runs[item.automation_id].map((run) =>
-          <button type="button" key={run.run_id} disabled={!run.session_id} onClick={() => run.session_id && onOpenSession(run.session_id, item.workspace_root)}>
-            <span className={`run-dot ${run.status}`} /><strong>{run.status}</strong><span>{formatDate(run.scheduled_for)}</span><span>{run.error || run.final_answer || ""}</span>
-          </button>)}</div>}
+          <div className="automation-run" key={run.run_id}>
+            <button className="automation-run-open" type="button" disabled={!run.session_id} onClick={() => run.session_id && onOpenSession(run.session_id, item.workspace_root)}>
+              <span className={`run-dot ${run.status}`} /><strong>{run.status}</strong><span>{formatDate(run.scheduled_for)}</span><span>{run.error || run.final_answer || ""}</span>
+            </button>
+            {run.status === "running" && <button className="automation-run-cancel" type="button" disabled={busy} title="取消此运行" onClick={() => cancelRun(item, run)}><CircleStop size={13} />取消</button>}
+          </div>)}</div>}
       </article>)}
     </div>
     {editing && <div className="automation-editor-backdrop"><form className="automation-editor" onSubmit={save}>

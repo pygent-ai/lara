@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,6 +23,14 @@ from lara_api.app import create_app
 
 def _future(minutes: int = 10) -> str:
     return (datetime.now(UTC) + timedelta(minutes=minutes)).isoformat()
+
+
+async def _acquire_noop(**_kwargs: Any) -> Any:
+    return SimpleNamespace(release=_release_noop)
+
+
+async def _release_noop() -> None:
+    return None
 
 
 def test_store_creates_one_time_task_and_claims_manual_run(tmp_path: Path) -> None:
@@ -236,6 +245,138 @@ async def test_scheduler_submits_unattended_standalone_trigger(tmp_path: Path) -
 
 
 @pytest.mark.asyncio
+async def test_scheduler_cancel_stops_running_run(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    config = RunConfig(
+        workspace_root=str(workspace), lara_root=str(workspace / ".lara")
+    )
+    store = AutomationStore(tmp_path / "automations.sqlite3")
+    automation = store.create(
+        name="nightly",
+        prompt="Inspect the build",
+        workspace_root=str(workspace),
+        destination="standalone",
+        timezone_name="UTC",
+        at_time=_future(),
+    )
+    requested = store.request_run(automation.automation_id)
+
+    class Lease:
+        runtime = SimpleNamespace(
+            reminders=SimpleNamespace(prewarm_session=lambda _session_id: None)
+        )
+
+        async def release(self) -> None:
+            return None
+
+    class Turn:
+        run_ref = SimpleNamespace(case_run_id="case-run-1")
+        execution_handle = SimpleNamespace(execution_id="execution-1")
+
+        def __init__(self) -> None:
+            self.finalized = asyncio.Event()
+            self.cancelled = False
+
+        async def wait_ready(self) -> None:
+            return None
+
+        async def cancel(self) -> bool:
+            self.cancelled = True
+            self.finalized.set()
+            return True
+
+        async def result(self):
+            await self.finalized.wait()
+            return (None, None)
+
+    class Coordinator:
+        def __init__(self) -> None:
+            self.turns: list[Turn] = []
+
+        async def submit_turn(self, *, lease, command):
+            turn = Turn()
+            self.turns.append(turn)
+            return turn
+
+    async def acquire_runtime(**_kwargs):
+        return Lease()
+
+    coordinator = Coordinator()
+    scheduler = AutomationScheduler(
+        store=store,
+        coordinator=cast(Any, coordinator),
+        acquire_runtime=cast(Any, acquire_runtime),
+        config_factory=lambda _workspace: config,
+        poll_seconds=0.01,
+    )
+    scheduler.start()
+    try:
+        for _ in range(200):
+            if requested.run_id in scheduler._turns:
+                break
+            await asyncio.sleep(0.01)
+        assert requested.run_id in scheduler._turns
+
+        assert await scheduler.cancel_run(requested.run_id) is True
+
+        completed = store.get_run(requested.run_id)
+        assert completed.status == "cancelled"
+        assert completed.error == "cancelled by user"
+        assert completed.case_run_id == "case-run-1"
+        assert coordinator.turns[0].cancelled is True
+        assert requested.run_id not in scheduler._tasks
+        # Cancelling a finished run again reports it is no longer active.
+        assert await scheduler.cancel_run(requested.run_id) is False
+    finally:
+        await scheduler.close()
+
+
+@pytest.mark.asyncio
+async def test_scheduler_cancel_finalizes_never_started_run(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    config = RunConfig(
+        workspace_root=str(workspace), lara_root=str(workspace / ".lara")
+    )
+    store = AutomationStore(tmp_path / "automations.sqlite3")
+    automation = store.create(
+        name="nightly",
+        prompt="Inspect the build",
+        workspace_root=str(workspace),
+        destination="standalone",
+        timezone_name="UTC",
+        at_time=_future(),
+    )
+    store.request_run(automation.automation_id)
+    [run] = store.claim_ready_runs(owner="test")
+
+    scheduler = AutomationScheduler(
+        store=store,
+        coordinator=cast(Any, SimpleNamespace()),
+        acquire_runtime=cast(Any, _acquire_noop),
+        config_factory=lambda _workspace: config,
+    )
+    started = asyncio.Event()
+
+    async def slow_start() -> None:
+        started.set()
+        await asyncio.Event().wait()
+
+    task = asyncio.create_task(slow_start())
+    scheduler._tasks[run.run_id] = task
+
+    # No await happens before cancel_run calls task.cancel(), so the coroutine
+    # never receives a timeslice and its finalizer never runs.
+    assert await scheduler.cancel_run(run.run_id) is True
+
+    assert task.cancelled()
+    cancelled = store.get_run(run.run_id)
+    assert cancelled.status == "cancelled"
+    assert cancelled.error == "cancelled before the run started"
+
+
+@pytest.mark.asyncio
 async def test_automation_api_crud_and_manual_run(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     workspace = tmp_path / "workspace"
@@ -267,3 +408,13 @@ async def test_automation_api_crud_and_manual_run(tmp_path: Path, monkeypatch) -
         assert run["status"] == "queued"
         runs = (await client.get(f"/automations/{automation_id}/runs")).json()
         assert runs["runs"][0]["run_id"] == run["run_id"]
+        missing = await client.post(
+            f"/automations/{automation_id}/runs/arun-missing/cancel"
+        )
+        assert missing.status_code == 404
+        # The scheduler is not started here, so the queued run cannot be
+        # cancelled in-process.
+        not_running = await client.post(
+            f"/automations/{automation_id}/runs/{run['run_id']}/cancel"
+        )
+        assert not_running.status_code == 409
