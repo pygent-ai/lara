@@ -218,6 +218,74 @@ test("history turns carry checkpoint timestamps and summed model usage", () => {
   assert.deepEqual(rendered[1].usage, { input_tokens: 300, output_tokens: 50, total_tokens: 360 });
 });
 
+test("history turns collect assistant media blocks from every round", () => {
+  const imageBlock = {
+    type: "media", media_type: "image", mime_type: "image/png",
+    source: { kind: "inline", base64_data: "aGVsbG8=" },
+  };
+  const rendered = appModule.historyToMessages([
+    { role: "user", content: "画一只猫" },
+    {
+      role: "assistant", content: "", tool_calls: [{ call_id: "call-b", name: "bash", arguments: {} }],
+      media: [imageBlock],
+    },
+    { role: "tool", content: "", results: [{ call_id: "call-b", name: "bash", status: "succeeded", output: "ok" }] },
+    { role: "assistant", content: "画好了" },
+  ]);
+  const assistant = rendered.find((message) => message.role === "assistant");
+  assert.deepEqual(assistant.media, [imageBlock]);
+});
+
+test("media-only assistant turns survive history rendering", () => {
+  const rendered = appModule.historyToMessages([
+    { role: "user", content: "生成图片" },
+    {
+      role: "assistant", content: "",
+      media: [{ type: "media", media_type: "image", mime_type: "image/png", source: { kind: "inline", base64_data: "aGVsbG8=" } }],
+    },
+  ]);
+  const assistant = rendered.find((message) => message.role === "assistant");
+  assert.ok(assistant, "media-only turn must stay visible");
+  assert.equal(assistant.media.length, 1);
+});
+
+test("media content renders inline base64 images, audio, and a fallback", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.MediaContent, {
+    media: [
+      { type: "media", media_type: "image", mime_type: "image/png", source: { kind: "inline", base64_data: "aGVsbG8=" } },
+      { type: "media", media_type: "audio", mime_type: "audio/wav", source: { kind: "inline", base64_data: "YXVkaW8=" } },
+      { type: "media", media_type: "video", mime_type: "video/mp4", source: { kind: "inline" } },
+    ],
+  }));
+  assert.match(html, /<img[^>]+src="data:image\/png;base64,aGVsbG8="/);
+  assert.match(html, /<audio[^>]+src="data:audio\/wav;base64,YXVkaW8="/);
+  assert.match(html, /媒体无法预览/);
+});
+
+test("markdown images keep data URIs and drop unsafe schemes", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.MarkdownContent, {
+    content: "![image](data:image/png;base64,aGVsbG8=)\n\n![x](javascript:alert(1))\n",
+  }));
+  assert.match(html, /<img[^>]+src="data:image\/png;base64,aGVsbG8="/);
+  assert.match(html, /markdown-image-thumb/);
+  assert.doesNotMatch(html, /javascript:/);
+  // Hover ghost actions render statically; the lightbox stays closed.
+  assert.match(html, /aria-label="复制图片"/);
+  assert.match(html, /aria-label="下载图片"/);
+  assert.doesNotMatch(html, /media-lightbox"/);
+});
+
+test("media block images reuse the interactive image view", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.MediaContent, {
+    media: [
+      { type: "media", media_type: "image", mime_type: "image/jpeg", source: { kind: "inline", base64_data: "aGVsbG8=" } },
+    ],
+  }));
+  assert.match(html, /<img[^>]+src="data:image\/jpeg;base64,aGVsbG8="/);
+  assert.match(html, /aria-label="复制图片"/);
+  assert.match(html, /aria-label="下载图片"/);
+});
+
 test("message timestamps show the clock time today and the date otherwise", () => {
   const now = new Date(2026, 9, 10, 16, 30).getTime();
   assert.equal(appModule.formatMessageTimestamp(new Date(2026, 9, 10, 16, 5).toISOString(), now), "16:05");

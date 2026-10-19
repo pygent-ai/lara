@@ -15,8 +15,10 @@ import {
   Check,
   CalendarClock,
   Copy,
+  Download,
   Film,
   FileText,
+  Image as ImageIcon,
   Music,
   Paperclip,
   PanelLeftClose,
@@ -56,7 +58,8 @@ import {
   toggleHistory,
   toggleTrace,
 } from "./layoutState.js";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
+import { createPortal } from "react-dom";
 import remarkGfmNoAutolink from "./remarkGfmNoAutolink.js";
 import {
   acknowledgeStoredSessionStatus,
@@ -2237,7 +2240,7 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
           {!activeSession && <ComposerMenu label="模型组" title="模型组在对话创建后固定" value={pendingNewModelGroup || settings.default_model_group || ""} disabled={running || configuring} onChange={onChangeNewModelGroup}
             options={Object.keys(settings.model_groups || {}).map((name) => ({ value: name, label: name, description: (settings.model_groups[name]?.models || []).join(" → ") }))} />}
           {activeSession && <ComposerMenu label="首选模型" title={`固定模型组：${activeSession.model_group_name || "未配置"}`} value={activeSession.selected_model_key || ""} disabled={running || configuring} onChange={(value) => void configure(() => onChangeModel(value))}
-            options={(activeSession.selectable_models || []).map((model) => ({ value: model.model_key, label: model.model_key, description: `${model.provider} / ${model.model_id}` }))} />}
+            options={(activeSession.selectable_models || []).map((model) => ({ value: model.model_key, label: model.model_key, description: modelCapabilitySummary(model, settings) }))} />}
           <div className="composer-send-actions">
             <input ref={fileInputRef} type="file" multiple hidden aria-hidden="true" tabIndex={-1} onChange={(event) => void pickFiles(event)} />
             <button className="attach" aria-label="添加附件" title="添加工作区文件作为附件（图片/视频原生识别，其他文件转 XML）" disabled={sending || configuring || pendingAttachments.length >= 10} type="button" onClick={() => fileInputRef.current?.click()}>
@@ -2334,6 +2337,190 @@ function AttachmentPreview({ api, scopeId, path, variant }) {
   );
 }
 
+// Native media blocks on transcript messages (assistant output today; user
+// media renders through its attachment paths instead). Inline blocks carry
+// base64 bytes in the message payload, uploads resolve through /uploads,
+// and anything else degrades to an icon so the bubble never breaks.
+function validMediaBlocks(media) {
+  return (Array.isArray(media) ? media : []).filter(
+    (block) => block && typeof block === "object" && block.type === "media",
+  );
+}
+
+function mediaBlockSrc(block, api, scopeId) {
+  const source = block?.source || {};
+  if (source.kind === "inline" && typeof source.base64_data === "string" && source.base64_data) {
+    return `data:${block.mime_type || "application/octet-stream"};base64,${source.base64_data}`;
+  }
+  if (source.kind === "resource" && typeof source.uri === "string" && source.uri && isUploadedAttachment(source.uri)) {
+    return api?.uploadContentUrl ? api.uploadContentUrl(scopeId, source.uri) : "";
+  }
+  if (source.kind === "url" && typeof source.url === "string" && source.url) {
+    return source.url;
+  }
+  return "";
+}
+
+// Interactive image display shared by transcript media blocks and markdown
+// images: a small thumbnail, hover ghost buttons for copy-to-clipboard and
+// download, and a click-to-zoom lightbox. Clipboard write needs PNG bytes,
+// so other formats are re-encoded through a canvas first.
+const MEDIA_IMAGE_EXTENSIONS = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "image/bmp": "bmp", "image/avif": "avif" };
+
+function mediaImageExtension(src) {
+  const match = String(src || "").match(/^data:image\/([a-z+]+)/i);
+  return MEDIA_IMAGE_EXTENSIONS[`image/${match?.[1]?.toLowerCase()}`] || "png";
+}
+
+async function fetchImageBlob(src) {
+  const response = await fetch(src);
+  return response.blob();
+}
+
+function toPngBlob(blob) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const image = new window.Image();
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      canvas.getContext("2d").drawImage(image, 0, 0);
+      URL.revokeObjectURL(url);
+      canvas.toBlob((value) => (value ? resolve(value) : reject(new Error("canvas encode failed"))), "image/png");
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("image decode failed"));
+    };
+    image.src = url;
+  });
+}
+
+function MediaImageView({ src, alt = "", title, thumbClassName, onError }) {
+  const [zoomed, setZoomed] = useState(false);
+  const [notice, setNotice] = useState("");
+  const noticeTimerRef = useRef(null);
+  useEffect(() => () => window.clearTimeout(noticeTimerRef.current), []);
+  useEffect(() => {
+    if (!zoomed) return undefined;
+    const onKey = (event) => {
+      if (event.key === "Escape") setZoomed(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [zoomed]);
+
+  if (!src) return null;
+
+  function flashNotice(text) {
+    setNotice(text);
+    window.clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = window.setTimeout(() => setNotice(""), 1400);
+  }
+
+  async function copyImage() {
+    try {
+      let blob = await fetchImageBlob(src);
+      if (blob.type !== "image/png") {
+        blob = await toPngBlob(blob);
+      }
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      flashNotice("已复制到剪贴板");
+    } catch {
+      flashNotice("复制失败");
+    }
+  }
+
+  function downloadImage() {
+    const anchor = document.createElement("a");
+    anchor.href = src;
+    anchor.download = `lara-image-${Date.now()}.${mediaImageExtension(src)}`;
+    anchor.click();
+  }
+
+  return (
+    <span className="media-image-frame">
+      <img
+        src={src}
+        alt={alt}
+        title={title || alt}
+        className={thumbClassName}
+        onClick={() => setZoomed(true)}
+        onError={onError}
+      />
+      <span className="media-image-actions" onClick={(event) => event.stopPropagation()}>
+        <button type="button" className="media-image-action" title="复制图片" aria-label="复制图片" onClick={() => void copyImage()}>
+          <Copy size={13} aria-hidden="true" />
+        </button>
+        <button type="button" className="media-image-action" title="下载图片" aria-label="下载图片" onClick={downloadImage}>
+          <Download size={13} aria-hidden="true" />
+        </button>
+      </span>
+      {notice && <span className="media-image-notice" role="status">{notice}</span>}
+      {zoomed && createPortal(
+        <div className="media-lightbox" role="dialog" aria-modal="true" aria-label="查看大图" onClick={() => setZoomed(false)}>
+          <img src={src} alt={alt} onClick={(event) => event.stopPropagation()} />
+          <button
+            type="button"
+            className="media-image-action media-lightbox-close"
+            aria-label="关闭大图"
+            onClick={() => setZoomed(false)}
+          >
+            <X size={16} aria-hidden="true" />
+          </button>
+        </div>,
+        document.body,
+      )}
+    </span>
+  );
+}
+
+function MediaBlockView({ block, api, scopeId }) {
+  const [failed, setFailed] = useState(false);
+  const name = `${block.media_type || "media"} · ${block.mime_type || "未知类型"}`;
+  const src = mediaBlockSrc(block, api, scopeId);
+  if (!src || failed) {
+    const Icon = block.media_type === "video" ? Film : block.media_type === "audio" ? Music : ImageIcon;
+    return (
+      <span className="media-fallback" title={name} role="img" aria-label={name}>
+        <Icon size={14} aria-hidden="true" />
+        <span>媒体无法预览</span>
+      </span>
+    );
+  }
+  if (block.media_type === "image") {
+    return (
+      <MediaImageView
+        src={src}
+        alt={name}
+        title={name}
+        thumbClassName="message-media-image"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  if (block.media_type === "video") {
+    return <video className="message-media-video" src={src} controls preload="metadata" title={name} onError={() => setFailed(true)} />;
+  }
+  if (block.media_type === "audio") {
+    return <audio className="message-media-audio" src={src} controls preload="metadata" title={name} onError={() => setFailed(true)} />;
+  }
+  return null;
+}
+
+export function MediaContent({ media, api, scopeId }) {
+  const blocks = validMediaBlocks(media);
+  if (!blocks.length) return null;
+  return (
+    <span className="message-media">
+      {blocks.map((block, index) => (
+        <MediaBlockView key={index} block={block} api={api} scopeId={scopeId} />
+      ))}
+    </span>
+  );
+}
+
 // Memoized: during streaming every applied delta re-renders the transcript
 // once per frame, and only the active assistant message actually changes.
 const MessageRow = memo(function MessageRow({ message, entering = false, activityCollapseToken, api, scopeId = "" }) {
@@ -2344,7 +2531,9 @@ const MessageRow = memo(function MessageRow({ message, entering = false, activit
   const hasAssistantActivity =
     message.role === "assistant" &&
     ((Array.isArray(message.sections) && message.sections.length > 0) || message.startedAt !== undefined);
-  if (message.role === "assistant" && !message.content && !hasAssistantActivity) {
+  const hasAssistantMedia =
+    message.role === "assistant" && validMediaBlocks(message.media).length > 0;
+  if (message.role === "assistant" && !message.content && !hasAssistantActivity && !hasAssistantMedia) {
     return null;
   }
 
@@ -2359,6 +2548,7 @@ const MessageRow = memo(function MessageRow({ message, entering = false, activit
               <AssistantActivity message={message} collapseToken={activityCollapseToken} api={api} />
             )}
             {message.content && <MarkdownContent content={message.content} />}
+            {hasAssistantMedia && <MediaContent media={message.media} api={api} scopeId={scopeId} />}
           </>
         ) : (
           <div className="bubble-body">
@@ -2378,13 +2568,22 @@ const MessageRow = memo(function MessageRow({ message, entering = false, activit
   );
 });
 
+// Model answers embed generated images as markdown data: URIs; the default
+// transform strips every data: URL as unsafe, which left broken images in
+// the transcript. Image data URIs cannot execute inside <img>, so allow the
+// raster types and delegate everything else to the default policy.
+const DATA_IMAGE_URL = /^data:image\/(?:png|jpeg|gif|webp|bmp|avif);base64,[A-Za-z0-9+/=]+$/;
+function markdownUrlTransform(url) {
+  return DATA_IMAGE_URL.test(String(url)) ? url : defaultUrlTransform(url);
+}
+
 // Streaming messages re-parse on every content change; micromark is fast
 // enough for transcript-sized texts, and the memo keeps non-streaming
 // renders from reparsing.
 export function MarkdownContent({ content }) {
   const body = useMemo(
     () => (
-      <ReactMarkdown components={MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfmNoAutolink]}>
+      <ReactMarkdown components={MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfmNoAutolink]} urlTransform={markdownUrlTransform}>
         {String(content || "")}
       </ReactMarkdown>
     ),
@@ -2407,7 +2606,16 @@ const MARKDOWN_COMPONENTS = {
   h6: MarkdownHeading,
   pre: MarkdownPre,
   table: MarkdownTable,
+  img: MarkdownImage,
 };
+
+// Model images arrive as markdown data URIs; render through the shared
+// thumbnail view (small, hover actions, click to zoom) instead of a raw
+// full-width img. Stripped unsafe URLs render as nothing at all.
+function MarkdownImage({ src, alt }) {
+  if (!src) return null;
+  return <MediaImageView src={src} alt={alt || ""} thumbClassName="markdown-image-thumb" />;
+}
 
 function MarkdownHeading({ node, children }) {
   const level = Math.min(Number(String(node?.tagName || "h1").slice(1)) || 1, 3);
@@ -3485,6 +3693,12 @@ function renderTurnSegment(segment, idPrefix, timing = segment.find((message) =>
 
   let sections = [];
   let finalContent = "";
+  // Media generated on intermediate rounds (image, then a tool call, then
+  // text) must survive the collapse into one assistant bubble, so collect
+  // every assistant media block in conversation order.
+  const media = segment.flatMap((message) =>
+    String(message?.role || "") === "assistant" ? validMediaBlocks(message?.media) : [],
+  );
   segment.forEach((message, index) => {
     const role = String(message?.role || "");
     const content = cleanContent(String(message?.content || ""));
@@ -3510,7 +3724,7 @@ function renderTurnSegment(segment, idPrefix, timing = segment.find((message) =>
       }
     }
   });
-  if (sections.length === 0 && !finalContent) {
+  if (sections.length === 0 && !finalContent && !media.length) {
     return [];
   }
   const usage = summarizeMessageUsage(
@@ -3527,6 +3741,7 @@ function renderTurnSegment(segment, idPrefix, timing = segment.find((message) =>
       status: "success",
       ...runTimingFields(timing),
       sections: finalizeToolSections(sections),
+      ...(media.length ? { media } : {}),
       ...(createdAt ? { createdAt } : {}),
       ...(usage ? { usage } : {}),
     },
@@ -4478,6 +4693,26 @@ function isTransientFetchError(error) {
 function primaryModel(settings) {
   const keys = settings.model_groups?.[settings.default_model_group]?.models || [];
   return settings.models?.[keys[0]]?.model_id || "unconfigured model";
+}
+
+// Media capability summary for the session's model picker, so a multimodal
+// main model is recognizable before selection; models without declared
+// media capabilities keep the plain provider/model description.
+function modelCapabilitySummary(model, settings) {
+  const base = `${model.provider} / ${model.model_id}`;
+  const modalities = settings?.models?.[model.model_key]?.capabilities?.modalities;
+  if (!modalities) return base;
+  const labels = { image: "图片", audio: "音频", video: "视频" };
+  const describe = (items) => items
+    .filter((item) => item !== "text")
+    .map((item) => labels[item] || item)
+    .join("/");
+  const inputs = describe(modalities.input || []);
+  const outputs = describe((modalities.output || []).filter((item) => item !== "embedding"));
+  const parts = [];
+  if (inputs) parts.push(`输入:${inputs}`);
+  if (outputs) parts.push(`输出:${outputs}`);
+  return parts.length ? `${base} · ${parts.join(" · ")}` : base;
 }
 
 function formatContextWindow(value) {
