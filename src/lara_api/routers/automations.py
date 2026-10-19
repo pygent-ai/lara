@@ -127,4 +127,24 @@ def list_automation_runs(
         raise _error(exc) from exc
 
 
+@router.post("/{automation_id}/runs/{run_id}/cancel")
+async def cancel_automation_run(
+    automation_id: str,
+    run_id: str,
+    context: ApiContext = Depends(get_api_context),
+) -> dict[str, object]:
+    try:
+        automation = context.automation_store.get(automation_id)
+        run = context.automation_store.get_run(run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if run.automation_id != automation.automation_id:
+        raise HTTPException(status_code=404, detail=f"automation run not found: {run_id}")
+    if not await context.automation_scheduler.cancel_run(run_id):
+        raise HTTPException(
+            status_code=409, detail="该运行未在本进程内执行，无法取消。"
+        )
+    return context.automation_store.get_run(run_id).to_dict()
+
+
 __all__ = ["router"]

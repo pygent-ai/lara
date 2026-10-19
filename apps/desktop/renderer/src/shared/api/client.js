@@ -113,6 +113,11 @@ export function createApiClient(options = {}) {
       }),
     listAutomationRuns: (automationId, options = {}) =>
       jsonRequest(`/automations/${encodeURIComponent(automationId)}/runs`, options),
+    cancelAutomationRun: (automationId, runId, options = {}) =>
+      jsonRequest(
+        `/automations/${encodeURIComponent(automationId)}/runs/${encodeURIComponent(runId)}/cancel`,
+        { ...options, method: "POST" },
+      ),
     removeProject: (scopeId, options = {}) =>
       jsonRequest(`/projects?scope_id=${encodeURIComponent(scopeId)}`, {
         ...options,

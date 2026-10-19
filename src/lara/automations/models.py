@@ -27,6 +27,7 @@ class AutomationRunStatus(StrEnum):
     FAILED = "failed"
     ERROR = "error"
     SKIPPED = "skipped"
+    CANCELLED = "cancelled"
 
 
 @dataclass(frozen=True, slots=True)

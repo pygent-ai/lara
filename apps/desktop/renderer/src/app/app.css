@@ -1439,10 +1439,14 @@ input:focus,
 .automation-actions button:hover { color:var(--text); background:var(--button-hover-bg); }.automation-actions .danger:hover { color:var(--error); }
 .automation-runs { display:grid; border-top:1px solid var(--line); background:var(--bg-quiet); }
 .automation-runs > span { padding:12px 16px; color:var(--muted); }
-.automation-runs button { display:grid; grid-template-columns:10px 70px 150px minmax(0,1fr); gap:8px; align-items:center; padding:9px 16px; border:0; border-bottom:1px solid var(--line); text-align:left; color:var(--muted); background:transparent; cursor:pointer; }
-.automation-runs button:last-child { border-bottom:0; }.automation-runs button:hover:not(:disabled) { background:var(--button-hover-bg); }
-.automation-runs button span:last-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.run-dot { width:7px; height:7px; border-radius:50%; background:var(--soft); }.run-dot.passed { background:var(--success); }.run-dot.running,.run-dot.queued { background:var(--warning); }.run-dot.failed,.run-dot.error { background:var(--error); }
+.automation-run { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:stretch; border-bottom:1px solid var(--line); }
+.automation-run:last-child { border-bottom:0; }
+.automation-runs .automation-run-open { display:grid; grid-template-columns:10px 70px 150px minmax(0,1fr); gap:8px; align-items:center; padding:9px 16px; border:0; text-align:left; color:var(--muted); background:transparent; cursor:pointer; }
+.automation-runs .automation-run-open:hover:not(:disabled) { background:var(--button-hover-bg); }
+.automation-runs .automation-run-open span:last-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.automation-runs .automation-run-cancel { display:flex; align-items:center; gap:4px; padding:0 14px; border:0; border-left:1px solid var(--line); color:var(--muted); background:transparent; cursor:pointer; font-size:12px; }
+.automation-runs .automation-run-cancel:hover:not(:disabled) { color:var(--error); background:var(--button-hover-bg); }
+.run-dot { width:7px; height:7px; border-radius:50%; background:var(--soft); }.run-dot.passed { background:var(--success); }.run-dot.running,.run-dot.queued { background:var(--warning); }.run-dot.failed,.run-dot.error,.run-dot.cancelled { background:var(--error); }
 .automation-editor-backdrop { position:fixed; inset:0; z-index:30; display:grid; place-items:center; padding:24px; background:rgba(24,28,34,.32); backdrop-filter:blur(3px); }
 .automation-editor { display:grid; gap:14px; width:min(640px,100%); max-height:calc(100vh - 48px); overflow:auto; padding:22px; border:1px solid var(--line); border-radius:15px; background:var(--surface); box-shadow:var(--shadow); }
 .automation-editor header,.automation-editor footer { display:flex; align-items:center; justify-content:space-between; gap:12px; }.automation-editor h3 { margin:3px 0 0; }
