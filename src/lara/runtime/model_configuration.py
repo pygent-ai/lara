@@ -9,8 +9,10 @@ import httpx
 from pygent import MediaSource
 from pygent.core import FrozenJsonObject
 from pygent.llm import (
+    AnthropicMessagesAdapter,
     AnthropicMessagesClient,
     CapabilityPresetCatalog,
+    GeminiGenerateContentAdapter,
     GeminiGenerateContentClient,
     ModelCapabilities,
     ModelCapabilityCatalog,
@@ -24,12 +26,10 @@ from pygent.llm import (
     ModelSpec,
     OpenAICompatibleClient,
     OpenAICompatibleAdapter,
+    OpenAIResponsesAdapter,
     OpenAIResponsesClient,
     ProviderCatalog,
     ResolvedModelConnection,
-    anthropic_messages_adapters,
-    gemini_generate_content_adapters,
-    openai_responses_adapters,
 )
 
 from lara.credentials import list_user_credential_names, lookup_credential
@@ -174,13 +174,20 @@ def build_model_invoker(
             ),
             media_resolver=media_resolver,
         ),
+        # Every multimodal protocol gets the workspace resolver so user
+        # attachments carried as resource sources reach models on that
+        # protocol; without it the adapters only accept inline data and
+        # workspace media fails delivery for every turn.
+        "anthropic_messages": AnthropicMessagesAdapter(
+            media_resolver=media_resolver,
+        ),
+        "gemini_generate_content": GeminiGenerateContentAdapter(
+            media_resolver=media_resolver,
+        ),
+        "openai_responses": OpenAIResponsesAdapter(
+            media_resolver=media_resolver,
+        ),
     }
-    for factory in (
-        openai_responses_adapters,
-        anthropic_messages_adapters,
-        gemini_generate_content_adapters,
-    ):
-        adapters.update(factory())
     clients = {
         key: _create_client(
             connection=config.connection_for(key),

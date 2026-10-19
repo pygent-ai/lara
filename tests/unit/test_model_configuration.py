@@ -101,6 +101,32 @@ def test_build_model_invoker_uses_each_native_protocol(protocol: str) -> None:
     asyncio.run(invoker.aclose())
 
 
+@pytest.mark.parametrize(
+    "protocol",
+    [
+        "openai_chat_completions",
+        "openai_responses",
+        "anthropic_messages",
+        "gemini_generate_content",
+    ],
+)
+def test_build_model_invoker_wires_media_resolver_into_all_protocols(
+    protocol: str,
+) -> None:
+    async def resolve(source: object) -> bytes:
+        return b"media-bytes"
+
+    invoker = build_model_invoker(
+        ModelConfig.from_mapping(native_mapping(protocol=protocol)),
+        credential_environ={"TEST_KEY": "secret"},
+        media_resolver=resolve,
+    )
+    transport = invoker._adapters[protocol].media_transport
+    assert transport.enabled is True
+    assert "resource" in transport.source_kinds
+    asyncio.run(invoker.aclose())
+
+
 def test_credential_environment_checks_transient_before_store(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(
         "lara.runtime.model_configuration.lookup_credential",
