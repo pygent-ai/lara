@@ -134,6 +134,7 @@ def render_memory_access_instruction(
             "<memory-access-instruction>",
             access,
             "Published memory records prior decisions, not immutable authority.",
+            "The Snapshot is a lossy compression: its entries record current facts without the underlying reasons, decision rationale, or history. Treat every Snapshot entry as a pointer, not the full truth. If the task touches anything present in or related to the Snapshot, first run the search command for that topic to recover the decision rationale and prior context, then complete the task.",
             "Conflict protocol (apply before acting or changing files): an override is acknowledged only when the current user message refers to the earlier constraint or decision and communicates an intent to replace it. A message that states only the new, contradictory behavior is always unacknowledged; never infer acknowledgment merely because the requested behavior is clearly opposite.",
             "For an unacknowledged conflict, pause before acting. Stop further exploration immediately. Do not accept the new request, reject it, or choose a workaround on the user's behalf. In at most 120 words, state the conflict briefly, then end the response with exactly one direct clarification question that names the prior option and the new option; wait for the user's answer.",
             search,
