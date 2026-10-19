@@ -70,6 +70,36 @@ async def test_native_invoker_preserves_configured_retry_and_fallback(
             await agent.llm.aclose()
 
 
+def test_selected_multimodal_main_model_requests_media_output(tmp_path: Path) -> None:
+    config = native_runtime_config(tmp_path, group=("main", "backup"))
+    for key in ("main", "backup"):
+        raw = config.model_config_mapping["models"][key]
+        raw["capabilities"]["modalities"]["output"] = ["text", "image"]
+        raw["capabilities"]["streaming"]["output"] = ["text", "image"]
+    config.model_config = ModelConfig.from_mapping(config.model_config_mapping)
+    agent = core.LaraAgent(config, managed_model=True, selected_model_key="main")
+    assert agent.new_model_layer().generation.output_modalities == ("image",)
+
+
+def test_agent_without_selected_model_keeps_text_only_output(tmp_path: Path) -> None:
+    config = native_runtime_config(tmp_path, group=("main", "backup"))
+    for key in ("main", "backup"):
+        raw = config.model_config_mapping["models"][key]
+        raw["capabilities"]["modalities"]["output"] = ["text", "image"]
+    config.model_config = ModelConfig.from_mapping(config.model_config_mapping)
+    agent = core.LaraAgent(config, managed_model=True)
+    assert agent.new_model_layer().generation.output_modalities == ()
+
+
+def test_selected_text_only_main_model_requests_no_media_output(
+    tmp_path: Path,
+) -> None:
+    config = native_runtime_config(tmp_path, group=("main", "backup"))
+    config.model_config = ModelConfig.from_mapping(config.model_config_mapping)
+    agent = core.LaraAgent(config, managed_model=True, selected_model_key="main")
+    assert agent.new_model_layer().generation.output_modalities == ()
+
+
 @pytest.mark.asyncio
 async def test_react_demo_runs_with_official_model_api(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
