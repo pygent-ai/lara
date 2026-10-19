@@ -10,8 +10,8 @@ export function filterDiscoveredModels(discovered, query) {
   return discovered.filter((item) => String(item.id || "").toLocaleLowerCase().includes(needle));
 }
 
-export function AddModelForm({ draft, setDraft, catalogs, api, onDone, onCancel }) {
-  const [connection, setConnection] = useState("");
+export function AddModelForm({ draft, setDraft, catalogs, api, onDone, onCancel, initialConnection = "" }) {
+  const [connection, setConnection] = useState(initialConnection);
   const [modelId, setModelId] = useState("");
   const [group, setGroup] = useState("");
   const [message, setMessage] = useState("");

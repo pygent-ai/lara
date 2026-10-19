@@ -14,6 +14,8 @@ export function SettingsPage({ settings, disabled, onClose, onSave, api }) {
   const [activeSection, setActiveSection] = useState("model-config");
   const [activeModelTab, setActiveModelTab] = useState("connections");
   const [confirmClose, setConfirmClose] = useState(false);
+  // null = closed; a connection key opens the add-model form preset to it.
+  const [addingModel, setAddingModel] = useState(null);
 
   const settingsRef = useRef(null);
 
@@ -82,8 +84,8 @@ export function SettingsPage({ settings, disabled, onClose, onSave, api }) {
             </nav>}
             <fieldset className="settings-fields" disabled={disabled}>
           <WorkspaceSettings {...controller} activeSection={activeSection} />
-          <ConnectionSettings {...controller} activeSection={activeSection} activeModelTab={activeModelTab} />
-          <ModelSettings {...controller} activeSection={activeSection} activeModelTab={activeModelTab} />
+          <ConnectionSettings {...controller} activeSection={activeSection} activeModelTab={activeModelTab} onAddModel={(connectionKey) => { setAddingModel(connectionKey); setActiveModelTab("models"); }} />
+          <ModelSettings {...controller} activeSection={activeSection} activeModelTab={activeModelTab} addingModel={addingModel} onAddModel={setAddingModel} />
           <GroupSettings {...controller} activeSection={activeSection} activeModelTab={activeModelTab} />
           <RuntimeSettings {...controller} activeSection={activeSection} />
             </fieldset>

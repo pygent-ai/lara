@@ -1786,9 +1786,10 @@ test("settings separate native model identity from connection fields", () => {
   assert.doesNotMatch(html.match(/<section([^>]*)aria-label="Native Pygent connections"/)[1], /hidden/);
   assert.match(html.match(/<section([^>]*)aria-label="Native Pygent models"/)[1], /hidden=""/);
   assert.match(html.match(/<section([^>]*)aria-label="Model groups"/)[1], /hidden=""/);
-  assert.match(html, /连接名称/);
+  assert.match(html, /本地名称/);
   assert.match(html, /供应商/);
-  assert.match(html, /Pygent 内置/);
+  // The Pygent-built-in optgroup appears only after async catalog loading,
+  // so static markup asserts the always-rendered custom provider option.
   assert.match(html, /自定义供应商/);
   assert.doesNotMatch(html, /自定义 Provider ID/);
   assert.match(html, /接口地址/);
@@ -1813,6 +1814,9 @@ test("settings separate native model identity from connection fields", () => {
   assert.doesNotMatch(html, /逗号分隔/);
   // Membership is edited in the 模型组 tab; the model card summary lists it.
   assert.match(html, /<span>coding<\/span>/);
+  // Completed connection cards offer a connection test and an add-model shortcut.
+  assert.match(html, /测试连接/);
+  assert.match(html, /从此连接添加模型/);
 });
 
 test("existing idle chat exposes only child models from its fixed group", () => {
@@ -2004,7 +2008,7 @@ test("essential connection and model fields remain visible before optional detai
   const html = renderToStaticMarkup(React.createElement(appModule.SettingsPanel, { settings, disabled: false, onClose() {}, onSave() {} }));
   const connection = html.slice(html.indexOf('connection-route-card'), html.indexOf('aria-label="Native Pygent models"'));
   const model = html.slice(html.indexOf('aria-label="Native Pygent models"'), html.indexOf('aria-label="Model groups"'));
-  for (const field of ['连接名称', 'API Key', 'Base URL']) assert.ok(connection.indexOf(field) >= 0 && connection.indexOf(field) < connection.indexOf('<details'));
+  for (const field of ['供应商', 'API Key', 'Base URL']) assert.ok(connection.indexOf(field) >= 0 && connection.indexOf(field) < connection.indexOf('<details'));
   for (const field of ['使用连接', '服务商模型 ID', '能力模板']) assert.ok(model.indexOf(field) >= 0 && model.indexOf(field) < model.indexOf('<details'));
   assert.match(html, /连接未验证|请填写 API Key/);
   assert.match(html.match(/<button[^>]*aria-label="Save and Reload"[^>]*>/)[0], /disabled/);
