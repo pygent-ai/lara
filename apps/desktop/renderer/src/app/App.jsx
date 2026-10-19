@@ -1784,6 +1784,25 @@ function SessionRow({
   const showStatus = statusKind === "running" || !statusAcknowledged;
   const canDelete = statusKind !== "running";
   const pinned = Boolean(session.pinned);
+  const titleRef = useRef(null);
+  const [titleShift, setTitleShift] = useState(0);
+
+  // 悬停跑马灯需要知道标题超出悬停宽度的距离；悬停宽度是标题列的 80%，
+  // 与 CSS 里 .session-row:hover .session-title 的 max-width 保持一致。
+  useEffect(() => {
+    const node = titleRef.current;
+    const copy = node?.parentElement;
+    if (!node || !copy) {
+      return undefined;
+    }
+    const measure = () => {
+      setTitleShift(Math.max(0, node.scrollWidth - Math.round(copy.clientWidth * 0.8)));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(copy);
+    return () => observer.disconnect();
+  }, [title]);
 
   function selectSession() {
     onAcknowledgeStatus(session);
@@ -1815,8 +1834,8 @@ function SessionRow({
       }}
     >
       <div className="session-copy">
-        <div className="session-title" title={title}>
-          {title}
+        <div className="session-title" title={title} ref={titleRef} style={{ "--title-shift": `${titleShift}px` }}>
+          <span className="session-title-text">{title}</span>
         </div>
       </div>
       <div className="session-row-actions">
