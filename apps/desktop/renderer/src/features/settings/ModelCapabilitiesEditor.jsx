@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { PURPOSES, MODALITIES, purposeCapabilities, capabilitySignature, updateCapability, capabilityTags, templateOptions, capabilitiesEqual } from "./modelCapabilities.js";
 
-export function ModelCapabilitiesEditor({ value, onChange, catalogs, provider = "", protocol = "", modelKey = "", renameModel }) {
+export function ModelCapabilitiesEditor({ value, onChange, catalogs, provider = "", protocol = "" }) {
   const [chosen, setChosen] = useState(() => PURPOSES.find(item => capabilitySignature(purposeCapabilities(item.id, value)) === capabilitySignature(value))?.id || null);
   const [baseline, setBaseline] = useState(() => capabilitySignature(value));
   const [notice, setNotice] = useState("");
@@ -41,16 +41,12 @@ export function ModelCapabilitiesEditor({ value, onChange, catalogs, provider = 
   }
   return <section className="capability-editor" aria-label="模型能力">
     <div className="capability-purpose">
-      <label><span>Pygent 模型模板 · 实际模型{matched ? "" : " · 自定义"}</span><select value={matched?.key ?? ""} onChange={event => { const entry = templates.find(item => item.key === event.target.value); if (entry) applyTemplate(entry); }}>
-        <option value="">自定义配置 — 手动组合能力</option>
-        {templates.map(item => <option key={item.key} value={item.key}>{item.provider} · {item.model_id} · {item.protocol}</option>)}
+      <label><span>能力模板{adjusted ? " · 已调整" : ""}</span><select value={matched?.key ?? selected} onChange={event => { const id = event.target.value; if (id === "custom") { setChosen(id); setExpanded(true); return; } const entry = templates.find(item => item.key === id); if (entry) applyTemplate(entry); else apply(id, purposeCapabilities(id, value)); }}>
+        <optgroup label="用途预设">{PURPOSES.map(item => <option key={item.id} value={item.id}>{item.name} — {item.description}</option>)}</optgroup>
+        {templates.length > 0 && <optgroup label="Pygent 模板">{templates.map(item => <option key={item.key} value={item.key}>{item.provider} · {item.model_id} · {item.protocol}</option>)}</optgroup>}
+        <option value="custom">自定义 — 自行组合能力</option>
       </select></label>
-      <label><span>模型用途{adjusted ? " · 已调整" : ""}</span><select value={selected} onChange={event => { const id = event.target.value; if (id === "custom") { setChosen(id); setExpanded(true); } else apply(id, purposeCapabilities(id, value)); }}>
-        {PURPOSES.map(item => <option key={item.id} value={item.id}>{item.name} — {item.description}</option>)}
-        <option value="custom">自定义 — 自行组合模型能力</option>
-      </select></label>
-      <p className="capability-hint">模板是 Pygent 目录中的实际模型，展开后是它的具体能力配置（含上下文与输出限制）；修改任意值即成为可重命名的自定义配置。用途是手动配置模板，不代表服务商已支持这些能力。</p>
-      {!matched && renameModel && <label className="capability-rename"><span>自定义配置名称</span><input key={modelKey} defaultValue={modelKey} onBlur={event => renameModel(modelKey, event.target.value)} /></label>}
+      <p className="capability-hint">按用途或 Pygent 目录中的实际模型预填能力，模板含上下文与输出限制；修改任意值即成为自定义配置，也不代表服务商已支持这些能力。</p>
     </div>
     <div className="capability-tags" aria-label="当前能力">{capabilityTags(value).map(tag => <span key={tag}>{tag}</span>)}{!capabilityTags(value).length && <span>尚未声明能力</span>}</div>
     {notice && <p className="capability-notice" role="status">{notice}</p>}
