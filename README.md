@@ -1,6 +1,6 @@
 # Lara
 
-Lara 是基于 Pygent 0.3.19 的本地 Agent 开发与评测工具。前台推理由原生 `PygentAgent` 驱动，上下文窗口压缩由原生 compressor `Module` 承担；API、CLI、case runner 共用 workspace 级 `LaraRuntimeService`，执行、并发、持久化、模型路由、工具任务和审批均由 Pygent Runtime 管理。
+Lara 是基于 Pygent 0.3.26 的本地 Agent 开发与评测工具。前台推理由原生 `PygentAgent` 驱动，上下文窗口压缩由原生 compressor `Module` 承担；API、CLI、case runner 共用 workspace 级 `LaraRuntimeService`，执行、并发、持久化、模型路由、工具任务和审批均由 Pygent Runtime 管理。
 
 Runtime journal 直接使用当前 PyPI Pygent 管理的 SQLite schema 和配置路径。
 
@@ -141,9 +141,9 @@ npm --prefix apps/desktop run build
 
 更多说明见 [CLI](docs/cli/lara-session.md)、[本地 API](docs/api/local-service.md) 和[开发指南](docs/guides/development-guide.md)。
 
-运行时依赖锁定为官方 PyPI 发布的 `pygent-ai==0.3.22`（对应 [官方 v0.3.22](https://github.com/pygent-ai/pygent/releases/tag/v0.3.22)），`uv.lock` 记录下载地址和校验值，不使用 `../pygent` 本地源码覆盖。模型配置直接采用 Pygent 的 `connections`、`models`、`model_groups` 三层契约：先定义可复用 Connection，再由模型引用并选择该连接提供的协议。
+运行时依赖锁定为官方 PyPI 发布的 `pygent-ai==0.3.26`（对应 [官方 v0.3.26](https://github.com/pygent-ai/pygent/releases/tag/v0.3.26)），`uv.lock` 记录下载地址和校验值，不使用 `../pygent` 本地源码覆盖。模型配置直接采用 Pygent 的 `connections`、`models`、`model_groups` 三层契约：先定义可复用 Connection，再由模型引用并选择该连接提供的协议。
 
-重试直接使用 Pygent 的 `RetryPolicy.max_attempts_per_model`；旧 `routes` / `fallback` 以及 0.3.15 的模型内嵌 connection 结构不会继续执行。0.3.20 起 `SQLiteHistoryStore` 增加 `timeout_seconds` 并显式设置 `PRAGMA busy_timeout`，修复多 runtime 共享 journal 时写锁等待仅依赖 sqlite3 默认 5 秒的问题。
+重试直接使用 Pygent 的 `RetryPolicy.max_attempts_per_model`；旧 `routes` / `fallback` 以及 0.3.15 的模型内嵌 connection 结构不会继续执行。0.3.20 起 `SQLiteHistoryStore` 增加 `timeout_seconds` 并显式设置 `PRAGMA busy_timeout`；0.3.24 为 `SQLiteModelDeploymentStore` 增加相同的 30 秒默认等待。0.3.25 取消仅因 `PRAGMA user_version` 不同而拒绝 journal，0.3.23 及更早版本写入的既有 journal 可直接打开并继续回放；同一 execution 若已经混合写入 v7 receipt 与 v8 marker，回放仍会明确失败。0.3.26 为 `SQLiteHistoryStore`、历史任务和 `SQLiteModelDeploymentStore` 的写事务增加对 `SQLITE_BUSY` / `SQLITE_LOCKED` 的 rollback 后有界重试（最多 5 次，60 秒截止）。
 
 ### Bash 后台任务
 
