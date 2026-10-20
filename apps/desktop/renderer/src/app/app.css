@@ -3401,6 +3401,10 @@ input:focus,
 .attachment-chip { display:inline-flex; align-items:center; gap:4px; max-width:240px; padding:3px 8px; border:1px solid #cdd3dd; border-radius:999px; background:var(--surface); color:#4a5568; font-size:12px; }
 .attachment-chip { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .attachment-chip svg { flex:0 0 auto; }
+/* The name is a flex child, so the chip's own ellipsis never applies; shrink
+   the span itself instead, or long upload names hard-clip and push the
+   remove button out of the capped pill. */
+.attachment-chip-name { min-width:0; overflow:hidden; text-overflow:ellipsis; }
 .attachment-chip button { display:inline-flex; align-items:center; padding:0; border:0; background:transparent; color:#677387; cursor:pointer; }
 .attachment-chip button:hover { color:#c0392b; }
 /* Media chips lead with a real thumbnail, so they read as small preview cards. */

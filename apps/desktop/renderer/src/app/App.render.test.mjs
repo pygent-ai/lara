@@ -413,6 +413,30 @@ test("a steering boundary carries its attachments into the split transcript", ()
   assert.equal("attachments" in withoutAttachments[2], false);
 });
 
+test("document chips show the original upload name and keep the remove button", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.AttachmentChip, {
+    path: ".lara/uploads/cf13446b10a7-OPERATOR-HANDOFF.private.md",
+    scopeId: "conversation",
+    api: {},
+    onRemove: () => {},
+  }));
+  // The md document gets the FileText icon, and the stored upload's id
+  // prefix never leaks into the visible name.
+  assert.match(html, /lucide lucide-file-text/);
+  assert.match(html, /attachment-chip-name">OPERATOR-HANDOFF\.private\.md</);
+  assert.match(html, /aria-label="移除附件/);
+});
+
+test("workspace attachment chips keep their own file name", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.AttachmentChip, {
+    path: "docs/report.md",
+    scopeId: "conversation",
+    api: {},
+    onRemove: () => {},
+  }));
+  assert.match(html, /attachment-chip-name">report\.md</);
+});
+
 test("attachment-only user turns survive history reload", () => {
   const restored = appModule.historyToMessages([
     { role: "user", content: "<user-context><user-message></user-message></user-context>", data: { raw_content: "", attachments: ["shots/a.png"] } },

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { attachmentFileName, attachmentMediaType, isDocumentAttachment, isUploadedAttachment } from "./mediaTypes.js";
+import { attachmentDisplayName, attachmentFileName, attachmentMediaType, isDocumentAttachment, isUploadedAttachment } from "./mediaTypes.js";
 
 test("multimedia attachments classify by extension", () => {
   assert.equal(attachmentMediaType(".lara/uploads/abc-image.png"), "image");
@@ -27,6 +27,16 @@ test("uploaded attachment paths recognize the workspace uploads area", () => {
 test("attachment file names survive mixed separators", () => {
   assert.equal(attachmentFileName(".lara/uploads/8efe283d6b70-image.png"), "8efe283d6b70-image.png");
   assert.equal(attachmentFileName("E:\\Projects\\lara\\notes.txt"), "notes.txt");
+});
+
+test("display names drop the stored upload id prefix but keep workspace names", () => {
+  assert.equal(attachmentDisplayName(".lara/uploads/cf13446b10a7-OPERATOR-HANDOFF.private.md"), "OPERATOR-HANDOFF.private.md");
+  assert.equal(attachmentDisplayName(".lara/uploads/8efe283d6b70-image.png"), "image.png");
+  // Legacy uploads stored without the id prefix pass through unchanged.
+  assert.equal(attachmentDisplayName(".lara/uploads/notes.txt"), "notes.txt");
+  // Workspace attachments keep their own base name, even when it looks like an id prefix.
+  assert.equal(attachmentDisplayName("shots/abc123def456-notes.md"), "abc123def456-notes.md");
+  assert.equal(attachmentDisplayName(""), "");
 });
 
 test("document attachments detect text-like extensions", () => {
