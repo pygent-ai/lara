@@ -72,6 +72,28 @@ class SessionService:
             Path(ref.session_dir), metadata, scope_id=self.scope_id
         )
 
+    def fork_session(
+        self, session_id: str, *, at_sequence: int | None = None
+    ) -> SessionRecordResponse:
+        """Fork a chat session into a sidebar-visible chat copy."""
+        validate_path_id(session_id, "session_id")
+        source_dir = Path(self.manager.sessions_root) / session_id
+        source_metadata = read_json(source_dir / "metadata.json", default={})
+        ref = self.manager.fork(session_id, mode="chat", at_sequence=at_sequence)
+        source_title = str(source_metadata.get("title") or "").strip()
+        if not source_title:
+            # The fork owns the copied conversation, so derive the fallback
+            # title from its own durable history rather than the source dir.
+            source_title = _first_user_message_title(Path(ref.session_dir))
+        if source_title:
+            self.manager.save_title(ref.session_id, f"{source_title} (fork)")
+        if self.reminders is not None:
+            self.reminders.prewarm_session(ref.session_id)
+        metadata = read_json(Path(ref.session_dir) / "metadata.json")
+        return _record_from_metadata(
+            Path(ref.session_dir), metadata, scope_id=self.scope_id
+        )
+
     def load_detail(
         self, session_id: str, *, history_limit: int | None = None
     ) -> SessionDetailResponse:

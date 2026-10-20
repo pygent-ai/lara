@@ -157,6 +157,128 @@ def test_idle_session_can_change_only_its_preferred_child(tmp_path: Path) -> Non
     assert changed.selected_model_key == "backup"
 
 
+def test_fork_session_copies_chat_history_into_a_new_sidebar_chat(tmp_path: Path) -> None:
+    from lara_api.models.requests import CreateSessionRequest, ForkSessionRequest
+    from lara_api.routers.sessions import create_session, fork_session, get_session
+    from lara_api.services.session_service import session_groups_response
+
+    context = ApiContext(
+        workspace_root=str(tmp_path),
+        state_path=str(tmp_path / "state.json"),
+        _config=RunConfig(workspace_root=str(tmp_path)),
+    )
+    created = asyncio.run(create_session(CreateSessionRequest(), context=context))
+    manager = SessionManager(context.manager.config)
+    run = manager.start_case_run(created.session_id, "chat")
+    manager.append_history_checkpoint(
+        run,
+        turn_id="turn-1",
+        checkpoint_id="checkpoint-1",
+        message={"role": "user", "content": "source question"},
+    )
+    manager.append_history_checkpoint(
+        run,
+        turn_id="turn-1",
+        checkpoint_id="checkpoint-2",
+        message={"role": "assistant", "content": "source answer", "usage": {}},
+    )
+    manager.append_history_checkpoint(
+        run,
+        turn_id="turn-2",
+        checkpoint_id="checkpoint-3",
+        message={"role": "user", "content": "second question"},
+    )
+    manager.finish_case_run(run, "passed")
+    source_sequences = [
+        message["checkpoint_sequence"]
+        for message in manager.history_with_run_timing(manager.load(created.session_id))
+    ]
+
+    forked = asyncio.run(
+        fork_session(
+            created.session_id,
+            ForkSessionRequest(at_sequence=source_sequences[1]),
+            context=context,
+        )
+    )
+
+    assert forked.session_id != created.session_id
+    assert forked.mode == "chat"
+    assert forked.title.endswith("(fork)")
+    detail = get_session(forked.session_id, context=context)
+    assert detail.session.mode == "chat"
+    assert [message["content"] for message in detail.history] == [
+        "source question",
+        "source answer",
+    ]
+    assert [message["checkpoint_sequence"] for message in detail.history] == [
+        source_sequences[0],
+        source_sequences[1],
+    ]
+    # Reloading must not resurrect the truncated tail past the rewound cursor.
+    reloaded = get_session(forked.session_id, context=context)
+    assert [message["content"] for message in reloaded.history] == [
+        "source question",
+        "source answer",
+    ]
+    groups = asyncio.run(session_groups_response(context))
+    sidebar_sessions = [
+        record.session_id for group in groups.groups for record in group.sessions
+    ]
+    assert forked.session_id in sidebar_sessions
+
+
+def test_fork_session_rejects_unknown_checkpoint_sequence(tmp_path: Path) -> None:
+    from fastapi import HTTPException
+    from lara_api.models.requests import CreateSessionRequest, ForkSessionRequest
+    from lara_api.routers.sessions import create_session, fork_session
+
+    context = ApiContext(
+        workspace_root=str(tmp_path),
+        state_path=str(tmp_path / "state.json"),
+        _config=RunConfig(workspace_root=str(tmp_path)),
+    )
+    created = asyncio.run(create_session(CreateSessionRequest(), context=context))
+    manager = SessionManager(context.manager.config)
+    run = manager.start_case_run(created.session_id, "chat")
+    manager.append_history_checkpoint(
+        run,
+        turn_id="turn-1",
+        checkpoint_id="checkpoint-1",
+        message={"role": "user", "content": "source question"},
+    )
+    manager.finish_case_run(run, "passed")
+
+    with pytest.raises(HTTPException) as captured:
+        asyncio.run(
+            fork_session(
+                created.session_id,
+                ForkSessionRequest(at_sequence=9999),
+                context=context,
+            )
+        )
+    assert captured.value.status_code == 422
+
+
+def test_fork_session_rejects_active_executions(tmp_path: Path) -> None:
+    from fastapi import HTTPException
+    from lara_api.models.requests import CreateSessionRequest
+    from lara_api.routers.sessions import create_session, fork_session
+
+    context = ApiContext(
+        workspace_root=str(tmp_path),
+        state_path=str(tmp_path / "state.json"),
+        _config=RunConfig(workspace_root=str(tmp_path)),
+    )
+    created = asyncio.run(create_session(CreateSessionRequest(), context=context))
+    context._session_coordinator = SimpleNamespace(
+        session_busy=AsyncMock(return_value=True)
+    )
+    with pytest.raises(HTTPException) as captured:
+        asyncio.run(fork_session(created.session_id, context=context))
+    assert captured.value.status_code == 409
+
+
 def test_active_session_rejects_preferred_child_change(tmp_path: Path) -> None:
     from fastapi import HTTPException
     from lara_api.models.requests import (

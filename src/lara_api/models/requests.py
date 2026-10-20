@@ -17,6 +17,12 @@ class UpdateSessionModelRequest(BaseModel):
     selected_model_key: str = Field(min_length=1)
 
 
+class ForkSessionRequest(BaseModel):
+    """Fork whole-session when omitted, or at one checkpoint boundary."""
+
+    at_sequence: int | None = Field(default=None, ge=1)
+
+
 class ReorderProjectsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     ordered_scope_ids: list[str] = Field(default_factory=list)

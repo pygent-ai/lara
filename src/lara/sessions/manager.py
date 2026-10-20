@@ -124,15 +124,25 @@ class SessionManager:
             return self.load(self.fork(spec.source_session_id).session_id)
         return self.load(self.create(spec.case_id).session_id)
 
-    def fork(self, source_session_id: str) -> SessionRef:
+    def fork(
+        self,
+        source_session_id: str,
+        *,
+        mode: str = "fork",
+        at_sequence: int | None = None,
+    ) -> SessionRef:
         source_dir = self._session_dir(source_session_id)
         if not source_dir.exists():
             raise FileNotFoundError(
                 f"Source session {source_session_id!r} does not exist"
             )
+        # Validate the boundary before creating anything: a failed fork must
+        # not leave an orphan target session behind.
+        if at_sequence is not None:
+            self._require_checkpoint_sequence(source_session_id, at_sequence)
         source_meta = read_json(source_dir / "metadata.json")
         case_id = source_meta.get("case_id", "fork")
-        target = self.create(case_id=case_id, mode="fork")
+        target = self.create(case_id=case_id, mode=mode)
         target_dir = Path(target.session_dir)
         target_session = self.load(target.session_id)
         # A fork is a semantic continuation at the source cursor. Copy every
@@ -163,12 +173,61 @@ class SessionManager:
             }
         )
         session = AgentSession.from_dict(data)
-        session.metadata.update({"forked_from": source_session_id, "mode": "fork"})
+        session.metadata.update({"forked_from": source_session_id, "mode": mode})
         reminder_state = target_dir / "state" / "reminders"
         if reminder_state.exists():
             shutil.rmtree(reminder_state)
         self._save_session(session)
+        if at_sequence is not None:
+            self._truncate_fork_history(target.session_id, at_sequence)
         return target
+
+    def _require_checkpoint_sequence(
+        self, session_id: str, at_sequence: int
+    ) -> None:
+        database_path = self._checkpoint_database_path(session_id)
+        if not database_path.exists():
+            raise ValueError(
+                f"Checkpoint sequence {at_sequence!r} does not exist "
+                f"in session {session_id!r}"
+            )
+        with closing(self._checkpoint_connection(database_path)) as connection:
+            row = connection.execute(
+                "SELECT 1 FROM conversation_checkpoints WHERE sequence = ?",
+                (at_sequence,),
+            ).fetchone()
+        if row is None:
+            raise ValueError(
+                f"Checkpoint sequence {at_sequence!r} does not exist "
+                f"in session {session_id!r}"
+            )
+
+    def _truncate_fork_history(self, session_id: str, at_sequence: int) -> None:
+        """Rewind a freshly forked session to one checkpoint boundary.
+
+        The copied checkpoint database must lose the rows after the boundary:
+        otherwise the next load() would resurrect them past the rewound
+        history_checkpoint_seq cursor.
+        """
+        session = self.load(session_id)
+        database_path = self._checkpoint_database_path(session_id)
+        with closing(self._checkpoint_connection(database_path)) as connection, connection:
+            rows = connection.execute(
+                """
+                SELECT message_json FROM conversation_checkpoints
+                WHERE sequence <= ? AND include_in_session = 1
+                ORDER BY sequence
+                """,
+                (at_sequence,),
+            ).fetchall()
+            connection.execute(
+                "DELETE FROM conversation_checkpoints WHERE sequence > ?",
+                (at_sequence,),
+            )
+        session.history = [json.loads(row[0]) for row in rows]
+        session.metadata["history_checkpoint_seq"] = at_sequence
+        session.updated_at = utc_now()
+        self._save_session(session)
 
     def start_case_run(
         self, session_id: str, case_id: str, run_config: RunConfig | None = None
@@ -345,7 +404,7 @@ class SessionManager:
             )
             if limit is not None and limit > 0:
                 rows = connection.execute(
-                    """SELECT case_id, case_run_id, message_json, created_at
+                    """SELECT sequence, case_id, case_run_id, message_json, created_at
                        FROM (
                            SELECT sequence, case_id, case_run_id, message_json, created_at
                            FROM conversation_checkpoints
@@ -358,7 +417,7 @@ class SessionManager:
                 ).fetchall()
             else:
                 rows = connection.execute(
-                    """SELECT case_id, case_run_id, message_json, created_at
+                    """SELECT sequence, case_id, case_run_id, message_json, created_at
                        FROM conversation_checkpoints
                        WHERE include_in_session = 1 AND sequence <= ?
                        ORDER BY sequence""",
@@ -366,7 +425,7 @@ class SessionManager:
                 ).fetchall()
         history: list[dict[str, Any]] = []
         timings: dict[str, dict[str, Any]] = {}
-        for case_id, run_id, message_json, created_at in rows:
+        for sequence, case_id, run_id, message_json, created_at in rows:
             if run_id not in timings:
                 ref = CaseRunRef(
                     session_id=session.session_id,
@@ -378,6 +437,7 @@ class SessionManager:
                 )
                 timings[run_id] = self.run_timing(ref)
             message = json.loads(message_json)
+            message["checkpoint_sequence"] = int(sequence)
             message["run_timing"] = timings[run_id]
             message["created_at"] = created_at
             history.append(message)

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Response
 
 from lara.core.io import validate_path_id
 from lara_api.dependencies import ApiContext, get_api_context
-from lara_api.models.requests import CreateSessionRequest, PinSessionRequest, ReorderSessionsRequest, UpdateSessionModelRequest
+from lara_api.models.requests import CreateSessionRequest, ForkSessionRequest, PinSessionRequest, ReorderSessionsRequest, UpdateSessionModelRequest
 from lara_api.models.responses import (
     DeleteResponse,
     SessionDetailResponse,
@@ -112,6 +112,32 @@ async def create_session(
             mode=request.mode,
             model_group_name=request.model_group_name,
         )
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/{session_id}/fork", response_model=SessionRecordResponse)
+async def fork_session(
+    session_id: str,
+    request: ForkSessionRequest | None = None,
+    scope_id: str | None = None,
+    context: ApiContext = Depends(get_api_context),
+) -> SessionRecordResponse:
+    """Fork one chat session; with at_sequence, fork at that checkpoint point."""
+    service = session_service_for_scope(context, scope_id, with_reminders=True)
+    validate_path_id(session_id, "session_id")
+    if await context.session_coordinator.session_busy(service.manager, session_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Session cannot be forked while an execution is active",
+        )
+    try:
+        return service.fork_session(
+            session_id,
+            at_sequence=request.at_sequence if request is not None else None,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

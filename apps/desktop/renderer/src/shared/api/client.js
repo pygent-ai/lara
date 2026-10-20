@@ -192,6 +192,12 @@ export function createApiClient(options = {}) {
         ...options,
         method: "DELETE",
       }),
+    forkSession: (sessionId, { scopeId, atSequence, ...options } = {}) =>
+      jsonRequest(`/sessions/${encodeURIComponent(sessionId)}/fork${scopeQuery(scopeId)}`, {
+        ...options,
+        method: "POST",
+        body: { at_sequence: atSequence || undefined },
+      }),
     getTraceEvents: (sessionId, caseRunId, { eventLimit, contextSnapshotLimit, ...options } = {}) =>
       jsonRequest(
         `/traces/${encodeURIComponent(sessionId)}/${encodeURIComponent(caseRunId)}${queryString({

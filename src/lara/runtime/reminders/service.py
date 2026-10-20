@@ -355,7 +355,11 @@ class ReminderService:
             return False
         session = read_json(session_path, default={})
         metadata = session.get("metadata") or {}
-        if isinstance(metadata, dict) and metadata.get("mode") == "fork":
+        # Every fork follows the fork reminder policy regardless of its display
+        # mode: the inherited history must not consume the bootstrap shortcut.
+        if isinstance(metadata, dict) and (
+            metadata.get("mode") == "fork" or metadata.get("forked_from")
+        ):
             return False
         return any(
             isinstance(message, dict) and message.get("role") == "user"
