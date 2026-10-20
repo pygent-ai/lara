@@ -39,7 +39,7 @@ import {
 import laraLogo from "../assets/lara-logo.png";
 
 import { createApiClient } from "../shared/api/client.js";
-import { attachmentFileName, attachmentMediaType, isDocumentAttachment, isUploadedAttachment } from "../shared/media/mediaTypes.js";
+import { attachmentDisplayName, attachmentFileName, attachmentMediaType, isDocumentAttachment, isUploadedAttachment } from "../shared/media/mediaTypes.js";
 import { createSessionGroupSync } from "./sessionGroupSync.js";
 import {
   CONTEXT_SNAPSHOT_LIMIT,
@@ -2267,13 +2267,7 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
           {pendingAttachments.length > 0 && (
             <div className="attachment-chips">
               {pendingAttachments.map((path) => (
-                <span className={`attachment-chip${attachmentMediaType(path) === "file" ? "" : " attachment-chip-media"}`} key={path} title={path}>
-                  <AttachmentPreview api={api} scopeId={selectedScope} path={path} variant="chip" />
-                  {attachmentMediaType(path) === "file" && <span>{attachmentFileName(path)}</span>}
-                  <button type="button" aria-label={`移除附件 ${path}`} onClick={() => void removePendingAttachment(path)}>
-                    <X size={12} aria-hidden="true" />
-                  </button>
-                </span>
+                <AttachmentChip key={path} path={path} scopeId={selectedScope} api={api} onRemove={() => void removePendingAttachment(path)} />
               ))}
             </div>
           )}
@@ -2378,6 +2372,22 @@ function ComposerMenu({ label, title, icon, value, options, disabled, onChange }
       </button>)}
     </div>}
   </div>;
+}
+
+// One composer attachment pill: type icon or thumbnail, the original file
+// name for non-media files, and a remove action that stays inside the capped
+// pill width (the name span shrinks with an ellipsis instead of overflowing).
+export function AttachmentChip({ path, scopeId, api, onRemove }) {
+  const media = attachmentMediaType(path);
+  return (
+    <span className={`attachment-chip${media === "file" ? "" : " attachment-chip-media"}`} title={path}>
+      <AttachmentPreview api={api} scopeId={scopeId} path={path} variant="chip" />
+      {media === "file" && <span className="attachment-chip-name">{attachmentDisplayName(path)}</span>}
+      <button type="button" aria-label={`移除附件 ${path}`} onClick={onRemove}>
+        <X size={12} aria-hidden="true" />
+      </button>
+    </span>
+  );
 }
 
 // Multimedia attachments show as thumbnails (images) or type icons

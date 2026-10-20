@@ -31,3 +31,13 @@ export function isUploadedAttachment(path) {
 export function attachmentFileName(path) {
   return String(path || "").split(/[\\/]/).pop() || String(path || "");
 }
+
+// Stored uploads are saved as "<12-hex id>-<name>" so repeated pastes of the
+// same file name do not collide; chips display the original name instead of
+// the storage name. Workspace attachments keep their own base name.
+const UPLOAD_ID_PREFIX = /^[0-9a-f]{12}-/;
+
+export function attachmentDisplayName(path) {
+  const name = attachmentFileName(path);
+  return isUploadedAttachment(path) ? name.replace(UPLOAD_ID_PREFIX, "") : name;
+}
