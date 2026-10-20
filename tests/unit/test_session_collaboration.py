@@ -276,6 +276,41 @@ async def test_start_creates_exactly_one_target_for_repeated_submission(
 
 
 @pytest.mark.asyncio
+async def test_start_with_fork_from_runs_the_turn_on_a_forked_copy(tmp_path) -> None:
+    config, manager, source, _target = _setup(tmp_path)
+    run = manager.start_case_run(source, "chat")
+    manager.append_history_checkpoint(
+        run,
+        turn_id="turn-1",
+        checkpoint_id="checkpoint-1",
+        message={"role": "user", "content": "inherited question"},
+    )
+    manager.finish_case_run(run, "passed")
+    turns = _Turns()
+    service = SessionCollaborationService(turns=cast(Any, turns), poll_interval=0.01)
+
+    operation = await service.start(
+        config=config,
+        manager=manager,
+        message="follow-up",
+        fork_from=source,
+    )
+    completed = await service.wait(
+        config=config, operation_id=operation.operation_id, timeout=2
+    )
+
+    forked_id = completed.target_session_id
+    assert forked_id is not None and forked_id != source
+    forked = manager.load(forked_id)
+    assert forked.metadata["forked_from"] == source
+    assert forked.metadata["mode"] == "agent"
+    assert forked.history[-1]["content"] == "inherited question"
+    assert turns.submissions[0]["session_id"] == forked_id
+    assert turns.submissions[0]["message"] == "follow-up"
+    await service.aclose()
+
+
+@pytest.mark.asyncio
 async def test_start_without_source_does_not_queue_completion_message(tmp_path) -> None:
     config, manager, _source, _target = _setup(tmp_path)
     turns = _Turns()

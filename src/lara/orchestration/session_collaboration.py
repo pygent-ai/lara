@@ -189,6 +189,7 @@ class SessionCollaborationService:
         source_session_id: str | None = None,
         submission_id: str | None = None,
         case_id: str = "collaboration",
+        fork_from: str | None = None,
     ) -> CollaborationOperation:
         return await self._start(
             config=config,
@@ -197,6 +198,7 @@ class SessionCollaborationService:
             source_session_id=source_session_id,
             submission_id=submission_id,
             case_id=case_id,
+            fork_from=fork_from,
             dispatch=True,
         )
 
@@ -209,6 +211,7 @@ class SessionCollaborationService:
         source_session_id: str | None = None,
         submission_id: str | None = None,
         case_id: str = "collaboration",
+        fork_from: str | None = None,
     ) -> CollaborationOperation:
         return await self._start(
             config=config,
@@ -217,6 +220,7 @@ class SessionCollaborationService:
             source_session_id=source_session_id,
             submission_id=submission_id,
             case_id=case_id,
+            fork_from=fork_from,
             dispatch=False,
         )
 
@@ -229,12 +233,15 @@ class SessionCollaborationService:
         source_session_id: str | None,
         submission_id: str | None,
         case_id: str,
+        fork_from: str | None,
         dispatch: bool,
     ) -> CollaborationOperation:
         if not message.strip():
             raise ValueError("message must be non-empty")
         if source_session_id is not None:
             manager.load(source_session_id)
+        if fork_from is not None:
+            manager.load(fork_from)
         operation = await self._reserve(
             config=config,
             source_session_id=source_session_id,
@@ -243,6 +250,7 @@ class SessionCollaborationService:
             submission_id=submission_id,
             case_id=case_id,
             intent="start",
+            fork_from=fork_from,
         )
         store = self._store(config)
         if operation.target_session_id is None:
@@ -251,6 +259,7 @@ class SessionCollaborationService:
                 operation.operation_id,
                 manager=manager,
                 case_id=case_id,
+                fork_from=fork_from,
             )
         if dispatch:
             await self._schedule(operation.operation_id, config=config, manager=manager)
@@ -325,6 +334,7 @@ class SessionCollaborationService:
         submission_id: str | None,
         case_id: str,
         intent: str,
+        fork_from: str | None = None,
     ) -> CollaborationOperation:
         async with self._lock:
             if not self._accepting:
@@ -337,6 +347,7 @@ class SessionCollaborationService:
             agent_alias=config.agent_alias,
             case_id=case_id,
             message=message,
+            fork_from=fork_from,
         )
         return await asyncio.to_thread(
             self._store(config).reserve,
@@ -516,6 +527,7 @@ class SessionCollaborationService:
         *,
         manager: SessionManager,
         case_id: str,
+        fork_from: str | None = None,
     ) -> CollaborationOperation:
         while True:
             operation = await asyncio.to_thread(store.get, operation_id)
@@ -529,7 +541,10 @@ class SessionCollaborationService:
             )
             if claimed:
                 try:
-                    target = manager.create(case_id, mode="agent")
+                    if fork_from is not None:
+                        target = manager.fork(fork_from, mode="agent")
+                    else:
+                        target = manager.create(case_id, mode="agent")
                     return await asyncio.to_thread(
                         store.attach_target,
                         operation_id,

@@ -81,6 +81,23 @@ def test_session_collaboration_commands_are_registered() -> None:
     assert listing.mode == "agent"
 
 
+def test_session_fork_command_accepts_optional_message() -> None:
+    parser = build_parser()
+
+    plain = parser.parse_args(["session", "fork", "session-1"])
+    started = parser.parse_args(
+        ["session", "fork", "session-1", "-m", "branch task", "--submission-id", "stable-1"]
+    )
+
+    assert plain.session_id == "session-1"
+    assert plain.message is None
+    assert (started.session_id, started.message, started.submission_id) == (
+        "session-1",
+        "branch task",
+        "stable-1",
+    )
+
+
 def test_collaboration_worker_is_detached_with_explicit_runtime_context(
     tmp_path,
 ) -> None:

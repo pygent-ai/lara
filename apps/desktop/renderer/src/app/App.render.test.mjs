@@ -184,6 +184,31 @@ test("message footers show time, token usage, and copy; running turns wait", () 
   assert.doesNotMatch(running, /message-meta/);
 });
 
+test("message footers offer fork only on assistant messages with a checkpoint", () => {
+  const props = (messages) => ({
+    activeSession: { session_id: "session-1", scope_id: "conversation" },
+    messages,
+    settings: {}, status: "Ready", running: false, approvals: [],
+    onForkSession: () => {},
+  });
+  const html = renderToStaticMarkup(React.createElement(appModule.ChatPane, props([
+    { id: "user-1", role: "user", content: "hello", checkpointSequence: 1 },
+    {
+      id: "assistant-1", role: "assistant", content: "Answer", status: "success",
+      sections: [], checkpointSequence: 4,
+    },
+  ])));
+  // One fork button: the assistant bubble only, never the user message.
+  assert.equal(html.split('class="message-meta-fork"').length - 1, 1);
+  assert.match(html, /lucide-git-fork/);
+  assert.match(html, /aria-label="从此消息分叉新会话"/);
+
+  const withoutBoundary = renderToStaticMarkup(React.createElement(appModule.ChatPane, props([
+    { id: "assistant-2", role: "assistant", content: "Answer", status: "success", sections: [] },
+  ])));
+  assert.doesNotMatch(withoutBoundary, /message-meta-fork/);
+});
+
 test("assistant turns without a checkpoint timestamp still show run timing", () => {
   const html = renderToStaticMarkup(React.createElement(appModule.ChatPane, {
     activeSession: { session_id: "session-1", scope_id: "conversation" },

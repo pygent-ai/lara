@@ -235,6 +235,82 @@ class SessionManagerTests(unittest.TestCase):
                     content,
                 )
 
+    def test_fork_can_target_chat_mode_for_sidebar_visibility(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = SessionManager(
+                RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
+            )
+            source = manager.create("chat", mode="chat")
+            forked = manager.fork(source.session_id, mode="chat")
+            loaded = manager.load(forked.session_id)
+            metadata = json.loads(
+                (Path(forked.session_dir) / "metadata.json").read_text(encoding="utf-8")
+            )
+
+            self.assertEqual(loaded.metadata["mode"], "chat")
+            self.assertEqual(loaded.metadata["forked_from"], source.session_id)
+            self.assertEqual(metadata["mode"], "chat")
+            self.assertTrue(forked.session_id.startswith("chat-"))
+
+    def test_fork_at_checkpoint_sequence_truncates_history(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = SessionManager(
+                RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
+            )
+            source = manager.create("chat", mode="chat")
+            run = manager.start_case_run(source.session_id, "chat")
+            for role, content in (
+                ("user", "first question"),
+                ("assistant", "first answer"),
+                ("user", "second question"),
+            ):
+                manager.append_history_checkpoint(
+                    run,
+                    turn_id=f"turn-{role}",
+                    checkpoint_id=f"checkpoint-{content}",
+                    message={"role": role, "content": content},
+                )
+            source_history = manager.history_with_run_timing(
+                manager.load(source.session_id)
+            )
+            boundary = source_history[1]["checkpoint_sequence"]
+
+            forked = manager.fork(source.session_id, mode="chat", at_sequence=boundary)
+            loaded = manager.load(forked.session_id)
+
+            self.assertEqual(
+                [message["content"] for message in loaded.history],
+                ["first question", "first answer"],
+            )
+            self.assertEqual(
+                loaded.metadata["history_checkpoint_seq"], boundary
+            )
+            # The rewound cursor must stay stable across new checkpoints: the
+            # fork appends after the boundary without resurrecting old rows.
+            manager.append_history_checkpoint(
+                manager.start_case_run(forked.session_id, "chat"),
+                turn_id="turn-fork",
+                checkpoint_id="checkpoint-forked",
+                message={"role": "user", "content": "forked question"},
+            )
+            reloaded = manager.load(forked.session_id)
+            self.assertEqual(
+                [message["content"] for message in reloaded.history],
+                ["first question", "first answer", "forked question"],
+            )
+
+    def test_fork_rejects_unknown_checkpoint_sequence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = SessionManager(
+                RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
+            )
+            source = manager.create("chat", mode="chat")
+            with self.assertRaises(ValueError):
+                manager.fork(source.session_id, at_sequence=999)
+            # The failed fork must not leave an orphan target session behind.
+            sessions = list((Path(tmp) / ".lara" / "sessions").iterdir())
+            self.assertEqual([path.name for path in sessions], [source.session_id])
+
 
 if __name__ == "__main__":
     unittest.main()

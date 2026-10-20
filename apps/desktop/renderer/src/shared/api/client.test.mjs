@@ -46,6 +46,23 @@ test("permission settings preserve false and omit unspecified modes", () => {
   assert.equal(Object.hasOwn(settingsPayload({ workspaceRoot: "workspace" }), "approvals_enabled"), false);
 });
 
+test("forkSession posts to the session fork endpoint with the scope query", async () => {
+  const calls = [];
+  const client = createApiClient({ fetchImpl: async (url, init) => {
+    calls.push({ url, method: init.method, body: JSON.parse(init.body) });
+    return new Response(JSON.stringify({ session_id: "chat-fork-1" }));
+  } });
+  const forked = await client.forkSession("chat-source-1", { scopeId: "project:w1" });
+  await client.forkSession("chat-source-1", { atSequence: 5 });
+  assert.deepEqual(calls[0], {
+    url: "http://127.0.0.1:8765/sessions/chat-source-1/fork?scope_id=project%3Aw1",
+    method: "POST",
+    body: {},
+  });
+  assert.deepEqual(calls[1].body, { at_sequence: 5 });
+  assert.equal(forked.session_id, "chat-fork-1");
+});
+
 test("session errors preserve HTTP status for missing-session recovery", async () => {
   const client = createApiClient({
     fetchImpl: async () => new Response(JSON.stringify({ detail: "Session is unavailable" }), { status: 404 }),

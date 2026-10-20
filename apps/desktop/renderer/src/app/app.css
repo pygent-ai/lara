@@ -534,6 +534,46 @@ button:focus-visible {
   background: rgba(200, 74, 87, 0.1);
 }
 
+/* The fork flies out to the left of the delete cell, mirroring the pin;
+   group rows carry no pin, so the two slots never collide. */
+.session-fork {
+  position: absolute;
+  top: 0;
+  right: 32px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  color: var(--soft);
+  background: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.session-row:hover .session-fork,
+.session-row:is(:focus-visible, :has(:focus-visible)) .session-fork {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.session-fork:hover {
+  color: var(--accent-deep);
+  background: var(--button-hover-bg);
+}
+
+.session-fork svg {
+  width: 16px;
+  height: 16px;
+}
+
 @keyframes session-spin {
   to {
     transform: rotate(360deg);
@@ -872,7 +912,8 @@ button:focus-visible {
   line-height: 1.5;
 }
 
-.message-meta-copy {
+.message-meta-copy,
+.message-meta-fork {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -887,7 +928,9 @@ button:focus-visible {
 }
 
 .message-meta-copy:hover,
-.message-meta-copy:focus-visible {
+.message-meta-copy:focus-visible,
+.message-meta-fork:hover,
+.message-meta-fork:focus-visible {
   color: var(--text);
   text-decoration: underline;
 }

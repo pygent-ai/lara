@@ -9,6 +9,7 @@ import {
   Folder,
   FolderCode,
   FolderPlus,
+  GitFork,
   ArrowDown,
   ArrowUp,
   ChevronRight,
@@ -533,6 +534,27 @@ export function App() {
         composerDraftsRef.current.delete(sessionId);
         await refreshWorkbench({ selectFirst: true });
         setNotice("Session deleted");
+      } catch (err) {
+        setError(readableError(err));
+      }
+    },
+    [api, refreshWorkbench, settings.workspace_root],
+  );
+
+  const handleForkSession = useCallback(
+    async (sessionId, scope, atSequence) => {
+      try {
+        setError("");
+        setNotice("");
+        const forked = await api.forkSession(sessionId, {
+          scopeId: scope?.scope_id,
+          atSequence,
+        });
+        if (scope?.workspace_root && scope.workspace_root !== settings.workspace_root) {
+          await api.updateSettings({ workspaceRoot: scope.workspace_root });
+        }
+        await refreshWorkbench({ selectSessionId: forked.session_id });
+        setNotice("Session forked");
       } catch (err) {
         setError(readableError(err));
       }
@@ -1232,6 +1254,7 @@ export function App() {
         activeSessionId={activeSessionId}
         onCreateSession={handleCreateSession}
         onDeleteSession={handleDeleteSession}
+        onForkSession={handleForkSession}
         onDeleteProject={handleDeleteProject}
         onSelectSession={handleSelectSession}
         onReorderProjects={handleReorderProjects}
@@ -1263,6 +1286,7 @@ export function App() {
         pendingSteerings={pendingSteerings[activeSessionId] || []}
         api={api}
         onSendMessage={handleSendMessage}
+        onForkSession={handleForkSession}
         onSteering={handleSteering}
         onCancelTurn={handleCancelTurn}
         onApproval={handleApproval}
@@ -1404,6 +1428,7 @@ export const SessionSidebar = memo(function SessionSidebar({
   activeSessionId,
   onCreateSession,
   onDeleteSession,
+  onForkSession,
   onDeleteProject,
   onSelectSession,
   onReorderProjects,
@@ -1733,6 +1758,7 @@ export const SessionSidebar = memo(function SessionSidebar({
                         statusAcknowledged={acknowledgedStatuses[session.session_id] === sessionStatusIdentity(session)}
                         onAcknowledgeStatus={acknowledgeSessionStatus}
                         onDeleteSession={onDeleteSession}
+                        onForkSession={onForkSession}
                         onSelectSession={onSelectSession}
                         dragEnabled={!search}
                         dropActive={dropTarget?.type === "session" && dropTarget.sessionId === session.session_id}
@@ -1769,6 +1795,7 @@ function SessionRow({
   statusAcknowledged,
   onAcknowledgeStatus,
   onDeleteSession,
+  onForkSession,
   onSelectSession,
   onTogglePin,
   recent = false,
@@ -1783,6 +1810,7 @@ function SessionRow({
   const statusKind = sessionStatusKind(session.last_case_run_status);
   const showStatus = statusKind === "running" || !statusAcknowledged;
   const canDelete = statusKind !== "running";
+  const canFork = statusKind !== "running";
   const pinned = Boolean(session.pinned);
   const titleRef = useRef(null);
   const [titleShift, setTitleShift] = useState(0);
@@ -1852,6 +1880,20 @@ function SessionRow({
             <Pin aria-hidden="true" />
           </button>
         )}
+        {canFork && onForkSession && (
+          <button
+            className="session-fork"
+            title="Fork session"
+            aria-label={`Fork ${title}`}
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onForkSession(session.session_id, scope);
+            }}
+          >
+            <Copy aria-hidden="true" />
+          </button>
+        )}
         {canDelete && onDeleteSession && (
           <button
             className="session-delete"
@@ -1888,7 +1930,7 @@ export function computeEnteringMessageIds(previous, sessionId, messages) {
   return new Set(messages.slice(previous.ids.length).map((message) => message.id));
 }
 
-export function ChatPane({ activeSession, messages, activityCollapseToken, settings, status, running, steeringReady = false, approvals, pendingSteerings = [], api, onSendMessage, onSteering, onCancelTurn, onApproval, projects = [], onSelectProject, onChooseProject, onChangePermissions, pendingNewModelGroup = "", onChangeNewModelGroup = () => {}, pendingNewSessionScope = "", onChangeModel = () => {}, composerDrafts = new Map() }) {
+export function ChatPane({ activeSession, messages, activityCollapseToken, settings, status, running, steeringReady = false, approvals, pendingSteerings = [], api, onSendMessage, onForkSession, onSteering, onCancelTurn, onApproval, projects = [], onSelectProject, onChooseProject, onChangePermissions, pendingNewModelGroup = "", onChangeNewModelGroup = () => {}, pendingNewSessionScope = "", onChangeModel = () => {}, composerDrafts = new Map() }) {
   const empty = messages.length === 0;
   const selectedScope = activeSession?.scope_id || pendingNewSessionScope || scopeIdFromWorkspace(settings.workspace_root);
   const composerDraftKey = activeSession ? activeSession.session_id : `new-chat:${selectedScope}`;
@@ -1904,6 +1946,16 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
   const [dragOver, setDragOver] = useState(false);
   const sendingRef = useRef(false);
   const pendingSteeringRef = useRef(null);
+  // The active session is already on its own workspace, so the fork passes
+  // only the scope id; the App handler skips its project-switch branch.
+  const handleForkAtMessage = useCallback(
+    (atSequence) => {
+      if (activeSession && onForkSession) {
+        onForkSession(activeSession.session_id, { scope_id: selectedScope }, atSequence);
+      }
+    },
+    [activeSession, onForkSession, selectedScope],
+  );
   async function configure(action) {
     setConfiguring(true);
     setConfigError("");
@@ -2162,7 +2214,7 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
           </button>
         )}
         {visibleMessages.map((message) => (
-          <MessageRow key={message.id} message={message} entering={enteringMessageIds.has(message.id)} activityCollapseToken={activityCollapseToken} api={api} scopeId={selectedScope} />
+          <MessageRow key={message.id} message={message} entering={enteringMessageIds.has(message.id)} activityCollapseToken={activityCollapseToken} api={api} scopeId={selectedScope} onForkAtMessage={handleForkAtMessage} />
         ))}
         {pendingSteerings.map((item) => (
           <article className="message user message-enter pending-steering" key={`pending-${item.inputId}`}>
@@ -2542,7 +2594,7 @@ export function MediaContent({ media, api, scopeId }) {
 
 // Memoized: during streaming every applied delta re-renders the transcript
 // once per frame, and only the active assistant message actually changes.
-const MessageRow = memo(function MessageRow({ message, entering = false, activityCollapseToken, api, scopeId = "" }) {
+const MessageRow = memo(function MessageRow({ message, entering = false, activityCollapseToken, api, scopeId = "", onForkAtMessage }) {
   if (message.role === "activity") {
     return <ActivityMessage message={message} collapseToken={activityCollapseToken} api={api} />;
   }
@@ -2581,7 +2633,7 @@ const MessageRow = memo(function MessageRow({ message, entering = false, activit
             )}
           </div>
         )}
-        <MessageMeta message={message} />
+        <MessageMeta message={message} onForkAtMessage={onForkAtMessage} />
       </div>
     </article>
   );
@@ -2714,7 +2766,7 @@ function MarkdownLink({ children, href }) {
 
 // Footer under every transcript message: the checkpoint timestamp, the
 // turn's aggregated token usage, and a copy button for the raw content.
-function MessageMeta({ message }) {
+function MessageMeta({ message, onForkAtMessage }) {
   if (message.role === "assistant" && message.status === "running") {
     return null;
   }
@@ -2723,7 +2775,10 @@ function MessageMeta({ message }) {
   const time = formatMessageTimestamp(message.createdAt ?? message.endedAt ?? message.startedAt);
   const usage = usageSummaryText(message.usage);
   const content = String(message.content || "");
-  if (!time && !usage && !content.trim()) {
+  const canForkAt = Boolean(
+    onForkAtMessage && message.role === "assistant" && message.checkpointSequence,
+  );
+  if (!time && !usage && !content.trim() && !canForkAt) {
     return null;
   }
   return (
@@ -2731,6 +2786,17 @@ function MessageMeta({ message }) {
       {time && <span className="message-meta-time">{time}</span>}
       {usage && <span className="message-meta-usage" title={usageDetailText(message.usage)}>{usage}</span>}
       {content.trim() && <MessageMetaCopy text={content} />}
+      {canForkAt && (
+        <button
+          type="button"
+          className="message-meta-fork"
+          title="从此消息分叉新会话"
+          aria-label="从此消息分叉新会话"
+          onClick={() => onForkAtMessage(message.checkpointSequence)}
+        >
+          <GitFork size={12} aria-hidden="true" />
+        </button>
+      )}
     </div>
   );
 }
@@ -3676,6 +3742,7 @@ export function historyToMessages(history) {
     if (content || attachments) {
       rendered.push({ id: `history-${index}`, role: messageDisplayRole(message), content,
         ...(message.created_at ? { createdAt: message.created_at } : {}),
+        ...(message.checkpoint_sequence ? { checkpointSequence: message.checkpoint_sequence } : {}),
         ...(message.kind === "lara.user.steering" ? { steeringInputId: message.data?.input_id } : {}),
         ...(attachments ? { attachments } : {}),
       });
@@ -3751,6 +3818,12 @@ function renderTurnSegment(segment, idPrefix, timing = segment.find((message) =>
       .filter((message) => String(message?.role || "") === "assistant")
       .map((message) => message?.usage),
   );
+  // Fork-at-message needs the boundary of the whole turn: the last checkpoint
+  // row inside the segment, so the fork inherits everything shown so far.
+  const lastCheckpointSequence = segment.reduce(
+    (max, item) => Math.max(max, Number(item?.checkpoint_sequence) || 0),
+    0,
+  );
   const createdAt = segmentCreatedAt(segment, finalAssistantIndex);
   return [
     {
@@ -3761,6 +3834,7 @@ function renderTurnSegment(segment, idPrefix, timing = segment.find((message) =>
       ...runTimingFields(timing),
       sections: finalizeToolSections(sections),
       ...(media.length ? { media } : {}),
+      ...(lastCheckpointSequence ? { checkpointSequence: lastCheckpointSequence } : {}),
       ...(createdAt ? { createdAt } : {}),
       ...(usage ? { usage } : {}),
     },

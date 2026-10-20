@@ -52,6 +52,29 @@ def register_session_parser(subparsers: Any) -> None:
     _add_collaboration_submission(start)
     start.set_defaults(handler=_session_start)
 
+    fork = commands.add_parser(
+        "fork",
+        help="Fork a session; with -m, start the fork as a background agent",
+    )
+    fork.add_argument("session_id", help="Source session ID to fork")
+    fork.add_argument(
+        "-m",
+        "--message",
+        default=None,
+        help="Initial message; submits it to the forked session as a background turn",
+    )
+    fork.add_argument(
+        "--submission-id",
+        default=None,
+        help="Stable idempotency key for retrying the same submission",
+    )
+    fork.add_argument(
+        "--source-session",
+        default=None,
+        help="Session ID of the sending agent; omit for an external sender",
+    )
+    fork.set_defaults(handler=_session_fork)
+
     status = commands.add_parser("status", help="Show an operation or agent message")
     status.add_argument("collaboration_id", metavar="operation_or_message_id")
     status.set_defaults(handler=_session_status)
@@ -114,6 +137,32 @@ def _session_start(args: argparse.Namespace) -> dict[str, Any]:
     operation, config = asyncio.run(_enqueue_collaboration_start(args))
     _spawn_collaboration_worker(args, operation.operation_id, config)
     return operation.to_dict()
+
+
+def _session_fork(args: argparse.Namespace) -> dict[str, Any]:
+    config, manager = _collaboration_config_and_manager(args)
+    if not args.message:
+        return manager.fork(args.session_id, mode="chat").to_dict()
+    operation, config = asyncio.run(_enqueue_fork_start(args, config, manager))
+    _spawn_collaboration_worker(args, operation.operation_id, config)
+    return operation.to_dict()
+
+
+async def _enqueue_fork_start(
+    args: argparse.Namespace,
+    config: RunConfig,
+    manager: SessionManager,
+) -> tuple[Any, RunConfig]:
+    async with LocalExecutionHost() as host:
+        operation = await host.collaboration.enqueue_start(
+            config=config,
+            manager=manager,
+            message=args.message,
+            source_session_id=args.source_session,
+            submission_id=args.submission_id,
+            fork_from=args.session_id,
+        )
+        return operation, config
 
 
 async def _enqueue_agent_message(args: argparse.Namespace) -> dict[str, Any]:
