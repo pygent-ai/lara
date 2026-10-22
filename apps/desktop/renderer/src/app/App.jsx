@@ -1,7 +1,7 @@
 import { SettingsPage as SettingsPanel } from "../features/settings/SettingsPage.jsx";
 export { SettingsPanel };
 export { modelGroupValidationError, settingsForSave, protocolLabel, providerSelectionValue, renamedConnectionValue, protocolChoicesForConnection, capabilityPresetLabel, commitConnectionBuffer } from "../features/settings/settingsModel.js";
-import React, { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronUp,
@@ -1929,6 +1929,7 @@ export function computeEnteringMessageIds(previous, sessionId, messages) {
 export function ChatPane({ activeSession, messages, activityCollapseToken, settings, status, running, steeringReady = false, approvals, pendingSteerings = [], api, onSendMessage, onForkSession, onSteering, onCancelTurn, onApproval, projects = [], onSelectProject, onChooseProject, onChangePermissions, pendingNewModelGroup = "", onChangeNewModelGroup = () => {}, pendingNewSessionScope = "", onChangeModel = () => {}, composerDrafts = new Map() }) {
   const empty = messages.length === 0;
   const selectedScope = activeSession?.scope_id || pendingNewSessionScope || scopeIdFromWorkspace(settings.workspace_root);
+  const mediaScope = useMemo(() => ({ api, scopeId: selectedScope }), [api, selectedScope]);
   const composerDraftKey = activeSession ? activeSession.session_id : `new-chat:${selectedScope}`;
   // ChatPane remounts on every session switch, so the App-level composerDrafts
   // map is the only copy of half-typed text; re-read it on mount.
@@ -2210,7 +2211,9 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
           </button>
         )}
         {visibleMessages.map((message) => (
-          <MessageRow key={message.id} message={message} entering={enteringMessageIds.has(message.id)} activityCollapseToken={activityCollapseToken} api={api} scopeId={selectedScope} onForkAtMessage={handleForkAtMessage} />
+          <MediaSourceScopeContext.Provider key={message.id} value={mediaScope}>
+            <MessageRow message={message} entering={enteringMessageIds.has(message.id)} activityCollapseToken={activityCollapseToken} api={api} scopeId={selectedScope} onForkAtMessage={handleForkAtMessage} />
+          </MediaSourceScopeContext.Provider>
         ))}
         {pendingSteerings.map((item) => (
           <article className="message user message-enter pending-steering" key={`pending-${item.inputId}`}>
@@ -2655,6 +2658,12 @@ function markdownUrlTransform(url) {
   return DATA_IMAGE_URL.test(String(url)) ? url : defaultUrlTransform(url);
 }
 
+// Persisted generated images reference workspace upload files instead of
+// carrying their bytes (runtime media offload), so markdown rendering needs
+// the api and active scope to resolve those relative paths into
+// /uploads/content URLs. Legacy data URIs keep rendering unchanged.
+export const MediaSourceScopeContext = createContext({ api: null, scopeId: "" });
+
 // Streaming messages re-parse on every content change; micromark is fast
 // enough for transcript-sized texts, and the memo keeps non-streaming
 // renders from reparsing.
@@ -2687,12 +2696,19 @@ const MARKDOWN_COMPONENTS = {
   img: MarkdownImage,
 };
 
-// Model images arrive as markdown data URIs; render through the shared
-// thumbnail view (small, hover actions, click to zoom) instead of a raw
-// full-width img. Stripped unsafe URLs render as nothing at all.
+// Model images arrive as markdown data URIs (live stream and legacy history)
+// or as persisted upload paths that resolve through /uploads/content; render
+// both through the shared thumbnail view (small, hover actions, click to
+// zoom) instead of a raw full-width img. Stripped unsafe URLs render as
+// nothing at all.
 function MarkdownImage({ src, alt }) {
+  const { api, scopeId } = useContext(MediaSourceScopeContext);
   if (!src) return null;
-  return <MediaImageView src={src} alt={alt || ""} thumbClassName="markdown-image-thumb" />;
+  const resolved =
+    isUploadedAttachment(src) && api?.uploadContentUrl
+      ? api.uploadContentUrl(scopeId, src)
+      : src;
+  return <MediaImageView src={resolved} alt={alt || ""} thumbClassName="markdown-image-thumb" />;
 }
 
 function MarkdownHeading({ node, children }) {
