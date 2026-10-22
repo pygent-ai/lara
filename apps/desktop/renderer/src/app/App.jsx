@@ -1,7 +1,6 @@
 import { SettingsPage as SettingsPanel } from "../features/settings/SettingsPage.jsx";
-import { settingsForSave } from "../features/settings/settingsModel.js";
 export { SettingsPanel };
-export { modelGroupValidationError, settingsForSave, protocolLabel, providerSelectionValue, renamedConnectionValue, protocolChoicesForConnection, capabilityPresetLabel } from "../features/settings/settingsModel.js";
+export { modelGroupValidationError, settingsForSave, protocolLabel, providerSelectionValue, renamedConnectionValue, protocolChoicesForConnection, capabilityPresetLabel, commitConnectionBuffer } from "../features/settings/settingsModel.js";
 import React, { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
@@ -1150,34 +1149,31 @@ export function App() {
     await api.cancelChatTurn(execution.executionId, { sessionId });
   }, [api]);
 
-  const handleSaveSettings = useCallback(
-    async (draft) => {
-      if (settingsSaveBusyRef.current) return;
+  // Per-section saves from the settings page: the payload already carries its
+  // own saved-state baseline, so it is sent as-is. App settings stay untouched
+  // here on purpose — resetting them would wipe unsaved edits in other
+  // settings sections; they sync on the next save or panel reopen. A workspace
+  // save re-selects the project exactly like the old global save did.
+  const handleApplySettings = useCallback(
+    async (draft, { workspaceChanged = false } = {}) => {
+      if (settingsSaveBusyRef.current) throw new Error("正在保存设置，请稍后再试。");
       settingsSaveBusyRef.current = true;
       setSavingSettings(true);
       try {
-        setError("");
-        setStatus("Reloading");
-        const nextSettings = await api.updateSettings(settingsForSave(draft, settings));
-        setSettings(nextSettings);
-        setSettingsOpen(false);
-        const workspaceChanged = projectPathKey(nextSettings.workspace_root) !== projectPathKey(settings.workspace_root);
-        await refreshWorkbench({
-          selectFirst: workspaceChanged,
-          preserveSessionId: workspaceChanged ? "" : activeSessionIdRef.current,
-        });
+        await api.updateSettings(draft);
+        if (workspaceChanged) {
+          await refreshWorkbench({ selectFirst: true, preserveSessionId: "" });
+        }
         setNotice("设置已保存，新运行将使用新配置；正在运行的任务继续使用原配置。");
       } catch (err) {
-        setStatus("Error");
-        setError(readableError(err));
+        throw new Error(readableError(err));
       } finally {
         settingsSaveBusyRef.current = false;
         setSavingSettings(false);
       }
     },
-    [api, refreshWorkbench, settings],
+    [api, refreshWorkbench],
   );
-
   const handleOpenSettings = useCallback(() => setSettingsOpen(true), []);
   const handleOpenScheduled = useCallback(() => setActiveView("scheduled"), []);
   const handleToggleHistory = useCallback(
@@ -1332,7 +1328,7 @@ export function App() {
           api={api}
           disabled={savingSettings}
           onClose={() => setSettingsOpen(false)}
-          onSave={handleSaveSettings}
+          onPersist={handleApplySettings}
         />
       )}
     </main>

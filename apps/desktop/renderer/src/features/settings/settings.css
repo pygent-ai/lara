@@ -20,7 +20,7 @@
 .settings-page-heading h3 { font-size:26px; letter-spacing:-.6px; margin:10px 0 8px; font-weight:600; }
 .settings-page-heading p { margin:0; color:var(--muted); font-size:12px; line-height:1.7; }
 .settings-fields { min-width:0; padding:0; margin:0; border:0; }
-/* Model config layers: 资源池 / 启用模型 / 模型组 render one at a time. */
+/* Model config layers: 模型资源池 / 模型组 render one at a time. */
 .settings-subtabs { display:flex; gap:2px; margin:0 0 14px; border-bottom:1px solid var(--line); }
 .settings-subtabs > button { padding:8px 14px; border:0; border-bottom:2px solid transparent; background:transparent; color:var(--muted); font-size:13px; font-weight:600; cursor:pointer; }
 .settings-subtabs > button:hover { color:var(--text); }
@@ -271,3 +271,51 @@
 @media(max-width:820px) {
   .settings-page .model-group-card { grid-template-columns:1fr; }
 }
+
+/* Merged model pool: collapsed connection rows with one inline editor. */
+.settings-page .pool-row { display:flex; flex-direction:column; padding:0 10px 0 0; }
+.pool-row-head { display:flex; align-items:center; gap:6px; }
+.settings-page .pool-row-head .route-remove { flex-shrink:0; }
+.pool-new-title { padding:13px 14px; font-size:14px; font-weight:600; }
+/* Smooth in-place expansion: the editor body stays mounted and the shell
+   animates grid-template-rows between 0fr and 1fr. */
+.pool-editor-shell { display:grid; grid-template-rows:0fr; transition:grid-template-rows .22s ease; }
+.pool-row-open > .pool-editor-shell { grid-template-rows:1fr; }
+.pool-editor-shell > .pool-editor-inner { min-height:0; overflow:hidden; visibility:hidden; transition:visibility .22s; }
+.pool-row-open > .pool-editor-shell > .pool-editor-inner { visibility:visible; }
+@media (prefers-reduced-motion: reduce) { .pool-editor-shell, .pool-editor-shell > .pool-editor-inner { transition:none; } }
+@media (prefers-reduced-motion: reduce) { .pool-editor-shell { transition:none; } }
+.settings-page .pool-row-main { flex:1; display:flex; align-items:center; gap:12px; min-width:0; padding:13px 14px; border:0; background:transparent; color:var(--text); text-align:left; cursor:pointer; border-radius:12px; }
+.settings-page .pool-row-main:hover { background:var(--surface-2); }
+.settings-page .pool-row-main > svg { flex-shrink:0; color:var(--soft); }
+.settings-page .pool-row-main > svg:first-child { transition:transform .15s ease; }
+.settings-page .pool-row-main[aria-expanded="true"] > svg:first-child { transform:rotate(90deg); }
+.connection-summary-text { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.connection-summary-text strong { font-size:14px; font-weight:600; overflow-wrap:anywhere; }
+.connection-summary-text small { color:var(--muted); font-size:11px; overflow-wrap:anywhere; }
+.connection-editor-dirty { padding:2px 8px; border-radius:9px; background:var(--surface); border:1px solid var(--line-strong); color:var(--warning); font-size:10px; }
+.settings-page .connection-editor .connection-primary-fields, .settings-page .connection-editor .connection-endpoints { padding:14px 18px 0; }
+.settings-page .connection-editor .connection-endpoints .connection-section-heading { margin-top:14px; }
+.settings-page .connection-models { padding:16px 18px 4px; }
+.settings-page .connection-models > .connection-section-heading { margin-bottom:10px; }
+.settings-page .connection-models > .connection-section-heading .connection-add-model { margin:0 0 0 auto; }
+.settings-page .connection-models .add-model-form { margin:0 0 10px; }
+.settings-page .connection-model-details { border-top:1px solid var(--line); }
+.settings-page .connection-model-details > summary { cursor:pointer; list-style:none; }
+.settings-page .connection-model-details > summary::-webkit-details-marker { display:none; }
+.connection-model-copy { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.connection-model-copy strong { font-size:13px; overflow-wrap:anywhere; }
+.connection-model-copy small { color:var(--muted); font-size:11px; overflow-wrap:anywhere; }
+.settings-page .connection-model-details > summary .route-remove { margin-left:auto; }
+.settings-page .connection-model-details > .model-config-block { padding:12px 0 16px; border-top:0; }
+.settings-page .connection-editor .connection-advanced { margin:14px 18px 0; }
+.settings-page .connection-editor .connection-advanced > summary { padding:10px 0; }
+.connection-editor-actions { display:flex; align-items:center; gap:10px; padding:14px 18px; border-top:1px solid var(--line); background:var(--surface-2); }
+.connection-editor-actions .send { margin-left:auto; background:var(--text); color:var(--surface); border:0; border-radius:8px; padding:9px 18px; font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap; }
+.connection-editor-actions .send:disabled { background:var(--surface-2); color:var(--soft); cursor:not-allowed; }
+.connection-editor-actions .plain-action { white-space:nowrap; }
+/* Per-tab save: heading row keeps the tab's own save button and dirty chip. */
+.section-save-row { display:flex; align-items:center; gap:10px; padding:20px 18px 0; }
+.section-save-row h4 { padding:0; flex:1; margin:0; }
+.section-save { margin-left:auto; white-space:nowrap; }
+.settings-page .model-group-heading > .section-save { margin-left:auto; }

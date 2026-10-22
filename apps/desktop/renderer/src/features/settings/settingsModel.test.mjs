@@ -1,48 +1,33 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { addModelToGroup, applyBuiltinProvider, emptyNativeConnection, modelDiscoveryRequest, settingsToDraft, modelGroupValidationError } from "./settingsModel.js";
+import { applyBuiltinProvider, commitConnectionBuffer, emptyNativeConnection, emptyNativeModel, modelDiscoveryRequest, settingsToDraft, modelGroupValidationError } from "./settingsModel.js";
 import { settingsPayload } from "../../shared/api/client.js";
 
-test("quick setup preserves native connection-model-group structure", () => {
-  const draft = settingsToDraft({ connections: { service: emptyNativeConnection() } });
-  const next = addModelToGroup(draft, { connectionKey: "service", modelId: " example-model ", groupName: "" });
+test("connection commit adds a model without group membership and stays valid", () => {
+  const draft = settingsToDraft({
+    connections: { service: emptyNativeConnection() },
+    models: { existing: { connection: "service", model_id: "existing", protocol: "openai_responses", capabilities: { limits: {} } } },
+    model_groups: { coding: { models: ["existing"] } },
+    default_model_group: "coding",
+  });
+  const buffer = {
+    key: "service",
+    connection: draft.connections.service,
+    models: { ...draft.models, "model-2": { ...emptyNativeModel("service", "openai_responses"), model_id: "new-model" } },
+    renames: {},
+    credentialValues: {},
+  };
+  const next = commitConnectionBuffer(draft, "service", buffer, null);
   assert.equal(modelGroupValidationError(next), "");
-  assert.equal(next.connections, draft.connections);
-  assert.equal(next.models["model-1"].connection, "service");
-  assert.equal(next.models["model-1"].model_id, "example-model");
-  assert.deepEqual(next.modelGroups.default.models, ["model-1"]);
-  assert.equal(next.defaultModelGroup, "default");
-  assert.deepEqual(draft.models, {});
+  assert.equal(next.models["model-2"].connection, "service");
+  assert.equal(next.models["model-2"].model_id, "new-model");
+  // Models are only selected into groups from the 模型组 tab, so a new model
+  // starts outside every group and existing priorities stay untouched.
+  assert.deepEqual(next.modelGroups.coding.models, ["existing"]);
+  assert.equal(Object.hasOwn(draft.models, "model-2"), false);
   const saved = settingsPayload(next).model_config;
-  assert.equal(saved.models["model-1"].connection, "service");
-  assert.equal(Object.hasOwn(saved.models["model-1"], "credential"), false);
-});
-
-test("quick setup appends a fallback without changing existing priorities or credentials", () => {
-  const draft = settingsToDraft({ connections: { service: emptyNativeConnection() }, models: { "model-1": { model_id: "existing" } }, model_groups: { coding: { models: ["model-1"] } }, default_model_group: "coding" });
-  draft.credentialValues = { OPENAI_API_KEY: "test-only-value" };
-  const next = addModelToGroup(draft, { connectionKey: "service", modelId: "backup", groupName: "coding" });
-  assert.deepEqual(next.modelGroups.coding.models, ["model-1", "model-2"]);
-  assert.equal(next.models["model-1"], draft.models["model-1"]);
-  assert.equal(next.credentialValues, draft.credentialValues);
-  assert.equal(next.defaultModelGroup, "coding");
-});
-
-test("quick setup avoids group collisions and uses catalog capabilities", () => {
-  const draft = settingsToDraft({ connections: { service: emptyNativeConnection() }, model_groups: { default: { models: ["existing"] } }, default_model_group: "default" });
-  const capabilities = { limits: { context_tokens: 42 } };
-  const next = addModelToGroup(draft, { connectionKey: "service", modelId: "known", groupName: "" }, { model_capabilities: [{ provider: "openai", protocol: "openai_responses", model_id: "known", capabilities }] });
-  assert.deepEqual(next.modelGroups["default-2"].models, ["model-1"]);
-  assert.equal(next.defaultModelGroup, "default");
-  assert.deepEqual(next.models["model-1"].capabilities, capabilities);
-  assert.notEqual(next.models["model-1"].capabilities, capabilities);
-});
-
-test("quick setup rejects missing references and blank model IDs", () => {
-  const draft = settingsToDraft({ connections: { service: emptyNativeConnection() } });
-  for (const options of [{ connectionKey: "missing", modelId: "a" }, { connectionKey: "service", modelId: " " }, { connectionKey: "service", modelId: "a", groupName: "deleted" }]) {
-    assert.throws(() => addModelToGroup(draft, options));
-  }
+  assert.equal(saved.models["model-2"].connection, "service");
+  assert.equal(Object.hasOwn(saved.models["model-2"], "credential"), false);
 });
 
 test("built-in provider applies Pygent endpoints and carries the entered key", () => {

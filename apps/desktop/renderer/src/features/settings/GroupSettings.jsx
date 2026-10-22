@@ -49,7 +49,7 @@ function GroupModelSelect({ draft, groupName, selected, onSelect }) {
   </details>;
 }
 
-export function GroupSettings({ draft, setDraft, activeSection, activeModelTab, setField, renameGroup, toggleGroupModel, moveGroupModel }) {
+export function GroupSettings({ draft, setDraft, activeSection, activeModelTab, setField, renameGroup, toggleGroupModel, moveGroupModel, onSave, sectionDirty }) {
   return <>
     <section hidden={activeSection !== "model-config" || activeModelTab !== "groups"} className="fallback-editor" aria-label="Model groups">
       <div className="model-group-heading">
@@ -57,8 +57,10 @@ export function GroupSettings({ draft, setDraft, activeSection, activeModelTab, 
           <strong>模型组</strong>
           <span>选择组内模型并排列调用顺序；第一项为主模型，其余按顺序回退。</span>
         </div>
+        {sectionDirty && <span className="connection-editor-dirty">未保存</span>}
+        <button type="button" className="route-add section-save" disabled={!sectionDirty} onClick={onSave} aria-label="保存模型组">保存</button>
       </div>
-      {!Object.keys(draft.modelGroups).length && <p className="settings-inline-empty">添加模型时可以同时创建模型组，也可以在这里手动添加。</p>}
+      {!Object.keys(draft.modelGroups).length && <p className="settings-inline-empty">先在“模型资源池”中添加模型，再在这里把模型加入模型组并排列调用顺序。</p>}
       <div className="model-group-list">
         {Object.entries(draft.modelGroups).map(([groupName, group]) => {
           const route = group.models.map((key) => modelDisplay(draft, key).title);

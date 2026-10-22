@@ -13,6 +13,7 @@ const desktopRoot = fileURLToPath(new URL("../../../", import.meta.url));
 let appModule;
 let errorBoundaryModule;
 let addModelModule;
+let connectionSettingsModule;
 let vite;
 
 test("completion, replay, and history replacement share the durable run duration", () => {
@@ -44,6 +45,7 @@ before(async () => {
   appModule = await vite.ssrLoadModule("/renderer/src/app/App.jsx");
   errorBoundaryModule = await vite.ssrLoadModule("/renderer/src/app/ErrorBoundary.jsx");
   addModelModule = await vite.ssrLoadModule("/renderer/src/features/settings/AddModelForm.jsx");
+  connectionSettingsModule = await vite.ssrLoadModule("/renderer/src/features/settings/ConnectionSettings.jsx");
 });
 
 after(async () => {
@@ -541,7 +543,9 @@ test("settings displays the saved tool permission mode", () => {
     }));
     assert.match(html, /工具权限/);
     assert.match(html, new RegExp(`value="${enabled ? "approval" : "full-access"}" selected=""`));
-    assert.match(html, /Save and Reload/);
+    // The global save button is gone; the runtime tab saves itself.
+    assert.doesNotMatch(html, /Save and Reload/);
+    assert.match(html, /aria-label="保存运行与权限"/);
   }
 });
 
@@ -1879,14 +1883,14 @@ test("model-id changes remain saveable with an existing credential reference", (
   };
   const connections = { primary: { provider: "openai", credential: { env: "MODEL_API_KEY" }, credential_source: "user-file:MODEL_API_KEY", protocols: { openai_chat_completions: { base_url: "https://example.test/v1" } } } };
   const settings = { connections, models: { primary: model }, model_groups: { coding: { models: ["primary"] } }, default_model_group: "coding" };
-  for (const saving of [false, true]) {
-    const html = renderToStaticMarkup(React.createElement(appModule.SettingsPanel, {
-      settings, disabled: saving, onClose() {}, onSave() {},
-    }));
-    const save = html.match(/<button[^>]*aria-label="Save and Reload"[^>]*>/)[0];
-    assert.equal(save.includes("disabled"), saving);
-    assert.equal(html.includes("正在保存…"), saving);
-  }
+  // The global save button is gone; each tab saves itself, so a fresh panel
+  // renders clean sections with their own disabled 保存 buttons.
+  const html = renderToStaticMarkup(React.createElement(appModule.SettingsPanel, {
+    settings, disabled: false, onClose() {}, onPersist() {},
+  }));
+  assert.doesNotMatch(html, /Save and Reload/);
+  const groupSave = html.match(/<button[^>]*aria-label="保存模型组"[^>]*>/)[0];
+  assert.ok(groupSave.includes("disabled"));
   const draft = { connections, models: { primary: model }, modelGroups: { coding: { models: ["primary"] } }, defaultModelGroup: "coding", credentialValues: {} };
   assert.equal(appModule.modelGroupValidationError(draft), "");
   const payload = settingsPayload(draft);
@@ -1905,47 +1909,95 @@ test("settings separate native model identity from connection fields", () => {
   const connections = { "openai-main": { provider: "openai", credential: { env: "OPENAI_API_KEY" }, protocols: { openai_responses: { base_url: "https://api.openai.com/v1" } }, verify_ssl: true } };
   const html = renderToStaticMarkup(React.createElement(appModule.SettingsPanel, {
     settings: { connections, models: { primary: model }, model_groups: { coding: { models: ["primary"] } }, default_model_group: "coding" },
-    disabled: false, onClose() {}, onSave() {},
+    disabled: false, onClose() {}, onSave() {}, onPersist() {},
   }));
 
-  assert.match(html, /模型信息/);
-  assert.match(html, /决定调用谁、使用哪种 API 格式；不属于连接/);
   assert.match(html, /模型配置分层/);
-  assert.match(html, /资源池/);
+  assert.match(html, /模型资源池/);
+  assert.match(html, /模型组/);
+  assert.doesNotMatch(html, /启用模型/);
   assert.doesNotMatch(html.match(/<section([^>]*)aria-label="Native Pygent connections"/)[1], /hidden/);
-  assert.match(html.match(/<section([^>]*)aria-label="Native Pygent models"/)[1], /hidden=""/);
   assert.match(html.match(/<section([^>]*)aria-label="Model groups"/)[1], /hidden=""/);
-  assert.match(html, /本地名称/);
-  assert.match(html, /供应商/);
-  // The Pygent-built-in optgroup appears only after async catalog loading,
-  // so static markup asserts the always-rendered custom provider option.
-  assert.match(html, /自定义供应商/);
-  assert.doesNotMatch(html, /自定义 Provider ID/);
-  assert.match(html, /接口地址/);
-  assert.match(html, /添加接口/);
-  assert.ok(html.indexOf("Base URL") < html.indexOf("接口协议"));
-  assert.equal(appModule.providerSelectionValue("openai", null), "openai");
-  assert.equal(appModule.providerSelectionValue("company-gateway", { providers: { openai: {} } }), "__custom__");
-  assert.deepEqual(appModule.renamedConnectionValue({ provider: "gateway" }, "gateway", "office-gateway", { providers: { openai: {} } }), { provider: "office-gateway" });
-  assert.deepEqual(appModule.renamedConnectionValue({ provider: "openai" }, "gateway", "office-gateway", { providers: { openai: {} } }), { provider: "openai" });
+  // Collapsed rows keep the connection as primary info and protocol plus model
+  // count as secondary info; models live inside the connection editor.
+  assert.match(html, /openai-main/);
+  assert.match(html, /OpenAI Responses · 1 个模型/);
+  assert.doesNotMatch(html, /从此连接添加模型/);
+
   const catalogs = { providers: {
     openai: { protocols: { openai_responses: {}, openai_chat_completions: {} } },
     anthropic: { protocols: { anthropic_messages: {} } },
   } };
+  const editorHtml = renderToStaticMarkup(React.createElement(connectionSettingsModule.ConnectionEditor, {
+    connectionKey: "openai-main",
+    previousKey: "openai-main",
+    connection: connections["openai-main"],
+    models: { primary: model },
+    catalogs,
+    api: null,
+    savedDraft: { connections, models: { primary: model }, modelGroups: { coding: { models: ["primary"] } }, defaultModelGroup: "coding", credentialValues: {} },
+    collapse() {}, onPersist() {}, onDirtyChange() {},
+  }));
+  assert.match(editorHtml, /模型信息/);
+  assert.match(editorHtml, /决定调用谁、使用哪种 API 格式；不属于连接/);
+  assert.match(editorHtml, /本地名称/);
+  assert.match(editorHtml, /服务商模型 ID/);
+  // The Pygent-built-in optgroup appears only after async catalog loading,
+  // so static markup asserts the always-rendered custom provider option.
+  assert.match(editorHtml, /自定义供应商/);
+  assert.doesNotMatch(editorHtml, /自定义 Provider ID/);
+  assert.match(editorHtml, /接口配置/);
+  assert.match(editorHtml, /添加接口/);
+  assert.ok(editorHtml.indexOf("Base URL") >= 0);
+  assert.ok(editorHtml.indexOf("接口协议", editorHtml.indexOf("Base URL")) > editorHtml.indexOf("Base URL"));
+  assert.match(editorHtml, /模型管理/);
+  assert.match(editorHtml, /保存配置/);
+  assert.match(editorHtml, /测试连接方案/);
+  assert.equal(appModule.providerSelectionValue("openai", null), "openai");
+  assert.equal(appModule.providerSelectionValue("company-gateway", { providers: { openai: {} } }), "__custom__");
+  assert.deepEqual(appModule.renamedConnectionValue({ provider: "gateway" }, "gateway", "office-gateway", { providers: { openai: {} } }), { provider: "office-gateway" });
+  assert.deepEqual(appModule.renamedConnectionValue({ provider: "openai" }, "gateway", "office-gateway", { providers: { openai: {} } }), { provider: "openai" });
   assert.deepEqual(appModule.protocolChoicesForConnection("openai", catalogs), ["openai_responses", "openai_chat_completions"]);
   assert.deepEqual(appModule.protocolChoicesForConnection("company-gateway", catalogs), ["openai_responses", "openai_chat_completions", "anthropic_messages", "gemini_generate_content"]);
-  assert.match(html, /启用模型/);
-  assert.match(html, /模型组/);
-  assert.match(html, /openai-main · openai/);
-  assert.match(html, /OpenAI Responses/);
-  assert.match(html, /本地名称/);
-  assert.match(html, /仅供 Lara 的模型组引用/);
-  assert.doesNotMatch(html, /逗号分隔/);
-  // Membership is edited in the 模型组 tab; the model card summary lists it.
-  assert.match(html, /<span>coding<\/span>/);
-  // Completed connection cards offer a connection test and an add-model shortcut.
-  assert.match(html, /测试连接/);
-  assert.match(html, /从此连接添加模型/);
+  assert.doesNotMatch(editorHtml, /逗号分隔/);
+  // The model UI carries no model-group hints; membership is selected in the 模型组 tab.
+  assert.doesNotMatch(editorHtml, /加入模型组/);
+  assert.doesNotMatch(editorHtml, /尚未加入模型组/);
+});
+
+test("connection buffer commit replaces the slice and remaps model groups", () => {
+  const connection = { provider: "openai", credential: { env: "K" }, protocols: { openai_chat_completions: { base_url: "https://x.test" } } };
+  const draft = {
+    connections: { pool: connection },
+    models: {
+      m1: { connection: "pool", model_id: "a", protocol: "openai_chat_completions", capabilities: { limits: {} } },
+      m2: { connection: "pool", model_id: "b", protocol: "openai_chat_completions", capabilities: { limits: {} } },
+      keep: { connection: "pool", model_id: "c", protocol: "openai_chat_completions", capabilities: { limits: {} } },
+    },
+    modelGroups: { coding: { models: ["m1", "m2", "keep"] } },
+    defaultModelGroup: "coding",
+    credentialValues: { K: "secret" },
+  };
+  const buffer = {
+    key: "pool",
+    connection,
+    models: {
+      renamed: { connection: "pool", model_id: "a2", protocol: "openai_chat_completions", capabilities: { limits: {} } },
+      keep: { connection: "pool", model_id: "c", protocol: "openai_chat_completions", capabilities: { limits: {} } },
+    },
+    renames: { m1: "renamed" },
+    credentialValues: { K: "secret" },
+  };
+
+  const next = appModule.commitConnectionBuffer(draft, "pool", buffer, null);
+  // Renamed m1 keeps its group slot under the new key; deleted m2 leaves the group.
+  assert.deepEqual(next.modelGroups.coding.models, ["renamed", "keep"]);
+  assert.deepEqual(Object.keys(next.models).sort(), ["keep", "renamed"]);
+  assert.equal(next.models.renamed.connection, "pool");
+
+  const renamedConnection = appModule.commitConnectionBuffer(draft, "pool", { ...buffer, key: "main" }, null);
+  assert.deepEqual(Object.keys(renamedConnection.connections), ["main"]);
+  assert.equal(renamedConnection.models.renamed.connection, "main");
 });
 
 test("existing idle chat exposes only child models from its fixed group", () => {
@@ -2134,13 +2186,25 @@ test("essential connection and model fields remain visible before optional detai
     models: { primary: { connection: "service", protocol: "openai_responses", model_id: "example", capabilities: { limits: { context_tokens: 1000 } } } },
     model_groups: { coding: { models: ["primary"] } }, default_model_group: "coding",
   };
-  const html = renderToStaticMarkup(React.createElement(appModule.SettingsPanel, { settings, disabled: false, onClose() {}, onSave() {} }));
-  const connection = html.slice(html.indexOf('connection-route-card'), html.indexOf('aria-label="Native Pygent models"'));
-  const model = html.slice(html.indexOf('aria-label="Native Pygent models"'), html.indexOf('aria-label="Model groups"'));
-  for (const field of ['供应商', 'API Key', 'Base URL']) assert.ok(connection.indexOf(field) >= 0 && connection.indexOf(field) < connection.indexOf('<details'));
-  for (const field of ['使用连接', '服务商模型 ID', '能力模板']) assert.ok(model.indexOf(field) >= 0 && model.indexOf(field) < model.indexOf('<details'));
-  assert.match(html, /连接未验证|请填写 API Key/);
-  assert.match(html.match(/<button[^>]*aria-label="Save and Reload"[^>]*>/)[0], /disabled/);
+  const html = renderToStaticMarkup(React.createElement(appModule.SettingsPanel, { settings, disabled: false, onClose() {}, onSave() {}, onPersist() {} }));
+  const catalogs = { providers: { openai: { protocols: { openai_responses: {} } } } };
+  const draft = { connections: settings.connections, models: settings.models, modelGroups: { coding: { models: ["primary"] } }, defaultModelGroup: "coding", credentialValues: {} };
+  const editor = renderToStaticMarkup(React.createElement(connectionSettingsModule.ConnectionEditor, {
+    connectionKey: "service", previousKey: "service",
+    connection: settings.connections.service, models: settings.models,
+    catalogs, api: null, savedDraft: draft,
+    collapse() {}, onPersist() {}, onDirtyChange() {},
+  }));
+  // Essential connection fields stay outside the optional advanced details.
+  for (const field of ['供应商', 'API Key', 'Base URL']) assert.ok(editor.indexOf(field) >= 0 && editor.indexOf(field) < editor.indexOf('<details'));
+  // Model identity and capabilities remain reachable inside the model row.
+  for (const field of ['服务商模型 ID', '能力模板']) assert.ok(editor.includes(field));
+  assert.match(editor, /<details class="connection-model-details">/);
+  assert.match(editor, /请填写 API Key/);
+  assert.match(editor.match(/<button[^>]*class="send"[^>]*>/)[0], /disabled/);
+  // The global save button is gone; each tab carries its own save button.
+  assert.doesNotMatch(html, /Save and Reload/);
+  for (const label of ['保存模型组', '保存项目与 Agent', '保存运行与权限']) assert.match(html, new RegExp(`aria-label="${label}"`));
   assert.match(html, /默认模型组 · /);
 });
 
@@ -2286,17 +2350,14 @@ test("scheduled tasks render under the sidebar entry", () => {
 
 test("add-model id field uses a scrollable combobox instead of a datalist", () => {
   const { AddModelForm, filterDiscoveredModels } = addModelModule;
-  const draft = {
-    connections: { az: { protocols: { openai_chat_completions: {} } } },
-    modelGroups: { main: [] },
-    defaultModelGroup: "main",
-  };
   const html = renderToStaticMarkup(React.createElement(AddModelForm, {
-    draft, setDraft() {}, catalogs: {}, api: null, onDone() {}, onCancel() {},
+    connection: { protocols: { openai_chat_completions: {} } }, credentialValue: "", api: null, onAdd() {}, onCancel() {},
   }));
   assert.doesNotMatch(html, /<datalist/);
   assert.match(html, /role="combobox"/);
   assert.doesNotMatch(html, /role="listbox"/);
+  // Adding a model no longer offers model-group membership.
+  assert.doesNotMatch(html, /加入模型组/);
   assert.deepEqual(
     filterDiscoveredModels(
       [{ id: "gpt-4o", owned_by: "openai" }, { id: "claude-3", owned_by: "anthropic" }],
