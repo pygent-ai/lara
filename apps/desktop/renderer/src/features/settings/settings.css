@@ -106,20 +106,18 @@
 .settings-page .settings-fields > details:not([open]) { padding-bottom:0; }
 .settings-page .model-route-title .route-remove { margin-left:auto; }
 
-.add-model-form { padding:18px; margin-bottom:18px; border:1px solid var(--line-strong); border-radius:10px; background:var(--input-bg); }
-.add-model-fields { display:grid; grid-template-columns:1fr 1.3fr 1fr auto; gap:12px; align-items:end; }
-.add-model-fields button { min-height:40px; }
+.add-model-form { padding:14px 16px; margin-bottom:18px; border:1px solid var(--line-strong); border-radius:10px; background:var(--input-bg); }
+/* One compact row: the model picker and the 测试/添加/删除 actions share the
+   input's baseline, and the discovery status moves below the row. */
+.add-model-row { display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; }
+.add-model-id-field { flex:1 1 260px; min-width:0; }
+.add-model-actions { display:flex; flex:0 0 auto; gap:8px; }
+.add-model-actions button { height:auto; min-height:30px; padding:5px 12px; font-size:12px; font-weight:500; border:1px solid var(--line); border-radius:7px; background:var(--surface-glass); }
 .add-model-hint, .add-model-message { font-size:12px; line-height:1.7; color:var(--muted); }
-.add-model-id-control { display:grid; grid-template-columns:minmax(0,1fr) 38px; }
-.settings-page .add-model-id-control input { border-radius:8px 0 0 8px; }
-.add-model-id-control button { display:grid; min-height:40px; place-items:center; padding:0; border:1px solid var(--line-strong); border-left:0; border-radius:0 8px 8px 0; background:var(--surface); color:var(--muted); cursor:pointer; }
-.add-model-id-control button:hover:not(:disabled) { color:var(--text); background:var(--surface-2); }
-.add-model-id-control button:disabled { color:var(--soft); }
-.settings-page .add-model-discovery { display:block; min-height:17px; margin-top:4px; color:var(--muted); font-size:10px; }
+.settings-page .add-model-discovery { display:block; min-height:17px; margin:8px 0 0; color:var(--muted); font-size:10px; }
 .settings-page .add-model-discovery.ready { color:var(--accent-deep); }
 .settings-page .add-model-discovery.error { color:var(--warning); }
-@media(max-width:1000px) { .add-model-fields { grid-template-columns:1fr 1fr; } }
-@media(max-width:600px) { .add-model-fields { grid-template-columns:1fr; } }
+@media(max-width:700px) { .add-model-actions { flex-basis:100%; } }
 .settings-card-summary { display:flex; flex-wrap:wrap; gap:8px 18px; padding:12px 18px; border-bottom:1px solid var(--line); color:var(--muted); font-size:12px; line-height:1.6; overflow-wrap:anywhere; }
 .settings-page .model-config-sections { gap:0; }
 .settings-page .settings-detail { border-top:1px solid var(--line); margin-top:18px; padding-top:12px; }

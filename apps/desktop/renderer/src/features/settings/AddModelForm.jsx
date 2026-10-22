@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Plus, RefreshCw } from "lucide-react";
+import { Plus } from "lucide-react";
 import { modelDiscoveryRequest, protocolLabel } from "./settingsModel.js";
 
 // Substring filter over the provider's discovered models; keeps the provider's
@@ -104,9 +104,9 @@ export function AddModelForm({ connection, credentialValue, api, onAdd, onCancel
   const suggestionsOpen = optionsOpen && filtered.length > 0;
 
   return <section className="add-model-form" aria-label="添加模型表单">
-    <div className="add-model-fields">
+    <div className="add-model-row">
       <label className="add-model-id-field">
-        <span>模型 ID</span>
+        <span>模型选择</span>
         <div className="add-model-id-control" ref={controlRef}>
           <input
             value={modelId}
@@ -121,7 +121,6 @@ export function AddModelForm({ connection, credentialValue, api, onAdd, onCancel
             spellCheck={false}
             placeholder={discovery.status === "loading" ? "正在获取模型…" : "选择或输入模型 ID"}
           />
-          <button type="button" disabled={!api?.discoverModels || discovery.status === "loading"} onClick={() => setRefresh((current) => current + 1)} aria-label="重新获取模型" title="重新获取模型"><RefreshCw size={14} aria-hidden="true" /></button>
           {suggestionsOpen && (
             <div className="add-model-options" id="add-model-options" role="listbox" ref={optionsRef}>
               {filtered.map((item, index) => (
@@ -141,11 +140,14 @@ export function AddModelForm({ connection, credentialValue, api, onAdd, onCancel
             </div>
           )}
         </div>
-        <small className={`add-model-discovery ${discovery.status}`} role="status">{discoveryText}</small>
       </label>
-      <button type="button" className="route-add" disabled={!modelId.trim()} onClick={() => onAdd(modelId.trim())}><Plus size={16} /> 确认添加</button>
-      <button type="button" className="plain-action" onClick={onCancel}>取消添加</button>
+      <div className="add-model-actions">
+        <button type="button" className="plain-action" title="重新测试连接并获取模型" disabled={!api?.discoverModels || !request || discovery.status === "loading"} onClick={() => setRefresh((current) => current + 1)}>测试</button>
+        <button type="button" className="route-add" disabled={!modelId.trim()} onClick={() => onAdd(modelId.trim())}><Plus size={14} aria-hidden="true" /> 添加</button>
+        <button type="button" className="plain-action" title="关闭添加模型表单" onClick={onCancel}>删除</button>
+      </div>
     </div>
+    <small className={`add-model-discovery ${discovery.status}`} role="status">{discoveryText}</small>
     <p className="add-model-hint">使用 {protocolLabel(protocol)}。</p>
   </section>;
 }
