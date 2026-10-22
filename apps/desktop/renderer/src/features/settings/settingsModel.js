@@ -151,24 +151,26 @@ export function settingsForSave(draft, settings) {
 }
 
 
-// One UI action creates the same native model and group references as manual editing.
-export function addModelToGroup(draft, { connectionKey, modelId, groupName }, catalogs) {
-  const connection = draft.connections[connectionKey];
-  const protocol = Object.keys(connection?.protocols || {})[0];
-  if (!connection || !protocol || !modelId.trim()) throw new Error("请选择有效连接并填写模型 ID。");
-  const key = nextModelKey(draft.models);
-  const known = catalogs?.model_capabilities?.find(item => item.provider === connection.provider && item.protocol === protocol && item.model_id === modelId.trim());
-  const model = { ...emptyNativeModel(connectionKey, protocol), model_id: modelId.trim(), ...(known?.capabilities ? { capabilities: structuredClone(known.capabilities) } : {}) };
-  let name = groupName;
-  if (!name) {
-    name = "default";
-    let index = 2;
-    while (Object.hasOwn(draft.modelGroups, name)) name = `default-${index++}`;
-  } else if (!Object.hasOwn(draft.modelGroups, name)) {
-    throw new Error("模型组已不存在，请重新选择。");
-  }
-  const group = draft.modelGroups[name] || { models: [] };
-  return { ...draft, models: { ...draft.models, [key]: model }, modelGroups: { ...draft.modelGroups, [name]: { ...group, models: [...group.models, key] } }, defaultModelGroup: draft.defaultModelGroup || name };
+// Merge a connection editor buffer back into the draft: replaces the
+// connection entry and its model slice, remaps renamed model keys inside
+// model groups and drops models deleted in the buffer. `previousKey` is null
+// when the buffer creates a new connection.
+export function commitConnectionBuffer(draft, previousKey, buffer, catalogs) {
+  const key = buffer.key;
+  const oldKeys = previousKey ? Object.keys(draft.models).filter((modelKey) => draft.models[modelKey].connection === previousKey) : [];
+  const finalKey = (modelKey) => buffer.renames?.[modelKey] || modelKey;
+  const bufferKeys = new Set(Object.keys(buffer.models));
+  const removedFinal = new Set(oldKeys.filter((modelKey) => !bufferKeys.has(finalKey(modelKey))).map(finalKey));
+  const modelGroups = Object.fromEntries(Object.entries(draft.modelGroups).map(([name, group]) => [
+    name,
+    { models: group.models.map((modelKey) => finalKey(modelKey)).filter((modelKey) => !removedFinal.has(modelKey)) },
+  ]));
+  const models = Object.fromEntries(Object.entries(draft.models).filter(([modelKey]) => !oldKeys.includes(modelKey)));
+  for (const [modelKey, model] of Object.entries(buffer.models)) models[modelKey] = { ...model, connection: key };
+  const connections = { ...draft.connections };
+  if (previousKey && previousKey !== key) delete connections[previousKey];
+  connections[key] = renamedConnectionValue(buffer.connection, previousKey, key, catalogs);
+  return { ...draft, connections, models, modelGroups, credentialValues: { ...draft.credentialValues, ...buffer.credentialValues } };
 }
 
 export function changeConnectionProtocol(draft, connectionKey, previous, next) {

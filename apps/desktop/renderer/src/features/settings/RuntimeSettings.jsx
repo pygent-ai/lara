@@ -1,8 +1,14 @@
 import React from "react";
 
-export function RuntimeSettings({ draft, setField, activeSection, disabled }) {
+export function RuntimeSettings({ draft, setField, activeSection, disabled, onSave, sectionDirty }) {
   return <>
-          <section hidden={activeSection !== "runtime"} className="settings-disclosure"><h4>运行参数</h4><div className="settings-disclosure-body">
+          <section hidden={activeSection !== "runtime"} className="settings-disclosure">
+          <div className="section-save-row">
+          <h4>运行参数</h4>
+          {sectionDirty && <span className="connection-editor-dirty">未保存</span>}
+          <button type="button" className="route-add section-save" disabled={!sectionDirty} onClick={onSave} aria-label="保存运行与权限">保存</button>
+          </div>
+          <div className="settings-disclosure-body">
 
           <label>
             <span>最大执行步数（-1 表示不限）</span>
