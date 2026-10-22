@@ -424,7 +424,7 @@ test("document chips show the original upload name and keep the remove button", 
   // prefix never leaks into the visible name.
   assert.match(html, /lucide lucide-file-text/);
   assert.match(html, /attachment-chip-name">OPERATOR-HANDOFF\.private\.md</);
-  assert.match(html, /aria-label="移除附件/);
+  assert.match(html, /attachment-chip-remove[^>]*aria-label="移除附件/);
 });
 
 test("workspace attachment chips keep their own file name", () => {
@@ -435,6 +435,18 @@ test("workspace attachment chips keep their own file name", () => {
     onRemove: () => {},
   }));
   assert.match(html, /attachment-chip-name">report\.md</);
+});
+
+test("media chips render the thumbnail with the name below and the corner remove", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.AttachmentChip, {
+    path: ".lara/uploads/8efe283d6b70-image.png",
+    scopeId: "conversation",
+    api: { uploadContentUrl: () => "http://127.0.0.1:8765/uploads/content" },
+    onRemove: () => {},
+  }));
+  assert.match(html, /attachment-thumb attachment-thumb-chip/);
+  assert.match(html, /attachment-chip-name">image\.png</);
+  assert.match(html, /attachment-chip-remove[^>]*aria-label="移除附件/);
 });
 
 test("attachment-only user turns survive history reload", () => {
