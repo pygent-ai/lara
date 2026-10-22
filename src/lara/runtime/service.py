@@ -62,7 +62,6 @@ from pygent.tool import (
 )
 from pygent.tool.executors import ToolExecutionContext
 from pygent.tool.mcp import (
-    MCPStdioTransport,
     discover_mcp_tools,
     register_mcp_tools,
 )
@@ -76,6 +75,7 @@ from lara.runtime.attachments import (
     resolve_attachments,
 )
 from lara.runtime.bash_tasks import BashTaskObservations
+from lara.runtime.mcp import WarmMCPStdioTransport
 from lara.runtime.reminders import ReminderService
 from lara.schema import AgentSession, CaseRunRef, RunConfig
 from lara.sessions import AgentMessage, CollaborationOperation, SessionManager
@@ -388,6 +388,7 @@ class LaraRuntimeService:
         self._initialized = False
         self._initializing_task: asyncio.Task[None] | None = None
         self._closed = False
+        self._mcp_transports: list[WarmMCPStdioTransport] = []
         self.memory_harness = EternalConversationHarness(
             config.eternal_conversation,
             run_agent=self._run_memory_agent,
@@ -708,12 +709,16 @@ class LaraRuntimeService:
                 "use stdio"
             )
         env = {name: os.environ[name] for name in server.env_from if name in os.environ}
-        return MCPStdioTransport(
+        # A cold transport re-spawns the server per call and loses the readiness
+        # race against servers that connect to their backends asynchronously.
+        transport = WarmMCPStdioTransport(
             server.command,
             args=server.args,
             env=env,
             cwd=server.cwd,
         )
+        self._mcp_transports.append(transport)
+        return transport
 
     def new_agent(
         self,
@@ -1428,6 +1433,8 @@ class LaraRuntimeService:
         await self.runtime.close(cancel=cancel)
         await self.bash_tasks.close()
         await self._standard_tools.aclose()
+        for transport in self._mcp_transports:
+            await transport.aclose()
         for agent in self._agent_definitions.values():
             await aclose_if_supported(agent._standard_tools)
         for invoker in {
