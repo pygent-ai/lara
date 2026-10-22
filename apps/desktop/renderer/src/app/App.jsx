@@ -39,7 +39,7 @@ import {
 import laraLogo from "../assets/lara-logo.png";
 
 import { createApiClient } from "../shared/api/client.js";
-import { attachmentDisplayName, attachmentFileName, attachmentMediaType, isDocumentAttachment, isUploadedAttachment } from "../shared/media/mediaTypes.js";
+import { attachmentDisplayName, attachmentMediaType, isDocumentAttachment, isUploadedAttachment } from "../shared/media/mediaTypes.js";
 import { createSessionGroupSync } from "./sessionGroupSync.js";
 import {
   CONTEXT_SNAPSHOT_LIMIT,
@@ -2374,18 +2374,19 @@ function ComposerMenu({ label, title, icon, value, options, disabled, onChange }
   </div>;
 }
 
-// One composer attachment pill: type icon or thumbnail, the original file
-// name for non-media files, and a remove action that stays inside the capped
-// pill width (the name span shrinks with an ellipsis instead of overflowing).
+// One composer attachment card shared by every media type: a 48x48 body
+// (image thumbnail or type icon) with the remove action pinned to its
+// top-right corner, and the original file name below at the body's width.
 export function AttachmentChip({ path, scopeId, api, onRemove }) {
-  const media = attachmentMediaType(path);
   return (
-    <span className={`attachment-chip${media === "file" ? "" : " attachment-chip-media"}`} title={path}>
-      <AttachmentPreview api={api} scopeId={scopeId} path={path} variant="chip" />
-      {media === "file" && <span className="attachment-chip-name">{attachmentDisplayName(path)}</span>}
-      <button type="button" aria-label={`移除附件 ${path}`} onClick={onRemove}>
-        <X size={12} aria-hidden="true" />
-      </button>
+    <span className="attachment-chip" title={path}>
+      <span className="attachment-chip-body">
+        <AttachmentPreview api={api} scopeId={scopeId} path={path} variant="chip" />
+        <button type="button" className="attachment-chip-remove" aria-label={`移除附件 ${path}`} onClick={onRemove}>
+          <X size={10} aria-hidden="true" />
+        </button>
+      </span>
+      <span className="attachment-chip-name">{attachmentDisplayName(path)}</span>
     </span>
   );
 }
@@ -2398,7 +2399,7 @@ export function AttachmentChip({ path, scopeId, api, onRemove }) {
 function AttachmentPreview({ api, scopeId, path, variant }) {
   const [failed, setFailed] = useState(false);
   const mediaType = attachmentMediaType(path);
-  const name = attachmentFileName(path);
+  const name = attachmentDisplayName(path);
   if (mediaType === "image" && !failed) {
     return (
       <img
@@ -2413,7 +2414,7 @@ function AttachmentPreview({ api, scopeId, path, variant }) {
   const Icon = mediaType === "video" ? Film : mediaType === "audio" ? Music : isDocumentAttachment(path) ? FileText : Paperclip;
   return (
     <span className={`attachment-icon attachment-icon-${variant}`} title={path} role="img" aria-label={name}>
-      <Icon size={variant === "message" ? 14 : 12} aria-hidden="true" />
+      <Icon size={variant === "message" ? 14 : 26} aria-hidden="true" />
     </span>
   );
 }

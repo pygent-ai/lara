@@ -3397,24 +3397,21 @@ input:focus,
 .composer-surface .attach:hover { border-color:var(--accent); color:var(--accent); }
 .composer-surface .attach:disabled { opacity:0.5; cursor:default; }
 .composer-surface .attach svg { width:15px; height:15px; }
-.attachment-chips { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:6px; }
-.attachment-chip { display:inline-flex; align-items:center; gap:4px; max-width:240px; padding:3px 8px; border:1px solid #cdd3dd; border-radius:999px; background:var(--surface); color:#4a5568; font-size:12px; }
-.attachment-chip { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.attachment-chip svg { flex:0 0 auto; }
-/* The name is a flex child, so the chip's own ellipsis never applies; shrink
-   the span itself instead, or long upload names hard-clip and push the
-   remove button out of the capped pill. */
-.attachment-chip-name { min-width:0; overflow:hidden; text-overflow:ellipsis; }
-.attachment-chip button { display:inline-flex; align-items:center; padding:0; border:0; background:transparent; color:#677387; cursor:pointer; }
-.attachment-chip button:hover { color:#c0392b; }
-/* Media chips lead with a real thumbnail, so they read as small preview cards. */
-.attachment-chip-media { gap:6px; padding:4px; border-radius:10px; }
+.attachment-chips { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:8px; }
+/* Every attachment renders as one uniform card: a 48x48 body (image thumbnail
+   or type icon) with the remove action pinned to its top-right corner, and
+   the file name below at the body's width, ellipsized when it overflows. */
+.attachment-chip { display:inline-grid; justify-items:center; gap:4px; padding:4px; border:1px solid #cdd3dd; border-radius:10px; background:var(--surface); color:#4a5568; font-size:11px; }
+.attachment-chip-body { position:relative; width:48px; height:48px; }
+.attachment-chip-remove { position:absolute; top:-5px; right:-5px; display:grid; place-items:center; width:16px; height:16px; padding:0; border:1px solid #cdd3dd; border-radius:50%; background:var(--surface); color:#677387; cursor:pointer; }
+.attachment-chip-remove:hover { color:#c0392b; border-color:#c0392b; }
+.attachment-chip-name { width:48px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:center; line-height:1.3; }
 .message-attachments { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
 .attachment-thumb { display:block; object-fit:cover; border:1px solid var(--line-strong); background:var(--surface); }
 .attachment-thumb-chip { width:48px; height:48px; border-radius:6px; }
 .attachment-thumb-message { max-width:180px; max-height:140px; border-radius:8px; }
 .attachment-icon { display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; border-radius:6px; background:rgba(127,127,127,.18); color:#4a5568; }
-.attachment-icon-chip { width:20px; height:20px; }
+.attachment-icon-chip { width:48px; height:48px; }
 .attachment-icon-message { width:26px; height:26px; border-radius:8px; }
 
 /* Native media blocks on transcript messages (assistant image/audio/video
