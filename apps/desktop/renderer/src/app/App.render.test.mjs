@@ -313,6 +313,28 @@ test("media block images reuse the interactive image view", () => {
   assert.match(html, /aria-label="下载图片"/);
 });
 
+test("markdown upload paths resolve through the uploads content URL", () => {
+  const api = { uploadContentUrl: (scopeId, path) => `http://test:8765/uploads/content?scope_id=${scopeId}&path=${path}` };
+  const html = renderToStaticMarkup(
+    React.createElement(
+      appModule.MediaSourceScopeContext.Provider,
+      { value: { api, scopeId: "scope-1" } },
+      React.createElement(appModule.MarkdownContent, {
+        content: "![image](.lara/uploads/media-abc123.png)",
+      }),
+    ),
+  );
+  assert.match(html, /src="http:\/\/test:8765\/uploads\/content\?scope_id=scope-1&amp;path=\.lara\/uploads\/media-abc123\.png"/);
+  assert.match(html, /markdown-image-thumb/);
+});
+
+test("markdown upload paths without a scope context keep the raw path", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.MarkdownContent, {
+    content: "![image](.lara/uploads/media-abc123.png)",
+  }));
+  assert.match(html, /src="\.lara\/uploads\/media-abc123\.png"/);
+});
+
 test("message timestamps show the clock time today and the date otherwise", () => {
   const now = new Date(2026, 9, 10, 16, 30).getTime();
   assert.equal(appModule.formatMessageTimestamp(new Date(2026, 9, 10, 16, 5).toISOString(), now), "16:05");
