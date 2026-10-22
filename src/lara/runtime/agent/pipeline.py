@@ -60,6 +60,7 @@ from .common import (
     _serialize_tool_payload_for_model,
     _session_dir_for_run,
 )
+from .media_offload import offload_inline_media
 from .prompts import AgentContextManager, PromptRegistry
 
 MAX_EMPTY_TOOL_FOLLOWUP_RETRIES = 5
@@ -84,6 +85,11 @@ async def checkpoint_conversation_message(
     """Persist one conversation boundary; report whether this call inserted it."""
     checkpoint_id = f"{context.case_run_id}:{context.turn_id}:{boundary}"
     payload = message_to_dict(message)
+    # Generated images arrive inline as megabytes of base64; persisting them
+    # verbatim makes every session open and journal replay reload them all.
+    # The checkpoint copy references workspace files instead while the
+    # in-memory message keeps its original inline bytes for this run.
+    payload = offload_inline_media(payload, workspace_root=config.workspace_root)
     metadata = plain_data(context.metadata)
     include_in_session = not (
         isinstance(metadata, dict)
