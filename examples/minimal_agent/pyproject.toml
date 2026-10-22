@@ -5,7 +5,7 @@ description = "Minimal standalone ReAct agent extracted from Lara's agent runtim
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "pygent-ai==0.3.27",
+    "pygent-ai==0.3.29",
 ]
 
 [project.scripts]

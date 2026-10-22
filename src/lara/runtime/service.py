@@ -61,10 +61,7 @@ from pygent.tool import (
     ToolSpec,
 )
 from pygent.tool.executors import ToolExecutionContext
-from pygent.tool.mcp import (
-    discover_mcp_tools,
-    register_mcp_tools,
-)
+from pygent.tool.mcp import MCPClientPool
 
 from lara.config import load_run_config
 from lara.core.io import aclose_if_supported, plain_object, read_json, write_json
@@ -75,7 +72,7 @@ from lara.runtime.attachments import (
     resolve_attachments,
 )
 from lara.runtime.bash_tasks import BashTaskObservations
-from lara.runtime.mcp import WarmMCPStdioTransport
+from lara.runtime.mcp import ReadinessRetryingTransport
 from lara.runtime.reminders import ReminderService
 from lara.schema import AgentSession, CaseRunRef, RunConfig
 from lara.sessions import AgentMessage, CollaborationOperation, SessionManager
@@ -388,7 +385,7 @@ class LaraRuntimeService:
         self._initialized = False
         self._initializing_task: asyncio.Task[None] | None = None
         self._closed = False
-        self._mcp_transports: list[WarmMCPStdioTransport] = []
+        self._mcp_pools: list[MCPClientPool] = []
         self.memory_harness = EternalConversationHarness(
             config.eternal_conversation,
             run_agent=self._run_memory_agent,
@@ -675,11 +672,13 @@ class LaraRuntimeService:
         }
         for server in self.config.mcp_servers:
             try:
-                transport = self._mcp_transport(server)
-                specs = await discover_mcp_tools(
-                    transport,
-                    namespace=server.name,
-                    timeout=server.timeout,
+                pool = await self._mcp_pool(server)
+                entries = pool.executors()
+                # The pool discovers without a call timeout; the server config
+                # timeout belongs on every portable spec for Runtime dispatch.
+                specs = tuple(
+                    replace(spec, timeout=server.timeout)
+                    for spec, _executor in entries
                 )
                 for spec in specs:
                     name = spec.definition.name
@@ -688,7 +687,10 @@ class LaraRuntimeService:
                             f"duplicate MCP model-visible tool name: {name}"
                         )
                     visible_names.add(name)
-                register_mcp_tools(self.executor_registry, transport, specs)
+                for (_discovered_spec, executor), spec in zip(entries, specs):
+                    self.executor_registry.register(
+                        spec.tool_id, spec.version, executor
+                    )
                 discovered.extend(specs)
             except Exception as exc:
                 if server.required:
@@ -702,7 +704,7 @@ class LaraRuntimeService:
         await self.bash_tasks.restore()
         self._initialized = True
 
-    def _mcp_transport(self, server: Any) -> Any:
+    async def _mcp_pool(self, server: Any) -> MCPClientPool:
         if server.transport != "stdio":
             raise ValueError(
                 f"MCP transport {server.transport!r} is unsupported by the installed Pygent; "
@@ -711,14 +713,18 @@ class LaraRuntimeService:
         env = {name: os.environ[name] for name in server.env_from if name in os.environ}
         # A cold transport re-spawns the server per call and loses the readiness
         # race against servers that connect to their backends asynchronously.
-        transport = WarmMCPStdioTransport(
+        # The pool holds one session per server; the retrying transport keeps
+        # the pre-action readiness workaround on top of that shared session.
+        transport = ReadinessRetryingTransport(
             server.command,
             args=server.args,
             env=env,
             cwd=server.cwd,
         )
-        self._mcp_transports.append(transport)
-        return transport
+        pool = MCPClientPool({server.name: transport}, version="1")
+        await pool.connect()
+        self._mcp_pools.append(pool)
+        return pool
 
     def new_agent(
         self,
@@ -1433,8 +1439,13 @@ class LaraRuntimeService:
         await self.runtime.close(cancel=cancel)
         await self.bash_tasks.close()
         await self._standard_tools.aclose()
-        for transport in self._mcp_transports:
-            await transport.aclose()
+        for pool in self._mcp_pools:
+            try:
+                await asyncio.wait_for(asyncio.shield(pool.aclose()), 10)
+            except (TimeoutError, asyncio.TimeoutError):
+                # A hung in-flight call must not block shutdown; the shielded
+                # close task keeps draining in the background.
+                pass
         for agent in self._agent_definitions.values():
             await aclose_if_supported(agent._standard_tools)
         for invoker in {

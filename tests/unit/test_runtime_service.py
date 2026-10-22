@@ -101,11 +101,12 @@ async def test_prepare_turn_waits_for_initial_reminder_before_model_start(
     await service.reminders.close()
 
 
-def test_current_pygent_rejects_removed_mcp_sse_transport() -> None:
+@pytest.mark.asyncio
+async def test_current_pygent_rejects_removed_mcp_sse_transport() -> None:
     service = LaraRuntimeService.__new__(LaraRuntimeService)
 
     with pytest.raises(ValueError, match="installed Pygent.*use stdio"):
-        service._mcp_transport(SimpleNamespace(transport="sse"))
+        await service._mcp_pool(SimpleNamespace(transport="sse"))
 
 
 @pytest.mark.asyncio
