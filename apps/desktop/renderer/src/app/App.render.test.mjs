@@ -1940,10 +1940,14 @@ test("settings separate native model identity from connection fields", () => {
   assert.doesNotMatch(html, /启用模型/);
   assert.doesNotMatch(html.match(/<section([^>]*)aria-label="Native Pygent connections"/)[1], /hidden/);
   assert.match(html.match(/<section([^>]*)aria-label="Model groups"/)[1], /hidden=""/);
-  // Collapsed rows keep the connection as primary info and protocol plus model
-  // count as secondary info; models live inside the connection editor.
-  assert.match(html, /openai-main/);
-  assert.match(html, /OpenAI Responses · 1 个模型/);
+  // Collapsed rows show only the head: name text, count badges, 添加接口 and
+  // delete; models live inside the editor and the old summary line is gone.
+  // The provider caret belongs to the edit state, so a clean built-in row has none.
+  assert.match(html, /class="head-name"[^>]*>openai</);
+  assert.doesNotMatch(html, /aria-label="选择服务商"/);
+  assert.match(html, /1 个接口/);
+  assert.match(html, /1 个模型/);
+  assert.doesNotMatch(html, /OpenAI Responses · 1 个模型/);
   assert.doesNotMatch(html, /从此连接添加模型/);
 
   const catalogs = { providers: {
@@ -1960,20 +1964,23 @@ test("settings separate native model identity from connection fields", () => {
     savedDraft: { connections, models: { primary: model }, modelGroups: { coding: { models: ["primary"] } }, defaultModelGroup: "coding", credentialValues: {} },
     collapse() {}, onPersist() {}, onDirtyChange() {},
   }));
-  assert.match(editorHtml, /模型信息/);
-  assert.match(editorHtml, /决定调用谁、使用哪种 API 格式；不属于连接/);
-  assert.match(editorHtml, /本地名称/);
-  assert.match(editorHtml, /服务商模型 ID/);
-  // The Pygent-built-in optgroup appears only after async catalog loading,
-  // so static markup asserts the always-rendered custom provider option.
-  assert.match(editorHtml, /自定义供应商/);
+  // Model identity fields live in the row head; capability config folds below.
+  for (const field of ['本地名称', '服务商模型 ID', 'API 协议', '能力模板']) assert.ok(editorHtml.includes(field));
+  assert.doesNotMatch(editorHtml, /模型信息/);
   assert.doesNotMatch(editorHtml, /自定义 Provider ID/);
-  assert.match(editorHtml, /接口配置/);
+  assert.doesNotMatch(editorHtml, /接口配置/);
+  // The head carries the 添加接口 action; endpoint rows render as read-only
+  // summaries with a pencil, so Base URL inputs appear only while editing.
   assert.match(editorHtml, /添加接口/);
-  assert.ok(editorHtml.indexOf("Base URL") >= 0);
-  assert.ok(editorHtml.indexOf("接口协议", editorHtml.indexOf("Base URL")) > editorHtml.indexOf("Base URL"));
-  assert.match(editorHtml, /模型管理/);
-  assert.match(editorHtml, /保存配置/);
+  assert.match(editorHtml, /OpenAI Responses · https:\/\/api\.openai\.com\/v1/);
+  assert.match(editorHtml, /aria-label="编辑接口 OpenAI Responses"/);
+  assert.doesNotMatch(editorHtml, /Base URL/);
+  // The key row shows the configured state read-only; the env name is visible.
+  assert.match(editorHtml, /OPENAI_API_KEY/);
+  assert.match(editorHtml, /必填/);
+  assert.match(editorHtml, /<strong>模型<\/strong>/);
+  // A clean existing row shows no 保存 button; edits reveal it in the head.
+  assert.doesNotMatch(editorHtml, /class="send"/);
   assert.match(editorHtml, /测试连接方案/);
   assert.equal(appModule.providerSelectionValue("openai", null), "openai");
   assert.equal(appModule.providerSelectionValue("company-gateway", { providers: { openai: {} } }), "__custom__");
@@ -2217,13 +2224,18 @@ test("essential connection and model fields remain visible before optional detai
     catalogs, api: null, savedDraft: draft,
     collapse() {}, onPersist() {}, onDirtyChange() {},
   }));
-  // Essential connection fields stay outside the optional advanced details.
-  for (const field of ['供应商', 'API Key', 'Base URL']) assert.ok(editor.indexOf(field) >= 0 && editor.indexOf(field) < editor.indexOf('<details'));
+  // Essential connection info stays outside the optional advanced details:
+  // the key row and read-only endpoint summaries render before 高级配置.
+  for (const field of ['API Key', 'OpenAI Responses · https://example.test/v1']) assert.ok(editor.indexOf(field) >= 0 && editor.indexOf(field) < editor.indexOf('<details'));
   // Model identity and capabilities remain reachable inside the model row.
   for (const field of ['服务商模型 ID', '能力模板']) assert.ok(editor.includes(field));
-  assert.match(editor, /<details class="connection-model-details">/);
+  // Model rows expand in place with the same pool-row pattern as connections.
+  assert.match(editor, /<article class="model-route-card pool-row">/);
+  assert.match(editor, /pool-editor-shell/);
+  assert.doesNotMatch(editor, /connection-model-details/);
   assert.match(editor, /请填写 API Key/);
-  assert.match(editor.match(/<button[^>]*class="send"[^>]*>/)[0], /disabled/);
+  // A clean existing row carries no 保存 button; edits reveal it in the head.
+  assert.doesNotMatch(editor, /class="send"/);
   // The global save button is gone; each tab carries its own save button.
   assert.doesNotMatch(html, /Save and Reload/);
   for (const label of ['保存模型组', '保存项目与 Agent', '保存运行与权限']) assert.match(html, new RegExp(`aria-label="${label}"`));
@@ -2378,6 +2390,15 @@ test("add-model id field uses a scrollable combobox instead of a datalist", () =
   assert.doesNotMatch(html, /<datalist/);
   assert.match(html, /role="combobox"/);
   assert.doesNotMatch(html, /role="listbox"/);
+  // The add-model row mounts collapsed and mirrors a saved model row: one
+  // head line with 模型选择 / 本地名称 / API 协议 plus icon actions, and the
+  // capability configuration folded below.
+  assert.match(html, /class="model-route-card pool-row connection-model-new"/);
+  assert.doesNotMatch(html, /pool-row-open/);
+  for (const field of ['aria-label="模型选择"', 'aria-label="本地名称"', 'aria-label="API 协议"']) assert.ok(html.includes(field));
+  assert.match(html, /能力模板/);
+  // 测试/保存/删除 are icon actions in the head line.
+  for (const action of ['aria-label="测试连接并获取模型"', 'aria-label="保存模型"', 'aria-label="删除并关闭表单"']) assert.ok(html.includes(action));
   // Adding a model no longer offers model-group membership.
   assert.doesNotMatch(html, /加入模型组/);
   assert.deepEqual(
