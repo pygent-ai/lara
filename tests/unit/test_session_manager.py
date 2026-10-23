@@ -406,6 +406,70 @@ def test_session_history_carries_checkpoint_timestamps(tmp_path: Path) -> None:
     assert history[1]["usage"] == {"input_tokens": 10, "output_tokens": 3, "total_tokens": 13}
 
 
+def test_session_history_pages_older_rows_with_before_sequence(tmp_path: Path) -> None:
+    manager = SessionManager(native_run_config(tmp_path))
+    session = manager.create("chat", mode="chat")
+    run = manager.start_case_run(session.session_id, "chat")
+    for index in range(5):
+        manager.append_history_checkpoint(
+            run,
+            turn_id="turn-0",
+            checkpoint_id=f"checkpoint-{index}",
+            message={"role": "user", "content": f"message {index}"},
+        )
+    # Internal rows excluded from the transcript must not appear in pages or counts.
+    manager.append_history_checkpoint(
+        run,
+        turn_id="turn-0",
+        checkpoint_id="checkpoint-internal",
+        message={"role": "assistant", "content": "internal"},
+        include_in_session=False,
+    )
+
+    loaded = manager.load(session.session_id)
+    tail = manager.history_with_run_timing(loaded, limit=2)
+    assert [item["checkpoint_sequence"] for item in tail] == [4, 5]
+    older = manager.history_with_run_timing(loaded, limit=2, before_sequence=5)
+    assert [item["checkpoint_sequence"] for item in older] == [3, 4]
+    head = manager.history_with_run_timing(loaded, limit=2, before_sequence=3)
+    assert [item["checkpoint_sequence"] for item in head] == [1, 2]
+    exhausted = manager.history_with_run_timing(loaded, limit=2, before_sequence=1)
+    assert exhausted == []
+    assert manager.history_count(loaded) == 5
+    assert manager.history_before_count(loaded, 5) == 4
+    assert manager.history_before_count(loaded, 1) == 0
+
+
+def test_session_detail_reports_history_before_count(tmp_path: Path) -> None:
+    from lara_api.services.session_service import SessionService
+
+    manager = SessionManager(native_run_config(tmp_path))
+    session = manager.create("chat", mode="chat")
+    run = manager.start_case_run(session.session_id, "chat")
+    for index in range(5):
+        manager.append_history_checkpoint(
+            run,
+            turn_id="turn-0",
+            checkpoint_id=f"checkpoint-{index}",
+            message={"role": "user", "content": f"message {index}"},
+        )
+
+    service = SessionService(manager)
+    tail = service.load_detail(session.session_id, history_limit=2)
+    assert [item["content"] for item in tail.history] == ["message 3", "message 4"]
+    assert tail.history_before_count == 3
+    older = service.load_detail(
+        session.session_id, history_limit=2, history_before_sequence=4
+    )
+    assert [item["content"] for item in older.history] == ["message 1", "message 2"]
+    assert older.history_before_count == 1
+    head = service.load_detail(
+        session.session_id, history_limit=2, history_before_sequence=2
+    )
+    assert [item["content"] for item in head.history] == ["message 0"]
+    assert head.history_before_count == 0
+
+
 def test_session_persists_fixed_group_and_preferred_model(tmp_path: Path) -> None:
     config = native_run_config(tmp_path)
     manager = SessionManager(config)

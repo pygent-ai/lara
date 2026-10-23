@@ -86,6 +86,7 @@ class SessionDetailResponse(BaseModel):
     history: list[dict[str, Any]] = Field(default_factory=list)
     history_total: int = 0
     history_truncated: bool = False
+    history_before_count: int = 0
     metadata: dict[str, Any] = Field(default_factory=dict)
     runtime_execution_id: str | None = None
     run_history_start_index: int = 0
