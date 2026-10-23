@@ -405,6 +405,87 @@ test("long transcripts mount only the latest window initially", () => {
   assert.match(html, /visible-recent-69/);
 });
 
+test("unloaded older history keeps the load-earlier button visible", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.ChatPane, {
+    activeSession: { session_id: "paged-session", scope_id: "conversation" },
+    messages: [{ id: "history-seq9", role: "user", content: "recent" }],
+    historyRemaining: 175,
+    settings: {}, status: "Ready", running: false, approvals: [],
+  }));
+  assert.match(html, /显示更早消息（未加载 175 条）/);
+
+  const loading = renderToStaticMarkup(React.createElement(appModule.ChatPane, {
+    activeSession: { session_id: "paged-session", scope_id: "conversation" },
+    messages: [{ id: "history-seq9", role: "user", content: "recent" }],
+    historyRemaining: 175,
+    historyLoading: true,
+    settings: {}, status: "Ready", running: false, approvals: [],
+  }));
+  assert.match(loading, /正在加载更早消息…/);
+  assert.match(loading, /disabled/);
+});
+
+test("mergeHistoryRows prepends older pages and refreshes the tail in place", () => {
+  const { mergeHistoryRows } = appModule;
+  const tail = [
+    { checkpoint_sequence: 3, role: "user", content: "second" },
+    { checkpoint_sequence: 4, role: "assistant", content: "ok" },
+  ];
+  assert.deepEqual(mergeHistoryRows(undefined, tail), tail);
+  // An older page prepends below the tail page's first sequence.
+  assert.deepEqual(
+    mergeHistoryRows(tail, [{ checkpoint_sequence: 1, role: "user", content: "first" }]),
+    [
+      { checkpoint_sequence: 1, role: "user", content: "first" },
+      { checkpoint_sequence: 3, role: "user", content: "second" },
+      { checkpoint_sequence: 4, role: "assistant", content: "ok" },
+    ],
+  );
+  // A rebuilt tail page replaces its own range but keeps paged-in older rows.
+  assert.deepEqual(
+    mergeHistoryRows(
+      [
+        { checkpoint_sequence: 1, role: "user", content: "first" },
+        { checkpoint_sequence: 3, role: "user", content: "second-stale" },
+      ],
+      [{ checkpoint_sequence: 3, role: "user", content: "second" }],
+    ),
+    [
+      { checkpoint_sequence: 1, role: "user", content: "first" },
+      { checkpoint_sequence: 3, role: "user", content: "second" },
+    ],
+  );
+  assert.deepEqual(mergeHistoryRows(tail, []), tail);
+});
+
+test("history pages merge into one transcript with stable ids and turn grouping", () => {
+  const tailPage = [
+    { checkpoint_sequence: 3, role: "tool", content: "", results: [] },
+    { checkpoint_sequence: 4, role: "assistant", content: "second answer", run_timing: { case_run_id: "run-1", status: "passed" } },
+  ];
+  const olderPage = [
+    { checkpoint_sequence: 1, role: "user", content: "first question" },
+    { checkpoint_sequence: 2, role: "assistant", content: "", tool_calls: [{ id: "call-1", name: "read", arguments: {} }] },
+  ];
+  const tailMessages = appModule.historyToMessages(tailPage);
+  const merged = appModule.historyToMessages([...olderPage, ...tailPage]);
+
+  // Ids come from the durable checkpoint sequence, so a page load shifts no id.
+  const tailIds = tailMessages.map((item) => item.id);
+  assert.deepEqual(
+    merged.map((item) => item.id).slice(-tailIds.length),
+    tailIds,
+  );
+  assert.match(tailIds[0], /history-seq/);
+  // The page boundary cuts mid-turn: the merged transcript keeps the whole
+  // turn on one activity block instead of splitting it into two.
+  assert.equal(merged.length, 2);
+  assert.equal(merged[0].role, "user");
+  assert.equal(merged[0].content, "first question");
+  assert.equal(merged[1].role, "assistant");
+  assert.equal(merged[1].checkpointSequence, 4);
+});
+
 test("a steering boundary already rendered from history does not split twice", () => {
   const restored = appModule.historyToMessages([
     { role: "user", content: "focus on tests", kind: "lara.user.steering", data: { input_id: "input-1" } },
