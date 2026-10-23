@@ -179,11 +179,12 @@ export function createApiClient(options = {}) {
           model_group_name: request.modelGroupName || undefined,
         },
       }),
-    getSession: (sessionId, { scopeId, historyLimit, ...options } = {}) =>
+    getSession: (sessionId, { scopeId, historyLimit, historyBeforeSequence, ...options } = {}) =>
       jsonRequest(
         `/sessions/${encodeURIComponent(sessionId)}${queryString({
           scope_id: scopeId,
           history_limit: historyLimit,
+          history_before_sequence: historyBeforeSequence,
         })}`,
         options,
       ),

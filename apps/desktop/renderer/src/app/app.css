@@ -791,6 +791,11 @@ button:focus-visible {
   border-color: var(--line-strong);
 }
 
+.load-earlier-messages:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .welcome {
   max-width: 560px;
   margin: 10vh auto 0;

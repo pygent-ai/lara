@@ -110,6 +110,9 @@ const TOOL_ARGUMENT_PREVIEW_LIMIT = 4_000;
 const TOOL_RESULT_PREVIEW_LIMIT = 6_000;
 const TRACE_RENDER_LIMIT = 300;
 const INITIAL_TRANSCRIPT_MESSAGE_LIMIT = 60;
+// Infinite scroll: walking the transcript up into this band pulls the next
+// older history page without a click.
+const TRANSCRIPT_AUTO_LOAD_TOP_PX = 160;
 // Re-attach replay catch-up: an event recorded within this window counts as
 // live, and while catching up the view paints at most once per flush window.
 const REPLAY_LIVE_THRESHOLD_MS = 15000;
@@ -158,6 +161,9 @@ export function App() {
   const [activeScopeId, setActiveScopeId] = useState("");
   const [activeSession, setActiveSession] = useState(null);
   const [messages, setMessages] = useState([]);
+  // Paging state for the active transcript: how many older rows are not
+  // loaded yet and whether a page fetch is in flight.
+  const [historyEarlier, setHistoryEarlier] = useState({ remaining: 0, loading: false });
   const [activityCollapseToken, setActivityCollapseToken] = useState(0);
   const [pendingSteerings, setPendingSteerings] = useState({});
   const [traceEvents, setTraceEvents] = useState([]);
@@ -182,6 +188,12 @@ export function App() {
   const runningSessionIdsRef = useRef({});
   const pendingSessionMessagesRef = useRef(new Map());
   const sessionViewCacheRef = useRef(new Map());
+  // Raw checkpoint rows paged in per session, so tail rebuilds (session
+  // switch, freshness poll, turn completion) never truncate loaded history.
+  const sessionHistoryRef = useRef(new Map());
+  // Re-entry guard for history page fetches: the scroll-up trigger can fire
+  // several times while one page request is still in flight.
+  const historyPageLoadingRef = useRef(false);
   // Composer text keyed per session (or per scope for a pending new chat). A
   // ref keeps keystrokes from re-rendering the whole App, while ChatPane —
   // which remounts on every session switch — re-reads it on mount.
@@ -369,8 +381,10 @@ export function App() {
         }
         activeSessionIdRef.current = "";
         messagesRef.current = [];
+        sessionHistoryRef.current.delete(sessionId);
         setActiveSession(null);
         setMessages([]);
+        setHistoryEarlier({ remaining: 0, loading: false });
         setTraceEvents([]);
         setTraceWindow(EMPTY_TRACE_WINDOW);
         setSessionActivity(EMPTY_SESSION_ACTIVITY);
@@ -383,13 +397,26 @@ export function App() {
       if (sessionToken !== sessionLoadTokenRef.current) {
         return;
       }
-      const nextMessages = historyToMessages(detail.history || []);
+      // The detail carries only the tail history page; rows paged in earlier
+      // stay below it so a reloaded transcript keeps everything the user
+      // already walked back through.
+      const storedHistory = sessionHistoryRef.current.get(sessionId);
+      const historyRows = mergeHistoryRows(storedHistory?.rows, detail.history || []);
+      const historyBeforeCount = storedHistory
+        ? storedHistory.beforeCount
+        : Number(detail.history_before_count || 0);
+      rememberSessionHistory(sessionHistoryRef.current, sessionId, {
+        rows: historyRows,
+        beforeCount: historyBeforeCount,
+      });
+      const nextMessages = historyToMessages(historyRows);
       if (sessionToken !== sessionLoadTokenRef.current) {
         return;
       }
       const latestPendingMessages = pendingSessionMessagesRef.current.get(sessionId);
       const liveTranscriptShown = Array.isArray(latestPendingMessages) && latestPendingMessages.length > 0;
       const resolvedMessages = selectSessionMessages(latestPendingMessages, nextMessages);
+      setHistoryEarlier({ remaining: historyBeforeCount, loading: false });
       activeSessionIdRef.current = detail.session.session_id || sessionId;
       const loadedSession = sessionFromDetail(detail);
       setActiveSession(loadedSession);
@@ -427,6 +454,62 @@ export function App() {
     [api, loadTrace],
   );
 
+  const handleLoadEarlierMessages = useCallback(
+    async () => {
+      const sessionId = activeSessionIdRef.current;
+      const storedHistory = sessionId ? sessionHistoryRef.current.get(sessionId) : undefined;
+      const firstSequence = Number(storedHistory?.rows?.[0]?.checkpoint_sequence);
+      if (
+        historyPageLoadingRef.current
+        || !sessionId
+        || !Array.isArray(storedHistory?.rows)
+        || storedHistory.rows.length === 0
+        || !storedHistory.beforeCount
+        || !Number.isFinite(firstSequence)
+        || firstSequence <= 1
+      ) {
+        return;
+      }
+      historyPageLoadingRef.current = true;
+      setHistoryEarlier((current) => ({ ...current, loading: true }));
+      try {
+        const detail = await api.getSession(sessionId, {
+          scopeId: activeSession?.scope_id,
+          historyLimit: SESSION_HISTORY_LIMIT,
+          historyBeforeSequence: firstSequence,
+        });
+        const historyRows = mergeHistoryRows(storedHistory.rows, detail.history || []);
+        const remaining = Number(detail.history_before_count || 0);
+        rememberSessionHistory(sessionHistoryRef.current, sessionId, {
+          rows: historyRows,
+          beforeCount: remaining,
+        });
+        if (activeSessionIdRef.current !== sessionId) {
+          return;
+        }
+        // A transcript this client still owns (a running turn, or one kept on
+        // screen after an interrupt) keeps painting; the rows still land in
+        // the session store for the next rebuild.
+        const pendingLiveMessages = pendingSessionMessagesRef.current.get(sessionId);
+        if (!(Array.isArray(pendingLiveMessages) && pendingLiveMessages.length > 0)) {
+          messagesRef.current = historyToMessages(historyRows);
+          setMessages(messagesRef.current);
+        }
+        setHistoryEarlier({ remaining, loading: false });
+      } catch (err) {
+        if (activeSessionIdRef.current === sessionId) {
+          setError(readableError(err));
+        }
+      } finally {
+        historyPageLoadingRef.current = false;
+        // The flag is App-global: clear it even when the fetch's session is
+        // no longer active, and only that session writes back its remaining.
+        setHistoryEarlier((current) => (current.loading ? { ...current, loading: false } : current));
+      }
+    },
+    [api, activeSession?.scope_id],
+  );
+
   const refreshWorkbench = useCallback(
     async ({ selectSessionId, selectFirst = false, preserveSessionId = "", resumeExecution = true } = {}) => {
       setError("");
@@ -454,6 +537,7 @@ export function App() {
         messagesRef.current = [];
         setActiveSession(null);
         setMessages([]);
+        setHistoryEarlier({ remaining: 0, loading: false });
         setTraceEvents([]);
         setTraceWindow(EMPTY_TRACE_WINDOW);
         setSessionActivity(EMPTY_SESSION_ACTIVITY);
@@ -506,6 +590,7 @@ export function App() {
       messagesRef.current = [];
       setActiveSession(null);
       setMessages([]);
+      setHistoryEarlier({ remaining: 0, loading: false });
       setTraceEvents([]);
       setTraceWindow(EMPTY_TRACE_WINDOW);
       setSessionActivity(EMPTY_SESSION_ACTIVITY);
@@ -529,6 +614,7 @@ export function App() {
         await api.deleteSession(sessionId, { scopeId: scope?.scope_id });
         pendingSessionMessagesRef.current.delete(sessionId);
         sessionViewCacheRef.current.delete(sessionId);
+        sessionHistoryRef.current.delete(sessionId);
         sessionLiveEventsRef.current.delete(sessionId);
         composerDraftsRef.current.delete(sessionId);
         await refreshWorkbench({ selectFirst: true });
@@ -1100,9 +1186,22 @@ export function App() {
           if (messagesHistorySignatureRef.current !== messagesHistorySignature
             && !(Array.isArray(pendingLiveMessages) && pendingLiveMessages.length > 0)) {
             messagesHistorySignatureRef.current = messagesHistorySignature;
-            const nextMessages = historyToMessages(detail.history || []);
+            // The freshness page replaces its own tail range; older rows the
+            // user paged in survive so the poll never truncates the transcript
+            // back to the display window.
+            const storedHistory = sessionHistoryRef.current.get(activeSessionId);
+            const historyRows = mergeHistoryRows(storedHistory?.rows, detail.history || []);
+            const historyBeforeCount = storedHistory
+              ? storedHistory.beforeCount
+              : Number(detail.history_before_count || 0);
+            rememberSessionHistory(sessionHistoryRef.current, activeSessionId, {
+              rows: historyRows,
+              beforeCount: historyBeforeCount,
+            });
+            const nextMessages = historyToMessages(historyRows);
             messagesRef.current = nextMessages;
             setMessages(nextMessages);
+            setHistoryEarlier({ remaining: historyBeforeCount, loading: false });
             setPendingSteerings((items) => reconcilePendingSteerings(items, activeSessionId, nextMessages));
             rememberSessionView(sessionViewCacheRef.current, activeSessionId, {
               session: loadedSession,
@@ -1273,6 +1372,9 @@ export function App() {
         composerDrafts={composerDraftsRef.current}
         activeSession={activeSession}
         messages={messages}
+        historyRemaining={historyEarlier.remaining}
+        historyLoading={historyEarlier.loading}
+        onLoadEarlier={handleLoadEarlierMessages}
         activityCollapseToken={activityCollapseToken}
         settings={settings}
         status={status}
@@ -1926,7 +2028,7 @@ export function computeEnteringMessageIds(previous, sessionId, messages) {
   return new Set(messages.slice(previous.ids.length).map((message) => message.id));
 }
 
-export function ChatPane({ activeSession, messages, activityCollapseToken, settings, status, running, steeringReady = false, approvals, pendingSteerings = [], api, onSendMessage, onForkSession, onSteering, onCancelTurn, onApproval, projects = [], onSelectProject, onChooseProject, onChangePermissions, pendingNewModelGroup = "", onChangeNewModelGroup = () => {}, pendingNewSessionScope = "", onChangeModel = () => {}, composerDrafts = new Map() }) {
+export function ChatPane({ activeSession, messages, historyRemaining = 0, historyLoading = false, onLoadEarlier, activityCollapseToken, settings, status, running, steeringReady = false, approvals, pendingSteerings = [], api, onSendMessage, onForkSession, onSteering, onCancelTurn, onApproval, projects = [], onSelectProject, onChooseProject, onChangePermissions, pendingNewModelGroup = "", onChangeNewModelGroup = () => {}, pendingNewSessionScope = "", onChangeModel = () => {}, composerDrafts = new Map() }) {
   const empty = messages.length === 0;
   const selectedScope = activeSession?.scope_id || pendingNewSessionScope || scopeIdFromWorkspace(settings.workspace_root);
   const mediaScope = useMemo(() => ({ api, scopeId: selectedScope }), [api, selectedScope]);
@@ -1964,6 +2066,10 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
     syncComposerDraft(composerDrafts, composerDraftKey, value);
   }
   const transcriptRef = useRef(null);
+  // Last scroll position across every scroll event, including programmatic
+  // pins and anchor restores, so the up-scroll edge detection compares
+  // against the real previous position.
+  const previousScrollTopRef = useRef(0);
   const composerRef = useRef(null);
   const fileInputRef = useRef(null);
   const followTranscriptRef = useRef(true);
@@ -1992,6 +2098,71 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
     [messages, visibleMessageLimit],
   );
   const hiddenMessageCount = Math.max(0, messages.length - visibleMessages.length);
+
+  // Loading an older history page prepends display items; the visible window
+  // must grow by exactly those items in the same paint, or the user sees
+  // nothing change. Stable message ids make the head count reliable, and the
+  // pure-prepend check keeps live-to-history rebuilds (which swap or drop
+  // ids) from silently unbounding the window.
+  const previousMessagesRef = useRef(messages);
+  useLayoutEffect(() => {
+    const previous = previousMessagesRef.current;
+    previousMessagesRef.current = messages;
+    if (!previous.length || messages === previous || messages.length <= previous.length) {
+      return;
+    }
+    const nextIds = new Set(messages.map((item) => item.id));
+    if (!previous.every((item) => nextIds.has(item.id))) {
+      return;
+    }
+    const previousIds = new Set(previous.map((item) => item.id));
+    let headAdded = 0;
+    for (const item of messages) {
+      if (previousIds.has(item.id)) break;
+      headAdded += 1;
+    }
+    if (headAdded > 0) {
+      setVisibleMessageLimit((value) => value + headAdded);
+    }
+  }, [messages]);
+
+  // Prepending above the scrollport shifts everything the user was looking
+  // at; pin the first visible row back to its position once the new page has
+  // rendered. The anchor only fires when that row actually moved, so live
+  // tail appends never yank the viewport.
+  const topAnchorRef = useRef(null);
+  const handleLoadEarlierClick = () => {
+    const node = transcriptRef.current;
+    const rows = node ? Array.from(node.querySelectorAll(":scope > [data-message-id]")) : [];
+    const firstVisible = rows.find((row) => row.offsetTop + row.offsetHeight > node.scrollTop) || rows[0] || null;
+    topAnchorRef.current = node && firstVisible
+      ? { id: firstVisible.dataset.messageId, offsetTop: firstVisible.offsetTop, scrollTop: node.scrollTop }
+      : null;
+    if (historyRemaining <= 0) {
+      // Everything mapped is already loaded; reveal more of it locally.
+      setVisibleMessageLimit((value) => value + INITIAL_TRANSCRIPT_MESSAGE_LIMIT);
+    }
+    onLoadEarlier?.();
+  };
+  useLayoutEffect(() => {
+    const anchor = topAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+    const node = transcriptRef.current;
+    const target = node?.querySelector(`:scope > [data-message-id="${CSS.escape(anchor.id)}"]`);
+    if (!node || !target) {
+      topAnchorRef.current = null;
+      return;
+    }
+    if (target.offsetTop === anchor.offsetTop) {
+      // The transcript did not grow above the anchor yet (the fetch may still
+      // be in flight); keep the anchor armed for the next paint.
+      return;
+    }
+    node.scrollTop = anchor.scrollTop + (target.offsetTop - anchor.offsetTop);
+    topAnchorRef.current = null;
+  }, [messages, visibleMessageLimit]);
 
   // The entrance animation plays only for messages appended to the session
   // view the user is already looking at; see enteringMessageIds.
@@ -2192,22 +2363,40 @@ export function ChatPane({ activeSession, messages, activityCollapseToken, setti
       </header>
 
       <div className="transcript" ref={transcriptRef} onScroll={(event) => {
-        if (!transcriptUserScrollingRef.current) return;
         const node = event.currentTarget;
+        const previousTop = previousScrollTopRef.current;
+        previousScrollTopRef.current = node.scrollTop;
+        if (!transcriptUserScrollingRef.current) return;
         followTranscriptRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 64;
         setAwayFromLatest(!followTranscriptRef.current);
+        // Infinite scroll: only an upward user scroll entering the top band
+        // pulls the next page, so anchor restores and programmatic pins
+        // (which move scrollTop down or are not user-driven) cannot loop it.
+        if (
+          historyRemaining > 0
+          && !historyLoading
+          && node.scrollTop <= TRANSCRIPT_AUTO_LOAD_TOP_PX
+          && node.scrollTop < previousTop
+        ) {
+          handleLoadEarlierClick();
+        }
       }} onWheel={() => { transcriptUserScrollingRef.current = true; }} onTouchStart={() => { transcriptUserScrollingRef.current = true; }} onPointerDown={(event) => {
         // Scrollbar drags target the scrollport itself; clicks on message
         // content bubble from children and must not end the auto-follow.
         if (event.target === event.currentTarget) transcriptUserScrollingRef.current = true;
       }}>
-        {hiddenMessageCount > 0 && (
+        {(hiddenMessageCount > 0 || historyRemaining > 0) && (
           <button
             className="load-earlier-messages"
             type="button"
-            onClick={() => setVisibleMessageLimit((value) => value + INITIAL_TRANSCRIPT_MESSAGE_LIMIT)}
+            disabled={historyLoading}
+            onClick={handleLoadEarlierClick}
           >
-            显示更早消息（还有 {hiddenMessageCount} 条）
+            {historyLoading
+              ? "正在加载更早消息…"
+              : historyRemaining > 0
+                ? `显示更早消息（未加载 ${historyRemaining} 条）`
+                : `显示更早消息（还有 ${hiddenMessageCount} 条）`}
           </button>
         )}
         {visibleMessages.map((message) => (
@@ -2619,7 +2808,7 @@ const MessageRow = memo(function MessageRow({ message, entering = false, activit
   }
 
   return (
-    <article className={`message ${message.role}${entering ? " message-enter" : ""}`}>
+    <article className={`message ${message.role}${entering ? " message-enter" : ""}`} data-message-id={message.id}>
       {message.role !== "user" && <div className="avatar">{message.role === "automation" ? <CalendarClock size={15} /> : "L"}</div>}
       <div className="bubble">
         {message.role === "automation" && <span className="automation-message-label">定时任务触发</span>}
@@ -2916,7 +3105,7 @@ function usageDetailText(usage) {
 
 function ActivityMessage({ message, collapseToken, api }) {
   return (
-    <article className={`message assistant${message.status === "running" ? " is-running" : ""}`}>
+    <article className={`message assistant${message.status === "running" ? " is-running" : ""}`} data-message-id={message.id}>
       <div className="avatar">L</div>
       <div className="bubble">
         <AssistantActivity message={message} collapseToken={collapseToken} api={api} />
@@ -3742,6 +3931,14 @@ function historyAttachments(message) {
   return Array.isArray(attachments) && attachments.length > 0 ? attachments : undefined;
 }
 
+// Display ids must survive history pagination: a page load prepends older
+// rows and shifts every array index, so ids key off the durable checkpoint
+// sequence when a row carries one and fall back to the position otherwise.
+function historyRowKey(message, position) {
+  const sequence = Number(message?.checkpoint_sequence);
+  return Number.isFinite(sequence) && sequence > 0 ? `seq${sequence}` : `i${position}`;
+}
+
 export function historyToMessages(history) {
   const rendered = [];
   let index = 0;
@@ -3754,7 +3951,10 @@ export function historyToMessages(history) {
     index += 1;
   }
   if (index > 0) {
-    rendered.push(...renderTurnSegment(history.slice(0, index), `history-${index}`));
+    rendered.push(...renderTurnSegment(
+      history.slice(0, index),
+      `history-${historyRowKey(history[index - 1], index - 1)}`,
+    ));
   }
   while (index < history.length) {
     const message = history[index] || {};
@@ -3763,7 +3963,7 @@ export function historyToMessages(history) {
     // keep the user message visible across reloads.
     const attachments = historyAttachments(message);
     if (content || attachments) {
-      rendered.push({ id: `history-${index}`, role: messageDisplayRole(message), content,
+      rendered.push({ id: `history-${historyRowKey(message, index)}`, role: messageDisplayRole(message), content,
         ...(message.created_at ? { createdAt: message.created_at } : {}),
         ...(message.checkpoint_sequence ? { checkpointSequence: message.checkpoint_sequence } : {}),
         ...(message.kind === "lara.user.steering" ? { steeringInputId: message.data?.input_id } : {}),
@@ -3776,9 +3976,41 @@ export function historyToMessages(history) {
       segment.push(history[index]);
       index += 1;
     }
-    rendered.push(...renderTurnSegment(segment, `history-${index}`, message.run_timing));
+    rendered.push(...renderTurnSegment(
+      segment,
+      `history-${historyRowKey(history[index - 1], index - 1)}`,
+      message.run_timing,
+    ));
   }
   return rendered.filter(Boolean);
+}
+
+// A fetched history page is authoritative for its sequence range: a page
+// load returns rows older than everything loaded so far, while a tail
+// rebuild returns rows that replace their own range. Rows outside the page
+// range survive on either side, so loading older history grows the
+// transcript upward instead of replacing it.
+export function mergeHistoryRows(loadedRows, nextPage) {
+  const existing = Array.isArray(loadedRows) ? loadedRows : [];
+  if (!Array.isArray(nextPage) || nextPage.length === 0) {
+    return existing;
+  }
+  const first = Number(nextPage[0]?.checkpoint_sequence);
+  const last = Number(nextPage[nextPage.length - 1]?.checkpoint_sequence);
+  if (!Number.isFinite(first) || !Number.isFinite(last)) {
+    return nextPage;
+  }
+  const older = [];
+  const newer = [];
+  for (const row of existing) {
+    const sequence = Number(row?.checkpoint_sequence);
+    if (!Number.isFinite(sequence) || sequence < first) {
+      older.push(row);
+    } else if (sequence > last) {
+      newer.push(row);
+    }
+  }
+  return [...older, ...nextPage, ...newer];
 }
 
 function renderTurnSegment(segment, idPrefix, timing = segment.find((message) => message?.run_timing)?.run_timing) {
@@ -4664,6 +4896,17 @@ export function rememberSessionView(cache, sessionId, view, limit = 5) {
   if (!cache || !sessionId) return;
   cache.delete(sessionId);
   cache.set(sessionId, view);
+  while (cache.size > limit) {
+    cache.delete(cache.keys().next().value);
+  }
+}
+
+// Paged-in raw history per session, bounded like the view cache: a session
+// dropped from the cache simply reloads its tail page on the next visit.
+export function rememberSessionHistory(cache, sessionId, entry, limit = 8) {
+  if (!cache || !sessionId) return;
+  cache.delete(sessionId);
+  cache.set(sessionId, entry);
   while (cache.size > limit) {
     cache.delete(cache.keys().next().value);
   }
