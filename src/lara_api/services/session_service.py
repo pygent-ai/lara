@@ -95,7 +95,11 @@ class SessionService:
         )
 
     def load_detail(
-        self, session_id: str, *, history_limit: int | None = None
+        self,
+        session_id: str,
+        *,
+        history_limit: int | None = None,
+        history_before_sequence: int | None = None,
     ) -> SessionDetailResponse:
         session = self.manager.load(session_id)
         metadata = read_json(Path(session.session_dir) / "metadata.json")
@@ -108,8 +112,11 @@ class SessionService:
             run_metadata = read_json(Path(ref.run_dir) / "run_metadata.json")
         history_total = self.manager.history_count(session)
         history = self.manager.history_with_run_timing(
-            session, limit=history_limit
+            session,
+            limit=history_limit,
+            before_sequence=history_before_sequence,
         )
+        first_sequence = int(history[0]["checkpoint_sequence"]) if history else 0
         return SessionDetailResponse(
             session=_record_from_metadata(
                 Path(session.session_dir), metadata, scope_id=self.scope_id
@@ -117,6 +124,11 @@ class SessionService:
             history=history,
             history_total=history_total,
             history_truncated=len(history) < history_total,
+            history_before_count=(
+                self.manager.history_before_count(session, first_sequence)
+                if first_sequence
+                else 0
+            ),
             metadata=session.metadata,
             runtime_execution_id=run_metadata.get("runtime_execution_id"),
             run_history_start_index=run_metadata.get("history_start_index", 0),

@@ -170,12 +170,14 @@ def get_session(
     session_id: str,
     scope_id: str | None = None,
     history_limit: int | None = None,
+    history_before_sequence: int | None = None,
     context: ApiContext = Depends(get_api_context),
 ) -> SessionDetailResponse:
     try:
         return session_service_for_scope(context, scope_id).load_detail(
             session_id,
             history_limit=history_limit,
+            history_before_sequence=history_before_sequence,
         )
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(

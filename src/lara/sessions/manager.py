@@ -386,7 +386,11 @@ class SessionManager:
         write_json_atomic(metadata_path, metadata)
 
     def history_with_run_timing(
-        self, session: AgentSession, *, limit: int | None = None
+        self,
+        session: AgentSession,
+        *,
+        limit: int | None = None,
+        before_sequence: int | None = None,
     ) -> list[dict[str, Any]]:
         """Project checkpoint-owned history with its run timing and timestamps.
 
@@ -394,6 +398,10 @@ class SessionManager:
         checkpoint and slicing it in the API layer.  Long-running chats can
         contain megabytes of old tool output, so decoding the full history on
         every session switch or freshness check is needlessly expensive.
+
+        The window is tail-anchored: ``limit`` returns the newest rows, and
+        ``before_sequence`` pages strictly older rows (exclusive cursor) so a
+        client can walk back towards the first message page by page.
         """
         database_path = self._checkpoint_database_path(session.session_id)
         if not database_path.exists():
@@ -402,26 +410,31 @@ class SessionManager:
             checkpoint_sequence = int(
                 session.metadata.get("history_checkpoint_seq") or 0
             )
+            bounds = "include_in_session = 1 AND sequence <= ?"
+            parameters: list[Any] = [checkpoint_sequence]
+            if before_sequence is not None:
+                bounds += " AND sequence < ?"
+                parameters.append(int(before_sequence))
             if limit is not None and limit > 0:
                 rows = connection.execute(
-                    """SELECT sequence, case_id, case_run_id, message_json, created_at
+                    f"""SELECT sequence, case_id, case_run_id, message_json, created_at
                        FROM (
                            SELECT sequence, case_id, case_run_id, message_json, created_at
                            FROM conversation_checkpoints
-                           WHERE include_in_session = 1 AND sequence <= ?
+                           WHERE {bounds}
                            ORDER BY sequence DESC
                            LIMIT ?
                        )
                        ORDER BY sequence""",
-                    (checkpoint_sequence, limit),
+                    (*parameters, limit),
                 ).fetchall()
             else:
                 rows = connection.execute(
-                    """SELECT sequence, case_id, case_run_id, message_json, created_at
+                    f"""SELECT sequence, case_id, case_run_id, message_json, created_at
                        FROM conversation_checkpoints
-                       WHERE include_in_session = 1 AND sequence <= ?
+                       WHERE {bounds}
                        ORDER BY sequence""",
-                    (checkpoint_sequence,),
+                    parameters,
                 ).fetchall()
         history: list[dict[str, Any]] = []
         timings: dict[str, dict[str, Any]] = {}
@@ -454,6 +467,27 @@ class SessionManager:
                    FROM conversation_checkpoints
                    WHERE include_in_session = 1 AND sequence <= ?""",
                 (int(session.metadata.get("history_checkpoint_seq") or 0),),
+            ).fetchone()
+        return int(row[0] if row else 0)
+
+    def history_before_count(self, session: AgentSession, sequence: int) -> int:
+        """Count checkpoint-owned messages strictly above the given sequence.
+
+        Reports how many rows sit older than the returned history page so the
+        client knows whether another page can be fetched.
+        """
+        database_path = self._checkpoint_database_path(session.session_id)
+        if not database_path.exists():
+            return 0
+        with closing(self._checkpoint_connection(database_path)) as connection:
+            row = connection.execute(
+                """SELECT COUNT(*)
+                   FROM conversation_checkpoints
+                   WHERE include_in_session = 1 AND sequence < ? AND sequence <= ?""",
+                (
+                    int(sequence),
+                    int(session.metadata.get("history_checkpoint_seq") or 0),
+                ),
             ).fetchone()
         return int(row[0] if row else 0)
 
