@@ -888,34 +888,37 @@ export function App() {
         requestAnimationFrame(flushDeltaEvents);
       };
 
-      const nextMessages = recovery ? messagesForRecovery(recovery, assistantId) : [
-        ...messagesRef.current,
-        {
-          id: `user-${Date.now()}`,
-          role: "user",
-          content: message,
-          createdAt: Date.now(),
-          attachments: attachments.length ? attachments : undefined,
-        },
-        {
-          id: assistantId,
-          role: "assistant",
-          content: "",
-          status: "running",
-          startedAt: Date.now(),
-          endedAt: null,
-          sections: [],
-        },
-      ];
-      if (initialSessionId) {
-        pendingSessionMessagesRef.current.set(initialSessionId, nextMessages);
-        sessionLiveEventsRef.current.set(initialSessionId, streamEvents);
-      }
-      streamMessages = nextMessages;
-      messagesRef.current = nextMessages;
-      setMessages(nextMessages);
-
       try {
+        // Building the recovery transcript validates the API's history
+        // boundary; a mismatch must surface through the shared catch below so
+        // the session is not left flagged running with an unhandled rejection.
+        const nextMessages = recovery ? messagesForRecovery(recovery, assistantId) : [
+          ...messagesRef.current,
+          {
+            id: `user-${Date.now()}`,
+            role: "user",
+            content: message,
+            createdAt: Date.now(),
+            attachments: attachments.length ? attachments : undefined,
+          },
+          {
+            id: assistantId,
+            role: "assistant",
+            content: "",
+            status: "running",
+            startedAt: Date.now(),
+            endedAt: null,
+            sections: [],
+          },
+        ];
+        if (initialSessionId) {
+          pendingSessionMessagesRef.current.set(initialSessionId, nextMessages);
+          sessionLiveEventsRef.current.set(initialSessionId, streamEvents);
+        }
+        streamMessages = nextMessages;
+        messagesRef.current = nextMessages;
+        setMessages(nextMessages);
+
         // Recovery attaches without afterSequence, and pygent then subscribes
         // from the execution's first event: the whole journal streams back
         // before the live tail. The replay-catchup mode around

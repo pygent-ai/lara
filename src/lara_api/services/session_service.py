@@ -131,7 +131,9 @@ class SessionService:
             ),
             metadata=session.metadata,
             runtime_execution_id=run_metadata.get("runtime_execution_id"),
-            run_history_start_index=run_metadata.get("history_start_index", 0),
+            run_history_start_index=self._run_boundary_in_window(
+                run_metadata.get("history_start_index", 0), history_total, history
+            ),
             selectable_models=self._selectable_models(session.model_group_name),
         )
 
@@ -143,6 +145,22 @@ class SessionService:
         return _record_from_metadata(
             Path(session.session_dir), metadata, scope_id=self.scope_id
         )
+
+    @staticmethod
+    def _run_boundary_in_window(
+        history_start_index: Any, history_total: int, history: list[dict[str, Any]]
+    ) -> int:
+        """Translate the run's absolute history boundary into the returned page.
+
+        ``history_start_index`` counts every in-session message at run start,
+        while the response carries only the newest rows of the display window.
+        Desktop recovery slices the returned page, so an unreduced absolute
+        index exceeds the page length for any session longer than the window
+        (typical for scheduled tasks) and the client rejects the boundary.
+        """
+        start = int(history_start_index or 0)
+        omitted = max(0, history_total - len(history))
+        return max(0, start - omitted)
 
     def _selectable_models(self, group_name: str) -> list[ModelSummaryResponse]:
         native = self.manager.config.model_config
