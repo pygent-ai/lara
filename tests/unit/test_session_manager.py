@@ -376,6 +376,52 @@ def test_session_detail_can_limit_large_history_windows(tmp_path: Path) -> None:
     assert [item["content"] for item in detail.history] == ["message 3", "message 4"]
 
 
+def test_session_detail_translates_run_boundary_into_history_window(tmp_path: Path) -> None:
+    from lara_api.services.session_service import SessionService
+
+    manager = SessionManager(native_run_config(tmp_path))
+    session = manager.create("chat", mode="chat")
+    previous = manager.start_case_run(session.session_id, "chat")
+    for index in range(10):
+        manager.append_history_checkpoint(
+            previous,
+            turn_id=f"turn-{index}",
+            checkpoint_id=f"checkpoint-{index}",
+            message={"role": "user", "content": f"message {index}"},
+        )
+    manager.finish_case_run(previous, "passed")
+    run = manager.start_case_run(session.session_id, "chat")
+    manager.append_history_checkpoint(
+        run,
+        turn_id="turn-active",
+        checkpoint_id="checkpoint-active-user",
+        message={"role": "user", "content": "active prompt"},
+    )
+    manager.append_history_checkpoint(
+        run,
+        turn_id="turn-active",
+        checkpoint_id="checkpoint-active-assistant",
+        message={"role": "assistant", "content": "partial output"},
+    )
+
+    service = SessionService(manager)
+    # The tail window lies entirely inside the active run: the boundary must
+    # collapse to the window start instead of exceeding the page length.
+    window = service.load_detail(session.session_id, history_limit=2)
+    assert [item["content"] for item in window.history] == [
+        "active prompt", "partial output",
+    ]
+    assert window.run_history_start_index == 0
+    # The boundary sits inside a wider window and keeps indexing that page.
+    wider = service.load_detail(session.session_id, history_limit=5)
+    assert [item["content"] for item in wider.history] == [
+        "message 7", "message 8", "message 9", "active prompt", "partial output",
+    ]
+    assert wider.run_history_start_index == 3
+    # Without a window the absolute boundary is preserved.
+    assert service.load_detail(session.session_id).run_history_start_index == 10
+
+
 def test_session_history_carries_checkpoint_timestamps(tmp_path: Path) -> None:
     manager = SessionManager(native_run_config(tmp_path))
     session = manager.create("chat", mode="chat")

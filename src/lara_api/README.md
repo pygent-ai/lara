@@ -24,6 +24,10 @@ restored messages, freezes completed durations, and omits elapsed time when it
 is unknown. Durations are displayed in whole seconds, rounded down.
 
 Session detail exposes `runtime_execution_id` and `run_history_start_index` for
-the running case. Reopening a session resumes the execution from its native
-journal. Closing an SSE subscription does not cancel the task. Application
-lifespan cleanup closes the runtime on both normal and exceptional exits.
+the running case. `run_history_start_index` indexes the returned `history`
+window: when `history_limit` truncates the page, the API translates the run's
+absolute history boundary into that window so desktop recovery slicing stays
+valid for sessions longer than the display limit. Reopening a session resumes
+the execution from its native journal. Closing an SSE subscription does not
+cancel the task. Application lifespan cleanup closes the runtime on both normal
+and exceptional exits.
