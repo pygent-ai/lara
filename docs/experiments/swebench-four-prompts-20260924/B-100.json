@@ -1,0 +1,3226 @@
+{
+  "variant": "B",
+  "valid": 100,
+  "passed": 89,
+  "pass_rate_valid": 0.89,
+  "passed_fraction_500": 0.178,
+  "metrics": {
+    "attempts": 100,
+    "model_calls_observed": 3602,
+    "calls_with_usage": 3602,
+    "calls_missing_usage": 0,
+    "usage_unknown_attempts": 0,
+    "usage_totals": {
+      "cached_input_tokens": 166039808,
+      "input_tokens": 179118847,
+      "output_tokens": 2334562,
+      "reasoning_tokens": 1671631,
+      "total_tokens": 181453409
+    },
+    "effective_seconds_total": 54927.37999999999,
+    "reasoning_note": "reasoning_tokens are included in output_tokens"
+  },
+  "rows": [
+    {
+      "case": "astropy__astropy-12907",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T025941503350Z",
+      "seconds": 291.89,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 969728,
+          "input_tokens": 1190932,
+          "output_tokens": 10551,
+          "reasoning_tokens": 4777,
+          "total_tokens": 1201483
+        },
+        "calls_with_usage": 22,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 969728,
+            "input_tokens": 1190932,
+            "output_tokens": 10551,
+            "reasoning_tokens": 4777,
+            "total_tokens": 1201483
+          },
+          "calls_with_usage": 22,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "astropy__astropy-13033",
+      "score": 0.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T031128446261Z",
+      "seconds": 238.09,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 602112,
+          "input_tokens": 684250,
+          "output_tokens": 13711,
+          "reasoning_tokens": 9852,
+          "total_tokens": 697961
+        },
+        "calls_with_usage": 21,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 602112,
+            "input_tokens": 684250,
+            "output_tokens": 13711,
+            "reasoning_tokens": 9852,
+            "total_tokens": 697961
+          },
+          "calls_with_usage": 21,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "astropy__astropy-13236",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T033930746453Z",
+      "seconds": 1200.09,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 6737152,
+          "input_tokens": 7265722,
+          "output_tokens": 26868,
+          "reasoning_tokens": 18161,
+          "total_tokens": 7292590
+        },
+        "calls_with_usage": 49,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 6737152,
+            "input_tokens": 7265722,
+            "output_tokens": 26868,
+            "reasoning_tokens": 18161,
+            "total_tokens": 7292590
+          },
+          "calls_with_usage": 49,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "astropy__astropy-13398",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T040003995809Z",
+      "seconds": 1063.34,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 7891200,
+          "input_tokens": 8179161,
+          "output_tokens": 53125,
+          "reasoning_tokens": 28531,
+          "total_tokens": 8232286
+        },
+        "calls_with_usage": 98,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 7891200,
+            "input_tokens": 8179161,
+            "output_tokens": 53125,
+            "reasoning_tokens": 28531,
+            "total_tokens": 8232286
+          },
+          "calls_with_usage": 98,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "astropy__astropy-13453",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T040536529646Z",
+      "seconds": 228.81,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 755456,
+          "input_tokens": 835836,
+          "output_tokens": 7264,
+          "reasoning_tokens": 3360,
+          "total_tokens": 843100
+        },
+        "calls_with_usage": 28,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 755456,
+            "input_tokens": 835836,
+            "output_tokens": 7264,
+            "reasoning_tokens": 3360,
+            "total_tokens": 843100
+          },
+          "calls_with_usage": 28,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "astropy__astropy-13579",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T041846470328Z",
+      "seconds": 688.42,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 2457856,
+          "input_tokens": 2643601,
+          "output_tokens": 44930,
+          "reasoning_tokens": 32650,
+          "total_tokens": 2688531
+        },
+        "calls_with_usage": 46,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 2457856,
+            "input_tokens": 2643601,
+            "output_tokens": 44930,
+            "reasoning_tokens": 32650,
+            "total_tokens": 2688531
+          },
+          "calls_with_usage": 46,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "astropy__astropy-13977",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T042949298902Z",
+      "seconds": 501.39,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 1078272,
+          "input_tokens": 1191424,
+          "output_tokens": 29140,
+          "reasoning_tokens": 22528,
+          "total_tokens": 1220564
+        },
+        "calls_with_usage": 31,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 1078272,
+            "input_tokens": 1191424,
+            "output_tokens": 29140,
+            "reasoning_tokens": 22528,
+            "total_tokens": 1220564
+          },
+          "calls_with_usage": 31,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "astropy__astropy-14096",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T044455916628Z",
+      "seconds": 467.58,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 730624,
+          "input_tokens": 821013,
+          "output_tokens": 24799,
+          "reasoning_tokens": 19681,
+          "total_tokens": 845812
+        },
+        "calls_with_usage": 27,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 730624,
+            "input_tokens": 821013,
+            "output_tokens": 24799,
+            "reasoning_tokens": 19681,
+            "total_tokens": 845812
+          },
+          "calls_with_usage": 27,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "astropy__astropy-14182",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T045840606549Z",
+      "seconds": 344.98,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 774144,
+          "input_tokens": 885010,
+          "output_tokens": 18896,
+          "reasoning_tokens": 12525,
+          "total_tokens": 903906
+        },
+        "calls_with_usage": 26,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 774144,
+            "input_tokens": 885010,
+            "output_tokens": 18896,
+            "reasoning_tokens": 12525,
+            "total_tokens": 903906
+          },
+          "calls_with_usage": 26,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "astropy__astropy-14309",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T050832712023Z",
+      "seconds": 140.5,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 362496,
+          "input_tokens": 429520,
+          "output_tokens": 5769,
+          "reasoning_tokens": 3008,
+          "total_tokens": 435289
+        },
+        "calls_with_usage": 15,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 362496,
+            "input_tokens": 429520,
+            "output_tokens": 5769,
+            "reasoning_tokens": 3008,
+            "total_tokens": 435289
+          },
+          "calls_with_usage": 15,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "astropy__astropy-14365",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T052111183448Z",
+      "seconds": 330.66,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 786944,
+          "input_tokens": 878076,
+          "output_tokens": 19335,
+          "reasoning_tokens": 12975,
+          "total_tokens": 897411
+        },
+        "calls_with_usage": 27,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 786944,
+            "input_tokens": 878076,
+            "output_tokens": 19335,
+            "reasoning_tokens": 12975,
+            "total_tokens": 897411
+          },
+          "calls_with_usage": 27,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "astropy__astropy-14369",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T053950156265Z",
+      "seconds": 669.84,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 1924352,
+          "input_tokens": 2103710,
+          "output_tokens": 35746,
+          "reasoning_tokens": 28787,
+          "total_tokens": 2139456
+        },
+        "calls_with_usage": 36,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 1924352,
+            "input_tokens": 2103710,
+            "output_tokens": 35746,
+            "reasoning_tokens": 28787,
+            "total_tokens": 2139456
+          },
+          "calls_with_usage": 36,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "astropy__astropy-14508",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T055405244699Z",
+      "seconds": 406.97,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 1387776,
+          "input_tokens": 1531108,
+          "output_tokens": 26346,
+          "reasoning_tokens": 17795,
+          "total_tokens": 1557454
+        },
+        "calls_with_usage": 37,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 1387776,
+            "input_tokens": 1531108,
+            "output_tokens": 26346,
+            "reasoning_tokens": 17795,
+            "total_tokens": 1557454
+          },
+          "calls_with_usage": 37,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "astropy__astropy-14539",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T060543081440Z",
+      "seconds": 227.55,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 542976,
+          "input_tokens": 626807,
+          "output_tokens": 9256,
+          "reasoning_tokens": 5543,
+          "total_tokens": 636063
+        },
+        "calls_with_usage": 18,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 542976,
+            "input_tokens": 626807,
+            "output_tokens": 9256,
+            "reasoning_tokens": 5543,
+            "total_tokens": 636063
+          },
+          "calls_with_usage": 18,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "astropy__astropy-14598",
+      "score": 0.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T062512709376Z",
+      "seconds": 721.62,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 2116864,
+          "input_tokens": 2334390,
+          "output_tokens": 54456,
+          "reasoning_tokens": 47789,
+          "total_tokens": 2388846
+        },
+        "calls_with_usage": 32,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 2116864,
+            "input_tokens": 2334390,
+            "output_tokens": 54456,
+            "reasoning_tokens": 47789,
+            "total_tokens": 2388846
+          },
+          "calls_with_usage": 32,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "astropy__astropy-14995",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T063345028562Z",
+      "seconds": 319.77,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 944384,
+          "input_tokens": 1041739,
+          "output_tokens": 11472,
+          "reasoning_tokens": 6098,
+          "total_tokens": 1053211
+        },
+        "calls_with_usage": 36,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 944384,
+            "input_tokens": 1041739,
+            "output_tokens": 11472,
+            "reasoning_tokens": 6098,
+            "total_tokens": 1053211
+          },
+          "calls_with_usage": 36,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "astropy__astropy-7166",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T083139578104Z",
+      "seconds": 114.84,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 168960,
+          "input_tokens": 205169,
+          "output_tokens": 3495,
+          "reasoning_tokens": 2008,
+          "total_tokens": 208664
+        },
+        "calls_with_usage": 13,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 168960,
+            "input_tokens": 205169,
+            "output_tokens": 3495,
+            "reasoning_tokens": 2008,
+            "total_tokens": 208664
+          },
+          "calls_with_usage": 13,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "astropy__astropy-7336",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T084047024250Z",
+      "seconds": 120.56,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 224256,
+          "input_tokens": 253256,
+          "output_tokens": 3377,
+          "reasoning_tokens": 1592,
+          "total_tokens": 256633
+        },
+        "calls_with_usage": 12,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 224256,
+            "input_tokens": 253256,
+            "output_tokens": 3377,
+            "reasoning_tokens": 1592,
+            "total_tokens": 256633
+          },
+          "calls_with_usage": 12,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "astropy__astropy-7606",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T085150444851Z",
+      "seconds": 275.94,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 548864,
+          "input_tokens": 612754,
+          "output_tokens": 10455,
+          "reasoning_tokens": 5753,
+          "total_tokens": 623209
+        },
+        "calls_with_usage": 31,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 548864,
+            "input_tokens": 612754,
+            "output_tokens": 10455,
+            "reasoning_tokens": 5753,
+            "total_tokens": 623209
+          },
+          "calls_with_usage": 31,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "astropy__astropy-7671",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T090304638656Z",
+      "seconds": 284.83,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 530176,
+          "input_tokens": 613441,
+          "output_tokens": 15211,
+          "reasoning_tokens": 11074,
+          "total_tokens": 628652
+        },
+        "calls_with_usage": 21,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 530176,
+            "input_tokens": 613441,
+            "output_tokens": 15211,
+            "reasoning_tokens": 11074,
+            "total_tokens": 628652
+          },
+          "calls_with_usage": 21,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "astropy__astropy-8707",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T090914130441Z",
+      "seconds": 265.7,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 1065472,
+          "input_tokens": 1181469,
+          "output_tokens": 11560,
+          "reasoning_tokens": 5721,
+          "total_tokens": 1193029
+        },
+        "calls_with_usage": 28,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 1065472,
+            "input_tokens": 1181469,
+            "output_tokens": 11560,
+            "reasoning_tokens": 5721,
+            "total_tokens": 1193029
+          },
+          "calls_with_usage": 28,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "astropy__astropy-8872",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T091915489719Z",
+      "seconds": 560.19,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 1685504,
+          "input_tokens": 1829283,
+          "output_tokens": 31722,
+          "reasoning_tokens": 23219,
+          "total_tokens": 1861005
+        },
+        "calls_with_usage": 47,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 1685504,
+            "input_tokens": 1829283,
+            "output_tokens": 31722,
+            "reasoning_tokens": 23219,
+            "total_tokens": 1861005
+          },
+          "calls_with_usage": 47,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-10097",
+      "score": 0.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T093129152442Z",
+      "seconds": 484.03,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 860416,
+          "input_tokens": 951352,
+          "output_tokens": 15357,
+          "reasoning_tokens": 10563,
+          "total_tokens": 966709
+        },
+        "calls_with_usage": 34,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 860416,
+            "input_tokens": 951352,
+            "output_tokens": 15357,
+            "reasoning_tokens": 10563,
+            "total_tokens": 966709
+          },
+          "calls_with_usage": 34,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-10554",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T094801661282Z",
+      "seconds": 944.78,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 3142144,
+          "input_tokens": 3341206,
+          "output_tokens": 43778,
+          "reasoning_tokens": 33370,
+          "total_tokens": 3384984
+        },
+        "calls_with_usage": 66,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 3142144,
+            "input_tokens": 3341206,
+            "output_tokens": 43778,
+            "reasoning_tokens": 33370,
+            "total_tokens": 3384984
+          },
+          "calls_with_usage": 66,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-10880",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T095536438993Z",
+      "seconds": 414.59,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 1288960,
+          "input_tokens": 1399800,
+          "output_tokens": 11604,
+          "reasoning_tokens": 6308,
+          "total_tokens": 1411404
+        },
+        "calls_with_usage": 35,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 1288960,
+            "input_tokens": 1399800,
+            "output_tokens": 11604,
+            "reasoning_tokens": 6308,
+            "total_tokens": 1411404
+          },
+          "calls_with_usage": 35,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-10914",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T100556382984Z",
+      "seconds": 568.2,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 879616,
+          "input_tokens": 983272,
+          "output_tokens": 19259,
+          "reasoning_tokens": 14319,
+          "total_tokens": 1002531
+        },
+        "calls_with_usage": 27,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 879616,
+            "input_tokens": 983272,
+            "output_tokens": 19259,
+            "reasoning_tokens": 14319,
+            "total_tokens": 1002531
+          },
+          "calls_with_usage": 27,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-10973",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T102240896812Z",
+      "seconds": 929.53,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 5641984,
+          "input_tokens": 6134501,
+          "output_tokens": 34813,
+          "reasoning_tokens": 24787,
+          "total_tokens": 6169314
+        },
+        "calls_with_usage": 52,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 5641984,
+            "input_tokens": 6134501,
+            "output_tokens": 34813,
+            "reasoning_tokens": 24787,
+            "total_tokens": 6169314
+          },
+          "calls_with_usage": 52,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-10999",
+      "score": 0.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T102726191950Z",
+      "seconds": 195.7,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 218368,
+          "input_tokens": 268592,
+          "output_tokens": 8880,
+          "reasoning_tokens": 6766,
+          "total_tokens": 277472
+        },
+        "calls_with_usage": 13,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 218368,
+            "input_tokens": 268592,
+            "output_tokens": 8880,
+            "reasoning_tokens": 6766,
+            "total_tokens": 277472
+          },
+          "calls_with_usage": 13,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11066",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T104510943119Z",
+      "seconds": 1006.44,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 3038464,
+          "input_tokens": 3254015,
+          "output_tokens": 52743,
+          "reasoning_tokens": 41497,
+          "total_tokens": 3306758
+        },
+        "calls_with_usage": 62,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 3038464,
+            "input_tokens": 3254015,
+            "output_tokens": 52743,
+            "reasoning_tokens": 41497,
+            "total_tokens": 3306758
+          },
+          "calls_with_usage": 62,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11087",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T105456545396Z",
+      "seconds": 480.69,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 799232,
+          "input_tokens": 900852,
+          "output_tokens": 22846,
+          "reasoning_tokens": 18238,
+          "total_tokens": 923698
+        },
+        "calls_with_usage": 22,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 799232,
+            "input_tokens": 900852,
+            "output_tokens": 22846,
+            "reasoning_tokens": 18238,
+            "total_tokens": 923698
+          },
+          "calls_with_usage": 22,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11095",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T110456494073Z",
+      "seconds": 555.08,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 1273344,
+          "input_tokens": 1374063,
+          "output_tokens": 19621,
+          "reasoning_tokens": 12351,
+          "total_tokens": 1393684
+        },
+        "calls_with_usage": 42,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 1273344,
+            "input_tokens": 1374063,
+            "output_tokens": 19621,
+            "reasoning_tokens": 12351,
+            "total_tokens": 1393684
+          },
+          "calls_with_usage": 42,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11099",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T110946034679Z",
+      "seconds": 243.95,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 196864,
+          "input_tokens": 236784,
+          "output_tokens": 4604,
+          "reasoning_tokens": 1327,
+          "total_tokens": 241388
+        },
+        "calls_with_usage": 14,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 196864,
+            "input_tokens": 236784,
+            "output_tokens": 4604,
+            "reasoning_tokens": 1327,
+            "total_tokens": 241388
+          },
+          "calls_with_usage": 14,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11119",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T112007101102Z",
+      "seconds": 367.94,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 487680,
+          "input_tokens": 559673,
+          "output_tokens": 4520,
+          "reasoning_tokens": 1768,
+          "total_tokens": 564193
+        },
+        "calls_with_usage": 19,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 487680,
+            "input_tokens": 559673,
+            "output_tokens": 4520,
+            "reasoning_tokens": 1768,
+            "total_tokens": 564193
+          },
+          "calls_with_usage": 19,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11133",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T112507118797Z",
+      "seconds": 238.44,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 387840,
+          "input_tokens": 445389,
+          "output_tokens": 6584,
+          "reasoning_tokens": 3248,
+          "total_tokens": 451973
+        },
+        "calls_with_usage": 19,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 387840,
+            "input_tokens": 445389,
+            "output_tokens": 6584,
+            "reasoning_tokens": 3248,
+            "total_tokens": 451973
+          },
+          "calls_with_usage": 19,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11138",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T115157753145Z",
+      "seconds": 1378.86,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 7973632,
+          "input_tokens": 8271896,
+          "output_tokens": 55882,
+          "reasoning_tokens": 39325,
+          "total_tokens": 8327778
+        },
+        "calls_with_usage": 87,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 7973632,
+            "input_tokens": 8271896,
+            "output_tokens": 55882,
+            "reasoning_tokens": 39325,
+            "total_tokens": 8327778
+          },
+          "calls_with_usage": 87,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11141",
+      "score": 0.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T121103751028Z",
+      "seconds": 1062.44,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 2887936,
+          "input_tokens": 3043852,
+          "output_tokens": 39178,
+          "reasoning_tokens": 28465,
+          "total_tokens": 3083030
+        },
+        "calls_with_usage": 64,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 2887936,
+            "input_tokens": 3043852,
+            "output_tokens": 39178,
+            "reasoning_tokens": 28465,
+            "total_tokens": 3083030
+          },
+          "calls_with_usage": 64,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11149",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T122624590782Z",
+      "seconds": 722.25,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 2227968,
+          "input_tokens": 2385139,
+          "output_tokens": 34024,
+          "reasoning_tokens": 25837,
+          "total_tokens": 2419163
+        },
+        "calls_with_usage": 46,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 2227968,
+            "input_tokens": 2385139,
+            "output_tokens": 34024,
+            "reasoning_tokens": 25837,
+            "total_tokens": 2419163
+          },
+          "calls_with_usage": 46,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11163",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T123247228269Z",
+      "seconds": 206.09,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 348160,
+          "input_tokens": 405469,
+          "output_tokens": 3735,
+          "reasoning_tokens": 1150,
+          "total_tokens": 409204
+        },
+        "calls_with_usage": 22,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 348160,
+            "input_tokens": 405469,
+            "output_tokens": 3735,
+            "reasoning_tokens": 1150,
+            "total_tokens": 409204
+          },
+          "calls_with_usage": 22,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11179",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T123930562036Z",
+      "seconds": 213.95,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 339712,
+          "input_tokens": 390775,
+          "output_tokens": 4591,
+          "reasoning_tokens": 2099,
+          "total_tokens": 395366
+        },
+        "calls_with_usage": 20,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 339712,
+            "input_tokens": 390775,
+            "output_tokens": 4591,
+            "reasoning_tokens": 2099,
+            "total_tokens": 395366
+          },
+          "calls_with_usage": 20,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11206",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T125807994123Z",
+      "seconds": 891.16,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 2075136,
+          "input_tokens": 2225277,
+          "output_tokens": 48654,
+          "reasoning_tokens": 40483,
+          "total_tokens": 2273931
+        },
+        "calls_with_usage": 40,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 2075136,
+            "input_tokens": 2225277,
+            "output_tokens": 48654,
+            "reasoning_tokens": 40483,
+            "total_tokens": 2273931
+          },
+          "calls_with_usage": 40,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11211",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T130634840727Z",
+      "seconds": 415.89,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 1052928,
+          "input_tokens": 1167783,
+          "output_tokens": 21738,
+          "reasoning_tokens": 16005,
+          "total_tokens": 1189521
+        },
+        "calls_with_usage": 33,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 1052928,
+            "input_tokens": 1167783,
+            "output_tokens": 21738,
+            "reasoning_tokens": 16005,
+            "total_tokens": 1189521
+          },
+          "calls_with_usage": 33,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11239",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T131349181312Z",
+      "seconds": 282.11,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 442624,
+          "input_tokens": 508997,
+          "output_tokens": 11726,
+          "reasoning_tokens": 8012,
+          "total_tokens": 520723
+        },
+        "calls_with_usage": 23,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 442624,
+            "input_tokens": 508997,
+            "output_tokens": 11726,
+            "reasoning_tokens": 8012,
+            "total_tokens": 520723
+          },
+          "calls_with_usage": 23,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11265",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T132259521050Z",
+      "seconds": 445.8,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 957696,
+          "input_tokens": 1045550,
+          "output_tokens": 16454,
+          "reasoning_tokens": 11095,
+          "total_tokens": 1062004
+        },
+        "calls_with_usage": 29,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 957696,
+            "input_tokens": 1045550,
+            "output_tokens": 16454,
+            "reasoning_tokens": 11095,
+            "total_tokens": 1062004
+          },
+          "calls_with_usage": 29,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11276",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T133552606609Z",
+      "seconds": 392.41,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 666624,
+          "input_tokens": 756014,
+          "output_tokens": 17551,
+          "reasoning_tokens": 13611,
+          "total_tokens": 773565
+        },
+        "calls_with_usage": 25,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 666624,
+            "input_tokens": 756014,
+            "output_tokens": 17551,
+            "reasoning_tokens": 13611,
+            "total_tokens": 773565
+          },
+          "calls_with_usage": 25,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11292",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T135337630926Z",
+      "seconds": 782.81,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 2297088,
+          "input_tokens": 2501747,
+          "output_tokens": 32335,
+          "reasoning_tokens": 25457,
+          "total_tokens": 2534082
+        },
+        "calls_with_usage": 46,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 2297088,
+            "input_tokens": 2501747,
+            "output_tokens": 32335,
+            "reasoning_tokens": 25457,
+            "total_tokens": 2534082
+          },
+          "calls_with_usage": 46,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11299",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T141005673186Z",
+      "seconds": 619.36,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 1467648,
+          "input_tokens": 1602920,
+          "output_tokens": 23227,
+          "reasoning_tokens": 16275,
+          "total_tokens": 1626147
+        },
+        "calls_with_usage": 36,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 1467648,
+            "input_tokens": 1602920,
+            "output_tokens": 23227,
+            "reasoning_tokens": 16275,
+            "total_tokens": 1626147
+          },
+          "calls_with_usage": 36,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11333",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T141608415217Z",
+      "seconds": 277.86,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 584704,
+          "input_tokens": 663491,
+          "output_tokens": 10616,
+          "reasoning_tokens": 6942,
+          "total_tokens": 674107
+        },
+        "calls_with_usage": 20,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 584704,
+            "input_tokens": 663491,
+            "output_tokens": 10616,
+            "reasoning_tokens": 6942,
+            "total_tokens": 674107
+          },
+          "calls_with_usage": 20,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11400",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T143457418079Z",
+      "seconds": 910.66,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 9702400,
+          "input_tokens": 10226340,
+          "output_tokens": 41112,
+          "reasoning_tokens": 29647,
+          "total_tokens": 10267452
+        },
+        "calls_with_usage": 56,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 9702400,
+            "input_tokens": 10226340,
+            "output_tokens": 41112,
+            "reasoning_tokens": 29647,
+            "total_tokens": 10267452
+          },
+          "calls_with_usage": 56,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11433",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T144620491576Z",
+      "seconds": 585.77,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 1682432,
+          "input_tokens": 1808424,
+          "output_tokens": 22793,
+          "reasoning_tokens": 16709,
+          "total_tokens": 1831217
+        },
+        "calls_with_usage": 41,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 1682432,
+            "input_tokens": 1808424,
+            "output_tokens": 22793,
+            "reasoning_tokens": 16709,
+            "total_tokens": 1831217
+          },
+          "calls_with_usage": 41,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11451",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T145428786574Z",
+      "seconds": 286.88,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 551424,
+          "input_tokens": 633207,
+          "output_tokens": 14005,
+          "reasoning_tokens": 9640,
+          "total_tokens": 647212
+        },
+        "calls_with_usage": 23,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 551424,
+            "input_tokens": 633207,
+            "output_tokens": 14005,
+            "reasoning_tokens": 9640,
+            "total_tokens": 647212
+          },
+          "calls_with_usage": 23,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11477",
+      "score": 0.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T151745053436Z",
+      "seconds": 1063.69,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 3053568,
+          "input_tokens": 3257365,
+          "output_tokens": 58754,
+          "reasoning_tokens": 48668,
+          "total_tokens": 3316119
+        },
+        "calls_with_usage": 48,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 3053568,
+            "input_tokens": 3257365,
+            "output_tokens": 58754,
+            "reasoning_tokens": 48668,
+            "total_tokens": 3316119
+          },
+          "calls_with_usage": 48,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11490",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T153059439405Z",
+      "seconds": 420.3,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 708096,
+          "input_tokens": 800755,
+          "output_tokens": 16219,
+          "reasoning_tokens": 12661,
+          "total_tokens": 816974
+        },
+        "calls_with_usage": 26,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 708096,
+            "input_tokens": 800755,
+            "output_tokens": 16219,
+            "reasoning_tokens": 12661,
+            "total_tokens": 816974
+          },
+          "calls_with_usage": 26,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11532",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T154335405426Z",
+      "seconds": 532.64,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 1196288,
+          "input_tokens": 1322215,
+          "output_tokens": 24484,
+          "reasoning_tokens": 18559,
+          "total_tokens": 1346699
+        },
+        "calls_with_usage": 32,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 1196288,
+            "input_tokens": 1322215,
+            "output_tokens": 24484,
+            "reasoning_tokens": 18559,
+            "total_tokens": 1346699
+          },
+          "calls_with_usage": 32,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11551",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T155337254394Z",
+      "seconds": 475.03,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 1338368,
+          "input_tokens": 1466725,
+          "output_tokens": 26539,
+          "reasoning_tokens": 19336,
+          "total_tokens": 1493264
+        },
+        "calls_with_usage": 37,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 1338368,
+            "input_tokens": 1466725,
+            "output_tokens": 26539,
+            "reasoning_tokens": 19336,
+            "total_tokens": 1493264
+          },
+          "calls_with_usage": 37,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11555",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T160750910630Z",
+      "seconds": 482.3,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 1600512,
+          "input_tokens": 1730510,
+          "output_tokens": 18427,
+          "reasoning_tokens": 12386,
+          "total_tokens": 1748937
+        },
+        "calls_with_usage": 44,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 1600512,
+            "input_tokens": 1730510,
+            "output_tokens": 18427,
+            "reasoning_tokens": 12386,
+            "total_tokens": 1748937
+          },
+          "calls_with_usage": 44,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11603",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T162019740446Z",
+      "seconds": 380.14,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 798976,
+          "input_tokens": 886145,
+          "output_tokens": 16186,
+          "reasoning_tokens": 10846,
+          "total_tokens": 902331
+        },
+        "calls_with_usage": 30,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 798976,
+            "input_tokens": 886145,
+            "output_tokens": 16186,
+            "reasoning_tokens": 10846,
+            "total_tokens": 902331
+          },
+          "calls_with_usage": 30,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11728",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T163723343738Z",
+      "seconds": 657.92,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 1487104,
+          "input_tokens": 1617039,
+          "output_tokens": 34609,
+          "reasoning_tokens": 25288,
+          "total_tokens": 1651648
+        },
+        "calls_with_usage": 43,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 1487104,
+            "input_tokens": 1617039,
+            "output_tokens": 34609,
+            "reasoning_tokens": 25288,
+            "total_tokens": 1651648
+          },
+          "calls_with_usage": 43,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11734",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T171333090566Z",
+      "seconds": 1800.77,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 9570560,
+          "input_tokens": 9913686,
+          "output_tokens": 86165,
+          "reasoning_tokens": 66414,
+          "total_tokens": 9999851
+        },
+        "calls_with_usage": 114,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 9570560,
+            "input_tokens": 9913686,
+            "output_tokens": 86165,
+            "reasoning_tokens": 66414,
+            "total_tokens": 9999851
+          },
+          "calls_with_usage": 114,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11740",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T172941835150Z",
+      "seconds": 588.56,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 1335552,
+          "input_tokens": 1449129,
+          "output_tokens": 18171,
+          "reasoning_tokens": 11593,
+          "total_tokens": 1467300
+        },
+        "calls_with_usage": 39,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 1335552,
+            "input_tokens": 1449129,
+            "output_tokens": 18171,
+            "reasoning_tokens": 11593,
+            "total_tokens": 1467300
+          },
+          "calls_with_usage": 39,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11749",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T174604019825Z",
+      "seconds": 828.41,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 1120256,
+          "input_tokens": 1234891,
+          "output_tokens": 25751,
+          "reasoning_tokens": 18618,
+          "total_tokens": 1260642
+        },
+        "calls_with_usage": 36,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 1120256,
+            "input_tokens": 1234891,
+            "output_tokens": 25751,
+            "reasoning_tokens": 18618,
+            "total_tokens": 1260642
+          },
+          "calls_with_usage": 36,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11790",
+      "score": 0.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T175631164896Z",
+      "seconds": 257.25,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 571648,
+          "input_tokens": 656256,
+          "output_tokens": 10465,
+          "reasoning_tokens": 6568,
+          "total_tokens": 666721
+        },
+        "calls_with_usage": 22,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 571648,
+            "input_tokens": 656256,
+            "output_tokens": 10465,
+            "reasoning_tokens": 6568,
+            "total_tokens": 666721
+          },
+          "calls_with_usage": 22,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11815",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T181032796050Z",
+      "seconds": 475.0,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 1451008,
+          "input_tokens": 1572306,
+          "output_tokens": 24056,
+          "reasoning_tokens": 13877,
+          "total_tokens": 1596362
+        },
+        "calls_with_usage": 36,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 1451008,
+            "input_tokens": 1572306,
+            "output_tokens": 24056,
+            "reasoning_tokens": 13877,
+            "total_tokens": 1596362
+          },
+          "calls_with_usage": 36,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11820",
+      "score": 0.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T182531989263Z",
+      "seconds": 531.89,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 1405184,
+          "input_tokens": 1524863,
+          "output_tokens": 25096,
+          "reasoning_tokens": 19067,
+          "total_tokens": 1549959
+        },
+        "calls_with_usage": 38,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 1405184,
+            "input_tokens": 1524863,
+            "output_tokens": 25096,
+            "reasoning_tokens": 19067,
+            "total_tokens": 1549959
+          },
+          "calls_with_usage": 38,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11848",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T183701451843Z",
+      "seconds": 315.36,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 394240,
+          "input_tokens": 450400,
+          "output_tokens": 14195,
+          "reasoning_tokens": 9576,
+          "total_tokens": 464595
+        },
+        "calls_with_usage": 17,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 394240,
+            "input_tokens": 450400,
+            "output_tokens": 14195,
+            "reasoning_tokens": 9576,
+            "total_tokens": 464595
+          },
+          "calls_with_usage": 17,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11880",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T184610138555Z",
+      "seconds": 182.66,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 176640,
+          "input_tokens": 216914,
+          "output_tokens": 3283,
+          "reasoning_tokens": 1491,
+          "total_tokens": 220197
+        },
+        "calls_with_usage": 13,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 176640,
+            "input_tokens": 216914,
+            "output_tokens": 3283,
+            "reasoning_tokens": 1491,
+            "total_tokens": 220197
+          },
+          "calls_with_usage": 13,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11885",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T190904714439Z",
+      "seconds": 997.61,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 3264000,
+          "input_tokens": 3425995,
+          "output_tokens": 32992,
+          "reasoning_tokens": 23386,
+          "total_tokens": 3458987
+        },
+        "calls_with_usage": 68,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 3264000,
+            "input_tokens": 3425995,
+            "output_tokens": 32992,
+            "reasoning_tokens": 23386,
+            "total_tokens": 3458987
+          },
+          "calls_with_usage": 68,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11951",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T192221471445Z",
+      "seconds": 409.31,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 835328,
+          "input_tokens": 931374,
+          "output_tokens": 16767,
+          "reasoning_tokens": 11584,
+          "total_tokens": 948141
+        },
+        "calls_with_usage": 31,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 835328,
+            "input_tokens": 931374,
+            "output_tokens": 16767,
+            "reasoning_tokens": 11584,
+            "total_tokens": 948141
+          },
+          "calls_with_usage": 31,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11964",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T193852333470Z",
+      "seconds": 616.2,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 1455872,
+          "input_tokens": 1608782,
+          "output_tokens": 35051,
+          "reasoning_tokens": 29378,
+          "total_tokens": 1643833
+        },
+        "calls_with_usage": 29,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 1455872,
+            "input_tokens": 1608782,
+            "output_tokens": 35051,
+            "reasoning_tokens": 29378,
+            "total_tokens": 1643833
+          },
+          "calls_with_usage": 29,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-11999",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T195215175624Z",
+      "seconds": 435.16,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 658944,
+          "input_tokens": 733234,
+          "output_tokens": 16104,
+          "reasoning_tokens": 11225,
+          "total_tokens": 749338
+        },
+        "calls_with_usage": 27,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 658944,
+            "input_tokens": 733234,
+            "output_tokens": 16104,
+            "reasoning_tokens": 11225,
+            "total_tokens": 749338
+          },
+          "calls_with_usage": 27,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-12039",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T201115813957Z",
+      "seconds": 778.89,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 2763776,
+          "input_tokens": 2941063,
+          "output_tokens": 34653,
+          "reasoning_tokens": 24801,
+          "total_tokens": 2975716
+        },
+        "calls_with_usage": 48,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 2763776,
+            "input_tokens": 2941063,
+            "output_tokens": 34653,
+            "reasoning_tokens": 24801,
+            "total_tokens": 2975716
+          },
+          "calls_with_usage": 48,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-12050",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T202409090375Z",
+      "seconds": 408.06,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 811008,
+          "input_tokens": 886051,
+          "output_tokens": 12537,
+          "reasoning_tokens": 8011,
+          "total_tokens": 898588
+        },
+        "calls_with_usage": 37,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 811008,
+            "input_tokens": 886051,
+            "output_tokens": 12537,
+            "reasoning_tokens": 8011,
+            "total_tokens": 898588
+          },
+          "calls_with_usage": 37,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-12125",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T205050450301Z",
+      "seconds": 1228.86,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 4343040,
+          "input_tokens": 4560395,
+          "output_tokens": 55272,
+          "reasoning_tokens": 38375,
+          "total_tokens": 4615667
+        },
+        "calls_with_usage": 74,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 4343040,
+            "input_tokens": 4560395,
+            "output_tokens": 55272,
+            "reasoning_tokens": 38375,
+            "total_tokens": 4615667
+          },
+          "calls_with_usage": 74,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-12143",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T210046519902Z",
+      "seconds": 228.44,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 268800,
+          "input_tokens": 323541,
+          "output_tokens": 8410,
+          "reasoning_tokens": 5403,
+          "total_tokens": 331951
+        },
+        "calls_with_usage": 15,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 268800,
+            "input_tokens": 323541,
+            "output_tokens": 8410,
+            "reasoning_tokens": 5403,
+            "total_tokens": 331951
+          },
+          "calls_with_usage": 15,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-12155",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T211521678899Z",
+      "seconds": 491.69,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 829184,
+          "input_tokens": 939682,
+          "output_tokens": 31562,
+          "reasoning_tokens": 25791,
+          "total_tokens": 971244
+        },
+        "calls_with_usage": 27,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 829184,
+            "input_tokens": 939682,
+            "output_tokens": 31562,
+            "reasoning_tokens": 25791,
+            "total_tokens": 971244
+          },
+          "calls_with_usage": 27,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-12193",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T212655059134Z",
+      "seconds": 271.28,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 455680,
+          "input_tokens": 510564,
+          "output_tokens": 9693,
+          "reasoning_tokens": 6186,
+          "total_tokens": 520257
+        },
+        "calls_with_usage": 24,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 455680,
+            "input_tokens": 510564,
+            "output_tokens": 9693,
+            "reasoning_tokens": 6186,
+            "total_tokens": 520257
+          },
+          "calls_with_usage": 24,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-12209",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T214740702396Z",
+      "seconds": 879.84,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 2107904,
+          "input_tokens": 2247099,
+          "output_tokens": 35152,
+          "reasoning_tokens": 25827,
+          "total_tokens": 2282251
+        },
+        "calls_with_usage": 51,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 2107904,
+            "input_tokens": 2247099,
+            "output_tokens": 35152,
+            "reasoning_tokens": 25827,
+            "total_tokens": 2282251
+          },
+          "calls_with_usage": 51,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-12262",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T220002234539Z",
+      "seconds": 355.64,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 737536,
+          "input_tokens": 823638,
+          "output_tokens": 13776,
+          "reasoning_tokens": 7233,
+          "total_tokens": 837414
+        },
+        "calls_with_usage": 28,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 737536,
+            "input_tokens": 823638,
+            "output_tokens": 13776,
+            "reasoning_tokens": 7233,
+            "total_tokens": 837414
+          },
+          "calls_with_usage": 28,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-12273",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T221706754661Z",
+      "seconds": 833.42,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 1958656,
+          "input_tokens": 2110319,
+          "output_tokens": 41548,
+          "reasoning_tokens": 31499,
+          "total_tokens": 2151867
+        },
+        "calls_with_usage": 44,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 1958656,
+            "input_tokens": 2110319,
+            "output_tokens": 41548,
+            "reasoning_tokens": 31499,
+            "total_tokens": 2151867
+          },
+          "calls_with_usage": 44,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-12276",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T222700377777Z",
+      "seconds": 227.62,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 419840,
+          "input_tokens": 483869,
+          "output_tokens": 5417,
+          "reasoning_tokens": 2000,
+          "total_tokens": 489286
+        },
+        "calls_with_usage": 21,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 419840,
+            "input_tokens": 483869,
+            "output_tokens": 5417,
+            "reasoning_tokens": 2000,
+            "total_tokens": 489286
+          },
+          "calls_with_usage": 21,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-12304",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T223805543522Z",
+      "seconds": 302.86,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 403712,
+          "input_tokens": 471284,
+          "output_tokens": 12438,
+          "reasoning_tokens": 8962,
+          "total_tokens": 483722
+        },
+        "calls_with_usage": 19,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 403712,
+            "input_tokens": 471284,
+            "output_tokens": 12438,
+            "reasoning_tokens": 8962,
+            "total_tokens": 483722
+          },
+          "calls_with_usage": 19,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-12308",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T224745289549Z",
+      "seconds": 258.02,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 441088,
+          "input_tokens": 525206,
+          "output_tokens": 6997,
+          "reasoning_tokens": 4284,
+          "total_tokens": 532203
+        },
+        "calls_with_usage": 17,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 441088,
+            "input_tokens": 525206,
+            "output_tokens": 6997,
+            "reasoning_tokens": 4284,
+            "total_tokens": 532203
+          },
+          "calls_with_usage": 17,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-12325",
+      "score": 0.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T225747529992Z",
+      "seconds": 497.08,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 1312000,
+          "input_tokens": 1426964,
+          "output_tokens": 23196,
+          "reasoning_tokens": 16806,
+          "total_tokens": 1450160
+        },
+        "calls_with_usage": 37,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 1312000,
+            "input_tokens": 1426964,
+            "output_tokens": 23196,
+            "reasoning_tokens": 16806,
+            "total_tokens": 1450160
+          },
+          "calls_with_usage": 37,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-12406",
+      "score": 0.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T231457902239Z",
+      "seconds": 661.7,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 2301952,
+          "input_tokens": 2438183,
+          "output_tokens": 24283,
+          "reasoning_tokens": 14999,
+          "total_tokens": 2462466
+        },
+        "calls_with_usage": 67,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 2301952,
+            "input_tokens": 2438183,
+            "output_tokens": 24283,
+            "reasoning_tokens": 14999,
+            "total_tokens": 2462466
+          },
+          "calls_with_usage": 67,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-12419",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T232602407163Z",
+      "seconds": 440.02,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 1208576,
+          "input_tokens": 1316579,
+          "output_tokens": 22146,
+          "reasoning_tokens": 16109,
+          "total_tokens": 1338725
+        },
+        "calls_with_usage": 31,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 1208576,
+            "input_tokens": 1316579,
+            "output_tokens": 22146,
+            "reasoning_tokens": 16109,
+            "total_tokens": 1338725
+          },
+          "calls_with_usage": 31,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-12663",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261024T234542865845Z",
+      "seconds": 821.22,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 3017472,
+          "input_tokens": 3205116,
+          "output_tokens": 39314,
+          "reasoning_tokens": 31378,
+          "total_tokens": 3244430
+        },
+        "calls_with_usage": 53,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 3017472,
+            "input_tokens": 3205116,
+            "output_tokens": 39314,
+            "reasoning_tokens": 31378,
+            "total_tokens": 3244430
+          },
+          "calls_with_usage": 53,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-12708",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261025T001149468463Z",
+      "seconds": 1264.92,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 2302976,
+          "input_tokens": 2460320,
+          "output_tokens": 33783,
+          "reasoning_tokens": 25480,
+          "total_tokens": 2494103
+        },
+        "calls_with_usage": 44,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 2302976,
+            "input_tokens": 2460320,
+            "output_tokens": 33783,
+            "reasoning_tokens": 25480,
+            "total_tokens": 2494103
+          },
+          "calls_with_usage": 44,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-12713",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261025T002243996143Z",
+      "seconds": 280.59,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 651776,
+          "input_tokens": 753986,
+          "output_tokens": 10452,
+          "reasoning_tokens": 7379,
+          "total_tokens": 764438
+        },
+        "calls_with_usage": 20,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 651776,
+            "input_tokens": 753986,
+            "output_tokens": 10452,
+            "reasoning_tokens": 7379,
+            "total_tokens": 764438
+          },
+          "calls_with_usage": 20,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-12741",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261025T003252347172Z",
+      "seconds": 235.5,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 348416,
+          "input_tokens": 402037,
+          "output_tokens": 7113,
+          "reasoning_tokens": 3246,
+          "total_tokens": 409150
+        },
+        "calls_with_usage": 22,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 348416,
+            "input_tokens": 402037,
+            "output_tokens": 7113,
+            "reasoning_tokens": 3246,
+            "total_tokens": 409150
+          },
+          "calls_with_usage": 22,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-12754",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261025T005247992511Z",
+      "seconds": 813.77,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 3477760,
+          "input_tokens": 3683982,
+          "output_tokens": 43390,
+          "reasoning_tokens": 32610,
+          "total_tokens": 3727372
+        },
+        "calls_with_usage": 67,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 3477760,
+            "input_tokens": 3683982,
+            "output_tokens": 43390,
+            "reasoning_tokens": 32610,
+            "total_tokens": 3727372
+          },
+          "calls_with_usage": 67,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-12774",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261025T010414277593Z",
+      "seconds": 296.14,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 388608,
+          "input_tokens": 460998,
+          "output_tokens": 14920,
+          "reasoning_tokens": 11683,
+          "total_tokens": 475918
+        },
+        "calls_with_usage": 19,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 388608,
+            "input_tokens": 460998,
+            "output_tokens": 14920,
+            "reasoning_tokens": 11683,
+            "total_tokens": 475918
+          },
+          "calls_with_usage": 19,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-12858",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261025T011714604350Z",
+      "seconds": 397.67,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 879360,
+          "input_tokens": 973004,
+          "output_tokens": 19432,
+          "reasoning_tokens": 14212,
+          "total_tokens": 992436
+        },
+        "calls_with_usage": 30,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 879360,
+            "input_tokens": 973004,
+            "output_tokens": 19432,
+            "reasoning_tokens": 14212,
+            "total_tokens": 992436
+          },
+          "calls_with_usage": 30,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-12965",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261025T013306875270Z",
+      "seconds": 523.66,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 1240576,
+          "input_tokens": 1377225,
+          "output_tokens": 27917,
+          "reasoning_tokens": 23119,
+          "total_tokens": 1405142
+        },
+        "calls_with_usage": 29,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 1240576,
+            "input_tokens": 1377225,
+            "output_tokens": 27917,
+            "reasoning_tokens": 23119,
+            "total_tokens": 1405142
+          },
+          "calls_with_usage": 29,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-13012",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261025T014442189771Z",
+      "seconds": 587.2,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 1811712,
+          "input_tokens": 1933615,
+          "output_tokens": 21892,
+          "reasoning_tokens": 14073,
+          "total_tokens": 1955507
+        },
+        "calls_with_usage": 51,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 1811712,
+            "input_tokens": 1933615,
+            "output_tokens": 21892,
+            "reasoning_tokens": 14073,
+            "total_tokens": 1955507
+          },
+          "calls_with_usage": 51,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-13023",
+      "score": 0.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261025T015615352379Z",
+      "seconds": 315.25,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 180736,
+          "input_tokens": 215716,
+          "output_tokens": 4100,
+          "reasoning_tokens": 2055,
+          "total_tokens": 219816
+        },
+        "calls_with_usage": 13,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 180736,
+            "input_tokens": 215716,
+            "output_tokens": 4100,
+            "reasoning_tokens": 2055,
+            "total_tokens": 219816
+          },
+          "calls_with_usage": 13,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-13028",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261025T020855042485Z",
+      "seconds": 392.64,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 928000,
+          "input_tokens": 1023281,
+          "output_tokens": 17883,
+          "reasoning_tokens": 11716,
+          "total_tokens": 1041164
+        },
+        "calls_with_usage": 30,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 928000,
+            "input_tokens": 1023281,
+            "output_tokens": 17883,
+            "reasoning_tokens": 11716,
+            "total_tokens": 1041164
+          },
+          "calls_with_usage": 30,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-13033",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261025T024641930673Z",
+      "seconds": 1889.64,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 2378240,
+          "input_tokens": 2540299,
+          "output_tokens": 40334,
+          "reasoning_tokens": 29864,
+          "total_tokens": 2580633
+        },
+        "calls_with_usage": 53,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 2378240,
+            "input_tokens": 2540299,
+            "output_tokens": 40334,
+            "reasoning_tokens": 29864,
+            "total_tokens": 2580633
+          },
+          "calls_with_usage": 53,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-13089",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261025T025522452050Z",
+      "seconds": 374.33,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 603136,
+          "input_tokens": 686594,
+          "output_tokens": 20390,
+          "reasoning_tokens": 16725,
+          "total_tokens": 706984
+        },
+        "calls_with_usage": 23,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 603136,
+            "input_tokens": 686594,
+            "output_tokens": 20390,
+            "reasoning_tokens": 16725,
+            "total_tokens": 706984
+          },
+          "calls_with_usage": 23,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-13109",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261025T030544241601Z",
+      "seconds": 571.77,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 2021376,
+          "input_tokens": 2161478,
+          "output_tokens": 23746,
+          "reasoning_tokens": 12535,
+          "total_tokens": 2185224
+        },
+        "calls_with_usage": 53,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 2021376,
+            "input_tokens": 2161478,
+            "output_tokens": 23746,
+            "reasoning_tokens": 12535,
+            "total_tokens": 2185224
+          },
+          "calls_with_usage": 53,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-13112",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261025T031902307245Z",
+      "seconds": 751.98,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 2444032,
+          "input_tokens": 2589644,
+          "output_tokens": 23868,
+          "reasoning_tokens": 14859,
+          "total_tokens": 2613512
+        },
+        "calls_with_usage": 59,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 2444032,
+            "input_tokens": 2589644,
+            "output_tokens": 23868,
+            "reasoning_tokens": 14859,
+            "total_tokens": 2613512
+          },
+          "calls_with_usage": 59,
+          "calls_missing_usage": 0
+        }
+      ]
+    },
+    {
+      "case": "django__django-13121",
+      "score": 1.0,
+      "status": "effective",
+      "attempts": 1,
+      "completed_utc": "20261025T033201348862Z",
+      "seconds": 730.25,
+      "usage": {
+        "totals": {
+          "cached_input_tokens": 2822144,
+          "input_tokens": 3024480,
+          "output_tokens": 35920,
+          "reasoning_tokens": 25169,
+          "total_tokens": 3060400
+        },
+        "calls_with_usage": 49,
+        "calls_missing_usage": 0
+      },
+      "attempt_usage": [
+        {
+          "totals": {
+            "cached_input_tokens": 2822144,
+            "input_tokens": 3024480,
+            "output_tokens": 35920,
+            "reasoning_tokens": 25169,
+            "total_tokens": 3060400
+          },
+          "calls_with_usage": 49,
+          "calls_missing_usage": 0
+        }
+      ]
+    }
+  ],
+  "note": "Effective completion order; historical milestone, not current full batch status."
+}
