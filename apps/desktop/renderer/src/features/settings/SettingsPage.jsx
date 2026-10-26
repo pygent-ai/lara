@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Settings as SettingsIcon } from "lucide-react";
 import { useSettingsDraft } from "./useSettingsDraft.js";
-import { commitConnectionBuffer, modelGroupValidationError, settingsForSave, settingsToDraft } from "./settingsModel.js";
+import { commitConnectionBuffer, commitConnectionFields, commitModelDelete, commitModelSave, modelGroupValidationError, settingsForSave, settingsToDraft } from "./settingsModel.js";
 import "./settings.css";
 import { WorkspaceSettings } from "./WorkspaceSettings.jsx";
 import { ConnectionSettings } from "./ConnectionSettings.jsx";
@@ -112,11 +112,21 @@ export function SettingsPage({ settings, disabled, onClose, onPersist, api }) {
   // A connection save persists the saved baseline plus this connection's slice,
   // and mirrors the same commit into the live draft so pending edits in other
   // sections (workspace, groups) survive untouched.
-  async function persistConnection(previousKey, buffer, catalogs) {
-    const nextSaved = commitConnectionBuffer(savedDraft, previousKey, buffer, catalogs);
+  // A connection editor commits in slices: the create form and the head save
+  // cover the whole slice or the connection fields, and every model row
+  // commits (or deletes) on its own. Both the saved baseline and the live
+  // draft receive the same merge, so pending edits elsewhere survive.
+  async function persistConnection(previousKey, buffer, catalogs, kind = "slice", modelKey = null) {
+    const merge = (base) => (
+      kind === "model" ? commitModelSave(base, previousKey, buffer, catalogs, modelKey)
+        : kind === "delete" ? commitModelDelete(base, previousKey, buffer, catalogs, modelKey)
+          : kind === "connection" ? commitConnectionFields(base, previousKey, buffer, catalogs)
+            : commitConnectionBuffer(base, previousKey, buffer, catalogs)
+    );
+    const nextSaved = merge(savedDraft);
     await onPersist(nextSaved);
     setSavedDraft(nextSaved);
-    setDraft(commitConnectionBuffer(draft, previousKey, buffer, catalogs));
+    setDraft(merge(draft));
   }
 
   useEffect(() => {

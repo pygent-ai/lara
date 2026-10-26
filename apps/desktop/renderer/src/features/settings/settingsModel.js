@@ -173,6 +173,96 @@ export function commitConnectionBuffer(draft, previousKey, buffer, catalogs) {
   return { ...draft, connections, models, modelGroups, credentialValues: { ...draft.credentialValues, ...buffer.credentialValues } };
 }
 
+// The saved key a buffer row commits against: a pending rename points back at
+// the entry it replaces, everything else commits under its own key.
+export function originalModelKey(renames, key) {
+  for (const [original, renamed] of Object.entries(renames || {})) {
+    if (renamed === key) return original;
+  }
+  return key;
+}
+
+// Saves are sliced inside one connection editor: connection fields (plus the
+// connection-owned protocol remaps) commit through the head save, and each
+// model commits through its own row save, so an in-progress model never
+// blocks or rides along with another one.
+export function connectionFieldsDirty(savedDraft, previousKey, buffer) {
+  if (!previousKey) return true;
+  const savedConnection = savedDraft.connections[previousKey];
+  if (!savedConnection) return true;
+  const env = buffer.connection.credential?.env;
+  const savedValue = env ? savedDraft.credentialValues[env] || "" : "";
+  const bufferValue = env ? buffer.credentialValues[env] || "" : "";
+  return JSON.stringify(savedConnection) !== JSON.stringify(buffer.connection) || bufferValue !== savedValue;
+}
+
+export function modelRowDirty(savedDraft, buffer, key) {
+  const original = originalModelKey(buffer.renames, key);
+  if (original !== key) return true;
+  const saved = savedDraft.models[key];
+  if (!saved) return true;
+  const { connection: _savedConnection, ...savedRest } = saved;
+  const { connection: _bufferConnection, ...modelRest } = buffer.models[key] || {};
+  return JSON.stringify(savedRest) !== JSON.stringify(modelRest);
+}
+
+export function connectionSliceDirty(savedDraft, previousKey, buffer) {
+  if (connectionFieldsDirty(savedDraft, previousKey, buffer)) return true;
+  return Object.keys(buffer.models).some((key) => modelRowDirty(savedDraft, buffer, key));
+}
+
+// Head save: connection fields only. Models keep their saved entries; the
+// protocol is connection-owned (endpoints define which protocols exist), so
+// a protocol change commits the remapped models with the connection.
+export function commitConnectionFields(savedDraft, previousKey, buffer, catalogs) {
+  const key = buffer.key;
+  const connections = { ...savedDraft.connections };
+  if (previousKey && previousKey !== key) delete connections[previousKey];
+  connections[key] = renamedConnectionValue(buffer.connection, previousKey, key, catalogs);
+  const models = {};
+  for (const [savedKey, savedModel] of Object.entries(savedDraft.models)) {
+    if (savedModel.connection !== previousKey) {
+      models[savedKey] = savedModel;
+      continue;
+    }
+    const bufferKey = Object.keys(buffer.models).find((candidate) => originalModelKey(buffer.renames, candidate) === savedKey);
+    models[savedKey] = {
+      ...savedModel,
+      connection: key,
+      ...(bufferKey && buffer.models[bufferKey] ? { protocol: buffer.models[bufferKey].protocol } : {}),
+    };
+  }
+  return { ...savedDraft, connections, models };
+}
+
+// Row save: add or update one model entry. A pending rename also remaps the
+// key inside every model group in the same commit.
+export function commitModelSave(savedDraft, previousKey, buffer, catalogs, key) {
+  const connectionKey = buffer.key;
+  const original = originalModelKey(buffer.renames, key);
+  const models = { ...savedDraft.models };
+  if (original !== key) delete models[original];
+  models[key] = { ...buffer.models[key], connection: connectionKey };
+  const modelGroups = original === key ? savedDraft.modelGroups : Object.fromEntries(Object.entries(savedDraft.modelGroups).map(([name, group]) => [
+    name,
+    { models: group.models.map((member) => (member === original ? key : member)) },
+  ]));
+  return { ...savedDraft, models, modelGroups };
+}
+
+// Row save of a deletion-marked model: drops the saved entry and scrubs it
+// from every group; groups left empty disappear with it. If the default
+// group is affected, the server's default_model_group guard explains itself.
+export function commitModelDelete(savedDraft, previousKey, buffer, catalogs, key) {
+  const original = originalModelKey(buffer.renames, key);
+  const models = { ...savedDraft.models };
+  delete models[original];
+  const modelGroups = Object.fromEntries(Object.entries(savedDraft.modelGroups)
+    .map(([name, group]) => [name, { models: group.models.filter((member) => member !== original) }])
+    .filter(([, group]) => group.models.length));
+  return { ...savedDraft, models, modelGroups };
+}
+
 export function changeConnectionProtocol(draft, connectionKey, previous, next) {
   const connection = draft.connections[connectionKey];
   if (!connection || previous === next || !PROTOCOL_LABELS[next] || Object.hasOwn(connection.protocols || {}, next)) return draft;

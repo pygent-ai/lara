@@ -215,6 +215,10 @@
 .settings-page .head-add-endpoint:disabled { color:var(--soft); cursor:not-allowed; }
 .settings-page .connection-row-head .send { flex:0 0 auto; background:var(--text); color:var(--surface); border:0; border-radius:8px; padding:7px 16px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; }
 .settings-page .connection-row-head .send:disabled { background:var(--surface-2); color:var(--soft); cursor:not-allowed; }
+.settings-page .model-row-head .send { flex:0 0 auto; background:var(--text); color:var(--surface); border:0; border-radius:7px; padding:4px 12px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; }
+.settings-page .model-row-head .send:disabled { background:var(--surface-2); color:var(--soft); cursor:not-allowed; }
+.settings-page .pending-delete-tag { flex:0 0 auto; padding:3px 9px; border-radius:9px; border:1px solid var(--line-strong); color:var(--text); font-size:11px; font-weight:600; }
+.settings-page .pool-row.pending-delete .model-row-head { opacity:.6; }
 .settings-page .connection-row-head .route-remove { flex:0 0 auto; }
 .connection-meta { display:grid; gap:2px; padding:4px 18px 8px; }
 .connection-meta .protocol-interface-list { margin:0; gap:2px; }
