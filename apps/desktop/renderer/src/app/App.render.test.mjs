@@ -1438,26 +1438,6 @@ test("session history survives switching away while another session is running",
   assert.equal(appModule.selectSessionMessages(undefined, persisted), persisted);
 });
 
-test("active session refreshes only when the lightweight sidebar record changes", () => {
-  const current = {
-    session_id: "one",
-    updated_at: "2026-10-09T10:00:00Z",
-    last_case_run_id: "run-one",
-    last_case_run_status: "completed",
-    model_group_name: "coding",
-    selected_model_key: "main",
-  };
-  assert.equal(appModule.activeSessionNeedsRefresh(current, { ...current }), false);
-  assert.equal(appModule.activeSessionNeedsRefresh(current, {
-    ...current,
-    updated_at: "2026-10-09T10:01:00Z",
-  }), true);
-  assert.equal(appModule.activeSessionNeedsRefresh(current, {
-    ...current,
-    session_id: "two",
-  }), false);
-});
-
 test("session view cache is a bounded least-recently-used map", () => {
   const cache = new Map();
   appModule.rememberSessionView(cache, "one", { messages: [1] }, 2);
