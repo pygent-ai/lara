@@ -1,6 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyBuiltinProvider, commitConnectionBuffer, emptyNativeConnection, emptyNativeModel, modelDiscoveryRequest, settingsToDraft, modelGroupValidationError } from "./settingsModel.js";
+import {
+  applyBuiltinProvider,
+  commitConnectionBuffer,
+  commitConnectionFields,
+  commitModelDelete,
+  commitModelSave,
+  connectionFieldsDirty,
+  connectionSliceDirty,
+  emptyNativeConnection,
+  emptyNativeModel,
+  modelDiscoveryRequest,
+  modelRowDirty,
+  settingsToDraft,
+  modelGroupValidationError,
+} from "./settingsModel.js";
 import { settingsPayload } from "../../shared/api/client.js";
 
 test("connection commit adds a model without group membership and stays valid", () => {
@@ -71,4 +85,111 @@ test("model discovery uses the selected connection and unsaved credential", () =
   assert.equal(request.connection.credential.env, "OPENAI_API_KEY");
   assert.equal(Object.hasOwn(request.connection, "credential_source"), false);
   assert.equal(modelDiscoveryRequest(draft, "missing"), null);
+});
+
+test("connection and model dirtiness report their own save units", () => {
+  const draft = settingsToDraft({
+    connections: { service: emptyNativeConnection() },
+    models: {
+      main: { connection: "service", model_id: "main", protocol: "openai_responses", capabilities: { limits: {} } },
+      other: { connection: "service", model_id: "other", protocol: "openai_responses", capabilities: { limits: {} } },
+    },
+    model_groups: { coding: { models: ["main", "other"] } },
+    default_model_group: "coding",
+  });
+  const buffer = { key: "service", connection: draft.connections.service, models: structuredClone(draft.models), renames: {}, credentialValues: {} };
+  assert.equal(connectionFieldsDirty(draft, "service", buffer), false);
+  assert.equal(modelRowDirty(draft, buffer, "main"), false);
+  assert.equal(connectionSliceDirty(draft, "service", buffer), false);
+
+  // A model edit leaves the connection fields clean and only that row dirty.
+  buffer.models.main = { ...buffer.models.main, model_id: "renamed-id" };
+  assert.equal(connectionFieldsDirty(draft, "service", buffer), false);
+  assert.equal(modelRowDirty(draft, buffer, "main"), true);
+  assert.equal(modelRowDirty(draft, buffer, "other"), false);
+  assert.equal(connectionSliceDirty(draft, "service", buffer), true);
+
+  // A pending rename marks the row dirty against its saved key.
+  buffer.models.gpu = buffer.models.main;
+  delete buffer.models.main;
+  buffer.renames = { main: "gpu" };
+  assert.equal(modelRowDirty(draft, buffer, "gpu"), true);
+
+  // A connection field change marks the head save without touching rows.
+  buffer.connection = { ...buffer.connection, proxy: "http://127.0.0.1:7890" };
+  assert.equal(connectionFieldsDirty(draft, "service", buffer), true);
+});
+
+test("connection field save carries protocols but not in-progress model edits", () => {
+  const draft = settingsToDraft({
+    connections: { service: emptyNativeConnection() },
+    models: {
+      main: { connection: "service", model_id: "main", protocol: "openai_responses", capabilities: { limits: {} } },
+      other: { connection: "service", model_id: "other", protocol: "openai_responses", capabilities: { limits: {} } },
+    },
+    model_groups: { coding: { models: ["main", "other"] } },
+    default_model_group: "coding",
+  });
+  const buffer = { key: "service", connection: draft.connections.service, models: structuredClone(draft.models), renames: {}, credentialValues: {} };
+  // One model has an unsaved capability edit; the other rides a protocol change.
+  buffer.models.other = { ...buffer.models.other, capabilities: { limits: { context_tokens: 999 } } };
+  buffer.models.main = { ...buffer.models.main, protocol: "openai_chat_completions" };
+  buffer.connection = { ...buffer.connection, protocols: { ...buffer.connection.protocols, openai_chat_completions: { base_url: "https://example.test/v1" } } };
+
+  const next = commitConnectionFields(draft, "service", buffer, null);
+  assert.equal(next.connections.service.proxy, undefined);
+  assert.equal(next.models.main.protocol, "openai_chat_completions");
+  // The protocol rides the connection save; the capability edit stays local.
+  assert.deepEqual(next.models.other.capabilities, draft.models.other.capabilities);
+  assert.equal(modelRowDirty(next, buffer, "main"), false);
+  assert.equal(modelRowDirty(next, buffer, "other"), true);
+});
+
+test("model row save commits its entry and remaps a pending rename in groups", () => {
+  const draft = settingsToDraft({
+    connections: { service: emptyNativeConnection() },
+    models: {
+      main: { connection: "service", model_id: "main", protocol: "openai_responses", capabilities: { limits: {} } },
+      spare: { connection: "service", model_id: "spare", protocol: "openai_responses", capabilities: { limits: {} } },
+    },
+    model_groups: { coding: { models: ["main", "spare"] } },
+    default_model_group: "coding",
+  });
+  const buffer = { key: "service", connection: draft.connections.service, models: structuredClone(draft.models), renames: {}, credentialValues: {} };
+
+  buffer.models.main = { ...buffer.models.main, model_id: "main-v2" };
+  const updated = commitModelSave(draft, "service", buffer, null, "main");
+  assert.equal(updated.models.main.model_id, "main-v2");
+  assert.equal(modelGroupValidationError(updated), "");
+
+  // Renaming main to gpu moves the group member in the same commit.
+  buffer.models.gpu = buffer.models.main;
+  delete buffer.models.main;
+  buffer.renames = { main: "gpu" };
+  const renamed = commitModelSave(draft, "service", buffer, null, "gpu");
+  assert.equal(renamed.models.gpu.model_id, "main-v2");
+  assert.equal(Object.hasOwn(renamed.models, "main"), false);
+  assert.deepEqual(renamed.modelGroups.coding.models, ["gpu", "spare"]);
+  assert.equal(modelGroupValidationError(renamed), "");
+});
+
+test("model deletion scrubs group membership and drops emptied groups", () => {
+  const draft = settingsToDraft({
+    connections: { service: emptyNativeConnection() },
+    models: {
+      main: { connection: "service", model_id: "main", protocol: "openai_responses", capabilities: { limits: {} } },
+      spare: { connection: "service", model_id: "spare", protocol: "openai_responses", capabilities: { limits: {} } },
+    },
+    model_groups: { coding: { models: ["main", "spare"] }, extras: { models: ["main"] } },
+    default_model_group: "coding",
+  });
+  const buffer = { key: "service", connection: draft.connections.service, models: structuredClone(draft.models), renames: {}, credentialValues: {} };
+
+  const next = commitModelDelete(draft, "service", buffer, null, "main");
+  assert.equal(Object.hasOwn(next.models, "main"), false);
+  assert.equal(Object.hasOwn(next.models, "spare"), true);
+  // `extras` only held the deleted model, so it disappears with it.
+  assert.deepEqual(next.modelGroups.coding.models, ["spare"]);
+  assert.equal(Object.hasOwn(next.modelGroups, "extras"), false);
+  assert.equal(modelGroupValidationError({ ...next, defaultModelGroup: "coding" }), "");
 });
