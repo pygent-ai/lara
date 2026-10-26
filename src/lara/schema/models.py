@@ -19,6 +19,17 @@ def _require(value: str, field_name: str) -> str:
     return value
 
 
+def native_model_config_complete(mapping: dict[str, Any]) -> bool:
+    """True when the native subtree can satisfy Pygent's non-empty invariants.
+
+    Pygent's ``ModelConfig.from_mapping()`` rejects empty ``connections`` and
+    ``models``; the settings UI also saves connection-only or group-less
+    states, which the runtime must load as an explicit unconfigured state
+    instead of failing.
+    """
+    return all(mapping.get(key) for key in ("connections", "models", "model_groups"))
+
+
 @dataclass(slots=True)
 class ModelRetryConfig:
     max_attempts_per_model: int = 2
@@ -47,21 +58,17 @@ class ModelRetryConfig:
 class ResolvedAgentConfig:
     alias: str
     default_model_group: str
-    retry: ModelRetryConfig = field(default_factory=ModelRetryConfig)
 
     def __post_init__(self) -> None:
         self.alias = _require(self.alias, "alias")
         self.default_model_group = _require(
             self.default_model_group, "default_model_group"
         )
-        if not isinstance(self.retry, ModelRetryConfig):
-            self.retry = ModelRetryConfig(**self.retry)
 
     def safe_dict(self) -> dict[str, Any]:
         return {
             "alias": self.alias,
             "default_model_group": self.default_model_group,
-            "retry": asdict(self.retry),
         }
 
 
@@ -260,6 +267,11 @@ class RunConfig:
     resolved_agent: ResolvedAgentConfig | None = field(
         default=None, repr=False, compare=False
     )
+    # Retry policy from the agent profile; it exists regardless of whether the
+    # model configuration is complete enough to bind a model group.
+    model_retry: ModelRetryConfig = field(
+        default_factory=ModelRetryConfig, repr=False, compare=False
+    )
     model_config_mapping: dict[str, Any] = field(default_factory=dict)
     model_config: ModelConfig | None = field(default=None, repr=False, compare=False)
     model_configuration_status: Literal["configured", "unconfigured", "legacy"] = (
@@ -312,7 +324,12 @@ class RunConfig:
             if self.context_window <= 0:
                 raise ValueError("context_window must be greater than 0")
         self.agent_alias = _require(self.agent_alias, "agent_alias")
-        if self.model_config is None and self.model_config_mapping:
+        if not isinstance(self.model_retry, ModelRetryConfig):
+            self.model_retry = ModelRetryConfig(**self.model_retry)
+        if (
+            self.model_config is None
+            and native_model_config_complete(self.model_config_mapping)
+        ):
             self.model_config = ModelConfig.from_mapping(self.model_config_mapping)
         if self.model_config is not None:
             self.model_configuration_status = "configured"
@@ -390,7 +407,13 @@ class RunConfig:
         clean = dict(data)
         resolved = clean.get("resolved_agent")
         if isinstance(resolved, dict):
-            clean["resolved_agent"] = ResolvedAgentConfig(**resolved)
+            # Run settings persisted before retry moved from the agent binding
+            # to model_retry still carry it inside resolved_agent.
+            legacy = dict(resolved)
+            retry = legacy.pop("retry", None)
+            clean["resolved_agent"] = ResolvedAgentConfig(**legacy)
+            if retry is not None and "model_retry" not in clean:
+                clean["model_retry"] = retry
         return cls(**clean)
 
 

@@ -53,9 +53,9 @@ async def test_native_invoker_preserves_configured_retry_and_fallback(
             raw["model_id"] = key
         config.model_config = ModelConfig.from_mapping(config.model_config_mapping)
         assert config.resolved_agent is not None
-        config.resolved_agent.retry.max_attempts_per_model = attempts
-        config.resolved_agent.retry.backoff_initial = 0
-        config.resolved_agent.retry.backoff_maximum = 0
+        config.model_retry.max_attempts_per_model = attempts
+        config.model_retry.backoff_initial = 0
+        config.model_retry.backoff_maximum = 0
         agent = core.LaraAgent(config)
         try:
             layer = agent.new_model_layer()

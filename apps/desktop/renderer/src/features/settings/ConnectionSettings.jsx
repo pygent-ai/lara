@@ -187,7 +187,9 @@ export function ConnectionEditor({ connectionKey, previousKey, connection, model
     const scope = { ...savedDraft.models, ...buffer.models };
     const key = draft.key && !Object.hasOwn(scope, draft.key) ? draft.key : nextModelKey(scope);
     setBuffer((current) => ({ ...current, models: { ...current.models, [key]: { ...emptyNativeModel(current.key, draft.protocol), model_id: draft.modelId, capabilities: draft.capabilities } } }));
-    // The saved row joins the list collapsed, like every other model row.
+    // The saved row joins the list expanded, so its discover button and
+    // capability form are immediately reachable like every other model row.
+    setExpandedModel(key);
     setAddingModel(false);
   }
 
@@ -257,6 +259,9 @@ export function ConnectionEditor({ connectionKey, previousKey, connection, model
     if (!api?.discoverModels || !model) return;
     const request = modelDiscoveryRequest({ connections: { [buffer.key]: connectionWithoutSource }, credentialValues: buffer.credentialValues }, buffer.key);
     if (!request) return;
+    // Discovery results (fetched IDs and status text) render inside the
+    // model body, so discovering from a folded row expands it first.
+    setExpandedModel(modelKey);
     setModelDiscoveryState((current) => ({ ...current, [modelKey]: { loading: true } }));
     try {
       const response = await api.discoverModels({ ...request, protocol: model.protocol });
@@ -295,7 +300,10 @@ export function ConnectionEditor({ connectionKey, previousKey, connection, model
     setSaveError("");
     try {
       await onPersist(previousKey, buffer, catalogs);
-      collapse();
+      // The create form closes on its first save because the saved row joins
+      // the list below; existing editors stay open so models stay testable
+      // and the saved view matches the editing view.
+      if (!previousKey) collapse();
     } catch (error) {
       setSaveError(typeof error?.message === "string" && error.message ? error.message : "保存失败，请稍后再试。");
     }
@@ -360,8 +368,13 @@ export function ConnectionEditor({ connectionKey, previousKey, connection, model
               {/* preventDefault keeps the input focused, so opening the menu does not end the edit */}
               <button type="button" className="head-caret" aria-label="选择服务商" title="选择服务商" onMouseDown={(event) => event.preventDefault()} onClick={() => setProviderMenuOpen((current) => !current)}><ChevronDown size={14} aria-hidden="true" /></button>
             </div>
-          : <button type="button" className={`head-name${provider ? "" : " placeholder"}`} onClick={provider ? undefined : () => setProviderMenuOpen((current) => !current)} onDoubleClick={isCustomProvider ? () => setEditingName(true) : undefined} title={isCustomProvider ? "双击重命名" : undefined}>{provider ? headName : "请选择服务商"}</button>}
-        {!editingName && !provider && <button type="button" className="head-caret" aria-label="选择服务商" title="选择服务商" onClick={() => setProviderMenuOpen((current) => !current)}><ChevronDown size={14} aria-hidden="true" /></button>}
+          : !provider
+            ? <select className="head-provider-select" value="" aria-label="选择服务商" title="选择服务商" onChange={(event) => { setProviderMenuOpen(false); selectProvider(event.target.value); }}>
+                <option value="" disabled>请选择服务商</option>
+                <optgroup label="Pygent 内置">{Object.entries(catalogs?.providers || {}).map(([key, item]) => <option key={key} value={key}>{item.display_name || key}</option>)}</optgroup>
+                <option value="__custom__">自定义供应商…</option>
+              </select>
+            : <button type="button" className="head-name" onDoubleClick={isCustomProvider ? () => setEditingName(true) : undefined} title={isCustomProvider ? "双击重命名" : undefined}>{headName}</button>}
         {providerMenuOpen && <div className="head-provider-menu" role="menu">
           {providerMenuItems.map((item, index) => (
             <React.Fragment key={item.value}>
@@ -374,7 +387,7 @@ export function ConnectionEditor({ connectionKey, previousKey, connection, model
       <span className="head-count-badge">{protocols.length} 个接口</span>
       <span className="head-count-badge">{Object.keys(buffer.models).length} 个模型</span>
       <button type="button" className="head-add-endpoint" disabled={!addableProtocols.length} title={addableProtocols.length ? "添加接口" : "所有协议均已添加"} onClick={addEndpointRow}><Plus size={14} aria-hidden="true" /> 添加接口</button>
-      {(dirty || !previousKey) && <button type="button" className="send" disabled={Boolean(missing)} title={missing || undefined} onClick={save}>保存</button>}
+      <button type="button" className="send" disabled={Boolean(missing)} title={missing || "保存当前连接与模型"} onClick={save}>保存</button>
       {dirty && previousKey && <button type="button" className="link-action" onClick={discardEdits}>放弃</button>}
       <button className="route-remove" disabled={removeDisabled} type="button" onClick={onRemove} aria-label={`Remove ${connectionKey}`} title={removeTitle || "删除连接"}><Trash2 aria-hidden="true" /></button>
     </div>

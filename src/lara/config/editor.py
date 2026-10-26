@@ -17,9 +17,17 @@ def replace_user_model_config(
     model_config: dict[str, Any],
     agents: list[dict[str, Any]],
 ) -> Path:
-    """Replace native Pygent model settings while preserving unrelated YAML."""
+    """Replace native Pygent model settings while preserving unrelated YAML.
 
-    parsed = ModelConfig.from_mapping(model_config)
+    Progressively filled states persist as-is: Pygent's ``ModelConfig``
+    requires non-empty connections and models, so partial subtrees skip the
+    whole-mapping parse and the runtime loads them as explicitly unconfigured.
+    """
+
+    group_keys = set(model_config.get("model_groups") or {})
+    if model_config.get("models"):
+        parsed = ModelConfig.from_mapping(model_config)
+        group_keys = set(parsed.model_groups)
     if not agents:
         raise ValueError("agents must contain at least one agent")
     normalized_agents: list[dict[str, Any]] = []
@@ -33,18 +41,23 @@ def replace_user_model_config(
         if not isinstance(request, dict):
             raise ValueError(f"agents[{index}].model_request must be a mapping")
         group_name = request.get("default_model_group")
-        if not isinstance(group_name, str) or group_name not in parsed.model_groups:
+        if group_name is not None and group_name not in group_keys:
             raise ValueError(
                 f"agents[{index}].model_request.default_model_group references "
                 f"unknown model group {group_name!r}"
+            )
+        if group_name is None and group_keys:
+            raise ValueError(
+                f"agents[{index}].model_request.default_model_group is required "
+                "while model groups are configured"
             )
         normalized_agents.append(agent)
 
     root = Path(user_lara_root).expanduser().resolve()
     path = root / USER_CONFIG_FILENAME
     data = parse_yaml_subset(path.read_text(encoding="utf-8")) if path.exists() else {}
-    data["connections"] = model_config["connections"]
-    data["models"] = model_config["models"]
+    data["connections"] = model_config.get("connections", {})
+    data["models"] = model_config.get("models", {})
     data["model_groups"] = model_config.get("model_groups", {})
     data["agents"] = normalized_agents
     default_alias = data.get("agent")

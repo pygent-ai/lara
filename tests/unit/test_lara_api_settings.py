@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi import HTTPException
 from pygent.llm import ModelInfo
+from lara.config.yaml_subset import parse_yaml_subset
 from lara.core.paths import project_lara_root
 from lara_api.dependencies import ApiContext
 from tests.unit.test_model_configuration import native_mapping
@@ -321,6 +322,158 @@ def test_update_settings_persists_native_groups_and_model_order(
     assert (home / ".lara" / "credentials.env").read_text(
         encoding="utf-8"
     ) == "BACKUP_KEY=backup-secret\n"
+
+
+def test_update_settings_persists_connection_without_models(tmp_path: Path) -> None:
+    from lara_api.models.requests import UpdateSettingsRequest
+    from lara_api.routers.settings import update_settings
+
+    home = tmp_path / "home"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    write_user_config(home, ["runtime:", "  approvals:", "    enabled: true"])
+
+    mapping = native_mapping(group=("primary",))
+    request = UpdateSettingsRequest(
+        agent_alias="dev",
+        model_config={
+            "connections": mapping["connections"],
+            "models": {},
+            "model_groups": {},
+        },
+    )
+
+    with patch("lara.config.loader.Path.home", return_value=home):
+        context = ApiContext(workspace_root=str(workspace))
+        response = asyncio.run(update_settings(request, context=context))
+
+    assert response.agent == "dev"
+    assert response.model_configuration_status == "unconfigured"
+    assert response.default_model_group is None
+    assert tuple(response.connections) == ("shared",)
+    assert response.models == {}
+    saved = parse_yaml_subset((home / ".lara" / "config.yaml").read_text(encoding="utf-8"))
+    assert saved["connections"] == mapping["connections"]
+    assert saved["models"] == {}
+    assert saved["model_groups"] == {}
+    assert saved["agents"] == [
+        {"alias": "dev", "model_request": {"retry": {"max_attempts_per_model": 2}}}
+    ]
+
+
+def test_update_settings_persists_models_without_groups(tmp_path: Path) -> None:
+    from lara_api.models.requests import UpdateSettingsRequest
+    from lara_api.routers.settings import update_settings
+
+    home = tmp_path / "home"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    write_user_config(home, ["runtime:", "  approvals:", "    enabled: true"])
+
+    mapping = native_mapping(group=("primary",))
+    request = UpdateSettingsRequest(
+        agent_alias="dev",
+        model_config={
+            "connections": mapping["connections"],
+            "models": mapping["models"],
+            "model_groups": {},
+        },
+    )
+
+    with patch("lara.config.loader.Path.home", return_value=home):
+        context = ApiContext(workspace_root=str(workspace))
+        response = asyncio.run(update_settings(request, context=context))
+
+    assert response.model_configuration_status == "unconfigured"
+    assert response.default_model_group is None
+    assert tuple(response.models) == ("primary",)
+    assert response.model_groups == {}
+    saved = parse_yaml_subset((home / ".lara" / "config.yaml").read_text(encoding="utf-8"))
+    assert saved["models"] == mapping["models"]
+    assert "default_model_group" not in saved["agents"][0]["model_request"]
+
+
+def test_partial_save_keeps_persisted_retry_settings(tmp_path: Path) -> None:
+    from lara_api.models.requests import UpdateSettingsRequest
+    from lara_api.routers.settings import update_settings
+
+    home = tmp_path / "home"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    write_user_config(home, [])
+
+    mapping = native_mapping(group=("primary",))
+    complete = UpdateSettingsRequest(
+        agent_alias="dev",
+        model_config=mapping,
+        default_model_group="coding",
+        retry={"max_attempts_per_model": 3},
+    )
+    partial = UpdateSettingsRequest(
+        agent_alias="dev",
+        model_config={
+            "connections": mapping["connections"],
+            "models": {},
+            "model_groups": {},
+        },
+        retry={"max_attempts_per_model": 3},
+    )
+
+    with patch("lara.config.loader.Path.home", return_value=home):
+        context = ApiContext(workspace_root=str(workspace))
+        first = asyncio.run(update_settings(complete, context=context))
+        second = asyncio.run(update_settings(partial, context=context))
+
+    assert first.retry["max_attempts_per_model"] == 3
+    # The settings UI re-sends the retry it received, so the persisted values
+    # must survive the round trip through a partially filled configuration.
+    assert second.retry["max_attempts_per_model"] == 3
+    assert second.model_configuration_status == "unconfigured"
+
+
+def test_update_settings_rejects_unresolvable_group_references(tmp_path: Path) -> None:
+    from lara_api.models.requests import UpdateSettingsRequest
+    from lara_api.routers.settings import update_settings
+
+    home = tmp_path / "home"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    write_user_config(home, [])
+
+    mapping = native_mapping(group=("primary",))
+    orphan_group = UpdateSettingsRequest(
+        model_config={
+            "connections": mapping["connections"],
+            "models": {},
+            "model_groups": {"coding": {"models": ["primary"]}},
+        },
+    )
+    missing_default = UpdateSettingsRequest(
+        model_config=mapping,
+    )
+    blank_connection_name = UpdateSettingsRequest(
+        model_config={
+            "connections": {" ": mapping["connections"]["shared"]},
+            "models": {},
+            "model_groups": {},
+        },
+    )
+
+    with patch("lara.config.loader.Path.home", return_value=home):
+        context = ApiContext(workspace_root=str(workspace))
+        with pytest.raises(HTTPException) as orphan:
+            asyncio.run(update_settings(orphan_group, context=context))
+        with pytest.raises(HTTPException) as missing:
+            asyncio.run(update_settings(missing_default, context=context))
+        with pytest.raises(HTTPException) as blank:
+            asyncio.run(update_settings(blank_connection_name, context=context))
+
+    assert orphan.value.status_code == 422
+    assert "unknown model" in orphan.value.detail["message"]
+    assert missing.value.status_code == 422
+    assert "default_model_group" in missing.value.detail["message"]
+    assert blank.value.status_code == 422
+    assert "connection name" in blank.value.detail["message"]
 
 
 def test_settings_remain_available_for_legacy_config(tmp_path: Path) -> None:

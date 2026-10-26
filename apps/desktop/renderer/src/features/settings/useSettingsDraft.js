@@ -2,9 +2,20 @@ import { useEffect, useState } from "react";
 import { settingsToDraft } from "./settingsModel.js";
 
 export function useSettingsDraft(settings, api, disabled) {
+  // The page owns its data: it re-fetches once on mount so the draft and the
+  // saved baseline never start from a stale app-level cache. App settings is
+  // only a read-through cache for the rest of the app; saves patch it from
+  // the saved response, never through this hook.
+  const [snapshot, setSnapshot] = useState(settings);
   const [draft, setDraft] = useState(() => settingsToDraft(settings));
   const [catalogs, setCatalogs] = useState(null);
-  useEffect(() => { setDraft(settingsToDraft(settings)); }, [settings]);
+  useEffect(() => {
+    if (!api?.getSettings) return;
+    let active = true;
+    api.getSettings().then((value) => { if (active) setSnapshot(value); }).catch(() => {});
+    return () => { active = false; };
+  }, [api]);
+  useEffect(() => { setDraft(settingsToDraft(snapshot)); }, [snapshot]);
   useEffect(() => {
     if (!api?.getModelCatalogs) return;
     let active = true;
@@ -51,5 +62,5 @@ export function useSettingsDraft(settings, api, disabled) {
     });
   }
 
-  return { settings, api, disabled, draft, setDraft, catalogs, setField, removeConnection, toggleGroupModel, moveGroupModel, renameGroup };
+  return { snapshot, api, disabled, draft, setDraft, catalogs, setField, removeConnection, toggleGroupModel, moveGroupModel, renameGroup };
 }

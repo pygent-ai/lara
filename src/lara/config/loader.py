@@ -21,6 +21,7 @@ from lara.schema import (
     RuntimeDurabilityConfig,
     RuntimeSteeringConfig,
     default_cli_bash_presets,
+    native_model_config_complete,
 )
 
 from .yaml_subset import parse_yaml_subset
@@ -79,6 +80,9 @@ def load_run_config(
         else {}
     )
     assert isinstance(model_request, dict)
+    # Retry policy is a property of the agent profile, independent of whether
+    # the model configuration is complete enough to resolve a model group.
+    model_retry = _agent_retry(model_request)
     return RunConfig(
         workspace_root=str(root),
         session_id=session_id
@@ -88,6 +92,7 @@ def load_run_config(
         max_steps=int(configured_max_steps),
         agent_alias=alias,
         resolved_agent=resolved_agent,
+        model_retry=model_retry,
         model_config_mapping=model_mapping,
         model_config=model_config,
         model_configuration_status=model_status,
@@ -417,14 +422,17 @@ def _resolve_agent_config(
             f"Agent alias {alias!r} references unknown model group "
             f"{default_model_group!r}"
         )
-    retry_data = model_request.get("retry") or {}
-    if not isinstance(retry_data, dict):
-        raise ValueError("model_request.retry must be a mapping")
     return ResolvedAgentConfig(
         alias=alias,
         default_model_group=default_model_group,
-        retry=ModelRetryConfig(**retry_data),
     )
+
+
+def _agent_retry(model_request: dict[str, Any]) -> ModelRetryConfig:
+    retry_data = model_request.get("retry")
+    if not isinstance(retry_data, dict):
+        retry_data = {}
+    return ModelRetryConfig(**retry_data)
 
 
 def _parse_model_config(
@@ -449,6 +457,16 @@ def _parse_model_config(
         )
     if not mapping:
         return {}, None, "unconfigured", "model_configuration_required"
+    if not native_model_config_complete(mapping):
+        # Progressively filled states (a saved connection before its models,
+        # or models before their first group) stay loadable and keep their raw
+        # mapping for the settings UI; chat stays disabled until complete.
+        return (
+            mapping,
+            None,
+            "unconfigured",
+            "model_configuration_incomplete: configure at least one model and model group",
+        )
     return mapping, ModelConfig.from_mapping(mapping), "configured", None
 
 

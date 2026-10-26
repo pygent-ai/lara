@@ -245,7 +245,7 @@ class LaraAgent(Agent[UserMessage, AIMessage]):
                 models=self._model_entries(),
             )
         )
-        retry = self.resolved_agent.retry
+        retry = self.config.model_retry
         return ModelCallLayer(
             model_group=group,
             policy=ModelCallPolicy(allow_profile_override=self.managed_model),

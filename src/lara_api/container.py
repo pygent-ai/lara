@@ -273,6 +273,7 @@ class ApiContext:
                 lara_root=scope.lara_root,
                 agent_alias=self.agent_alias or self.config.agent_alias,
                 resolved_agent=self.config.resolved_agent,
+                model_retry=self.config.model_retry,
                 model_config_mapping=deepcopy(self.config.model_config_mapping),
                 model_configuration_status=self.config.model_configuration_status,
                 model_configuration_error=self.config.model_configuration_error,
