@@ -1255,17 +1255,17 @@ export function App() {
   }, [api]);
 
   // Per-section saves from the settings page: the payload already carries its
-  // own saved-state baseline, so it is sent as-is. App settings stay untouched
-  // here on purpose — resetting them would wipe unsaved edits in other
-  // settings sections; they sync on the next save or panel reopen. A workspace
-  // save re-selects the project exactly like the old global save did.
+  // own saved-state baseline, so it is sent as-is. The response patches the
+  // app-wide settings cache directly — the settings page owns its snapshot
+  // and baseline, so this cannot wipe unsaved edits in other sections. A
+  // workspace save re-selects the project exactly like the old global save did.
   const handleApplySettings = useCallback(
     async (draft, { workspaceChanged = false } = {}) => {
       if (settingsSaveBusyRef.current) throw new Error("正在保存设置，请稍后再试。");
       settingsSaveBusyRef.current = true;
       setSavingSettings(true);
       try {
-        await api.updateSettings(draft);
+        setSettings(await api.updateSettings(draft));
         if (workspaceChanged) {
           await refreshWorkbench({ selectFirst: true, preserveSessionId: "" });
         }

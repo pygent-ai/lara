@@ -195,7 +195,7 @@ def test_file_editing_guidance_comes_from_pygent_tool_definitions(
 
 def test_model_retry_policy_retries_incomplete_provider_responses(tmp_path: Path) -> None:
     agent = model_agent(tmp_path)
-    agent.resolved_agent.retry.max_attempts_per_model = 5
+    agent.config.model_retry.max_attempts_per_model = 5
 
     retry_policy = agent.new_model_layer().retry_policy
 

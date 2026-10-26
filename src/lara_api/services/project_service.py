@@ -88,7 +88,7 @@ def config_response(config: RunConfig) -> RuntimeConfigResponse:
     groups = mapping.get("model_groups", {})
     if not isinstance(groups, dict):
         groups = {}
-    retry = config.resolved_agent.retry if config.resolved_agent is not None else None
+    retry = config.model_retry
     return RuntimeConfigResponse(
         approvals_enabled=config.runtime_approvals.enabled,
         workspace_root=config.workspace_root,

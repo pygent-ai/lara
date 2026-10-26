@@ -2040,8 +2040,9 @@ test("settings separate native model identity from connection fields", () => {
   assert.match(editorHtml, /OPENAI_API_KEY/);
   assert.match(editorHtml, /必填/);
   assert.match(editorHtml, /<strong>模型<\/strong>/);
-  // A clean existing row shows no 保存 button; edits reveal it in the head.
-  assert.doesNotMatch(editorHtml, /class="send"/);
+  // The 保存 button stays visible on clean rows; clicking it re-commits the
+  // saved slice so the editing and saved views stay consistent.
+  assert.match(editorHtml, /class="send"[^>]*>保存</);
   assert.match(editorHtml, /测试连接方案/);
   assert.equal(appModule.providerSelectionValue("openai", null), "openai");
   assert.equal(appModule.providerSelectionValue("company-gateway", { providers: { openai: {} } }), "__custom__");
@@ -2053,6 +2054,31 @@ test("settings separate native model identity from connection fields", () => {
   // The model UI carries no model-group hints; membership is selected in the 模型组 tab.
   assert.doesNotMatch(editorHtml, /加入模型组/);
   assert.doesNotMatch(editorHtml, /尚未加入模型组/);
+});
+
+test("new connections pick the provider from a select before it becomes text", () => {
+  const catalogs = { providers: { openai: { display_name: "OpenAI", protocols: { openai_chat_completions: {} } } } };
+  const editorHtml = renderToStaticMarkup(React.createElement(connectionSettingsModule.ConnectionEditor, {
+    connectionKey: "供应商1",
+    previousKey: null,
+    connection: { provider: "", credential: { env: "LARA_PROVIDER_1_API_KEY" }, credential_source: "missing", protocols: { openai_chat_completions: { base_url: "" } } },
+    models: {},
+    catalogs,
+    api: null,
+    savedDraft: { connections: {}, models: {}, modelGroups: {}, defaultModelGroup: "", credentialValues: {} },
+    collapse() {}, onPersist() {}, onDirtyChange() {},
+    open: true, onToggle() {}, onRemove() {},
+  }));
+
+  // An unchosen provider renders as a real select box with a placeholder;
+  // only a chosen provider collapses into the plain name text.
+  assert.match(editorHtml, /<select[^>]*aria-label="选择服务商"/);
+  assert.match(editorHtml, /<option[^>]*>请选择服务商</);
+  assert.match(editorHtml, /OpenAI/);
+  assert.match(editorHtml, /自定义供应商/);
+  assert.doesNotMatch(editorHtml, /class="head-name"/);
+  // The create form keeps its visible 保存 button before anything is dirty.
+  assert.match(editorHtml, /class="send"[^>]*>保存</);
 });
 
 test("connection buffer commit replaces the slice and remaps model groups", () => {
@@ -2295,8 +2321,8 @@ test("essential connection and model fields remain visible before optional detai
   assert.match(editor, /pool-editor-shell/);
   assert.doesNotMatch(editor, /connection-model-details/);
   assert.match(editor, /请填写 API Key/);
-  // A clean existing row carries no 保存 button; edits reveal it in the head.
-  assert.doesNotMatch(editor, /class="send"/);
+  // The 保存 button stays visible; a missing API Key disables it.
+  assert.match(editor, /class="send"[^>]*disabled/);
   // The global save button is gone; each tab carries its own save button.
   assert.doesNotMatch(html, /Save and Reload/);
   for (const label of ['保存模型组', '保存项目与 Agent', '保存运行与权限']) assert.match(html, new RegExp(`aria-label="${label}"`));

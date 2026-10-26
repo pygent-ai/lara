@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lara.schema import CaseDefinition, CaseRunRef, CaseRunResult, ContextEvent, ResolvedAgentConfig, RunConfig, SessionRef
+from lara.schema import CaseDefinition, CaseRunRef, CaseRunResult, ContextEvent, ModelRetryConfig, ResolvedAgentConfig, RunConfig, SessionRef
 from tests.unit.test_model_configuration import native_mapping
 
 
@@ -43,6 +43,39 @@ class SchemaTests(unittest.TestCase):
         assert restored.model_config is not None
         self.assertEqual(restored.model_config.models["a"].spec.model_id, "model-a")
         self.assertEqual(restored.allow_read_outside_workspace, True)
+
+    def test_run_config_from_dict_migrates_retry_from_legacy_agent_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = RunConfig(
+                workspace_root=tmp,
+                lara_root=Path(tmp) / ".lara",
+                resolved_agent=ResolvedAgentConfig(
+                    alias="dev",
+                    default_model_group="coding",
+                ),
+                model_retry=ModelRetryConfig(max_attempts_per_model=4),
+            )
+
+            data = config.to_dict()
+            assert data["resolved_agent"] == {
+                "alias": "dev",
+                "default_model_group": "coding",
+            }
+            # Run settings persisted before the retry moved out of the agent
+            # binding still load with their retry policy intact.
+            legacy = {
+                **data,
+                "resolved_agent": {
+                    "alias": "dev",
+                    "default_model_group": "coding",
+                    "retry": {"max_attempts_per_model": 4},
+                },
+            }
+            del legacy["model_retry"]
+            restored = RunConfig.from_dict(legacy)
+
+        self.assertEqual(restored.model_retry.max_attempts_per_model, 4)
+        self.assertEqual(restored.resolved_agent.alias, "dev")
 
     def test_refs_round_trip(self) -> None:
         session = SessionRef(session_id="s1", session_dir=".", workspace_root=".")

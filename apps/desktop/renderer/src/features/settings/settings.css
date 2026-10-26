@@ -197,7 +197,8 @@
 .settings-page .connection-row-head .pool-row-main { flex:0 0 auto; width:28px; height:28px; padding:0; justify-content:center; gap:0; border-radius:8px; }
 .head-name-wrap { position:relative; display:flex; align-items:center; gap:2px; min-width:0; }
 .settings-page .head-name { max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:4px 8px; border:0; background:none; color:var(--text); font-size:15px; font-weight:700; cursor:default; border-radius:8px; }
-.settings-page .head-name.placeholder { color:var(--soft); font-weight:600; }
+.settings-page .head-provider-select { max-width:220px; min-height:30px; padding:3px 8px; border:1px solid var(--line-strong); border-radius:8px; background:var(--input-bg); color:var(--text); font-size:15px; font-weight:700; cursor:pointer; }
+.settings-page .head-provider-select:focus { border-color:var(--accent); outline:none; }
 .settings-page .head-name-input-wrap { display:flex; align-items:center; border:1px solid var(--line-strong); border-radius:8px; background:var(--input-bg); }
 .settings-page .head-name-input-wrap:focus-within { border-color:var(--accent); }
 .settings-page .head-name-input { width:170px; min-height:30px; border:0; background:none; box-shadow:none; font-size:15px; font-weight:700; }

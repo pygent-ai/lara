@@ -22,15 +22,14 @@ export function SettingsPage({ settings, disabled, onClose, onPersist, api }) {
   // Unsaved edits inside an open connection editor; they live in the editor
   // buffer and are invisible to the draft-vs-saved comparison.
   const [connectionsDirty, setConnectionsDirty] = useState(false);
-  // The last persisted draft. Connection saves update this (plus the draft)
-  // without touching App settings, so unsaved edits in other sections stay.
-  const [savedDraft, setSavedDraft] = useState(() => settingsToDraft(settings));
-  useEffect(() => { setSavedDraft(settingsToDraft(settings)); }, [settings]);
-
-  const settingsRef = useRef(null);
-
   const controller = useSettingsDraft(settings, api, disabled);
-  const { draft, setDraft } = controller;
+  const { snapshot, draft, setDraft } = controller;
+  const settingsRef = useRef(null);
+  // The last persisted draft, re-based on the page's own snapshot (fetched on
+  // mount). Connection saves update this (plus the draft) per section, so
+  // unsaved edits in other sections always survive.
+  const [savedDraft, setSavedDraft] = useState(() => settingsToDraft(snapshot));
+  useEffect(() => { setSavedDraft(settingsToDraft(snapshot)); }, [snapshot]);
   // Every tab saves its own slice: connection edits live in editor buffers,
   // the other tabs commit their draft fields over the saved baseline.
   const fieldsDirty = (fields) => fields.some((field) => JSON.stringify(draft[field]) !== JSON.stringify(savedDraft[field]));

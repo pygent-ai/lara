@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pygent.llm import ConnectionConfig, ModelConfig
+from pygent.llm import ConnectionConfig, EnabledModelConfig, ModelGroupConfig
 
 from lara.config import replace_user_model_config, update_user_approvals
 from lara.core.io import non_empty_string
@@ -111,16 +111,42 @@ def _replace_native_model_settings(
 ) -> None:
     assert request.native_model_config is not None
     try:
-        parsed = ModelConfig.from_mapping(request.native_model_config)
+        native = request.native_model_config
+        unknown_fields = set(native) - {"connections", "models", "model_groups"}
+        if unknown_fields:
+            raise ValueError(
+                "unknown model config fields: "
+                + ", ".join(sorted(unknown_fields))
+            )
+        missing_fields = {"connections", "models"} - set(native)
+        if missing_fields:
+            raise ValueError(
+                "missing model config fields: "
+                + ", ".join(sorted(missing_fields))
+            )
+        connections = native.get("connections") or {}
+        models = native.get("models") or {}
+        groups = native.get("model_groups") or {}
+        if (
+            not isinstance(connections, dict)
+            or not isinstance(models, dict)
+            or not isinstance(groups, dict)
+        ):
+            raise ValueError(
+                "model_config must map connections, models and model_groups"
+            )
+        group_models = _validate_native_model_config(
+            connections, models, groups
+        )
         group_name = non_empty_string(request.default_model_group)
-        if group_name is None or group_name not in parsed.model_groups:
+        if groups and (group_name is None or group_name not in groups):
             raise ValueError(
                 f"default_model_group references unknown model group {group_name!r}"
             )
-        _guard_persisted_session_selections(context, parsed)
+        _guard_persisted_session_selections(context, group_models)
         referenced_credentials = {
             credential["env"]
-            for connection in request.native_model_config.get("connections", {}).values()
+            for connection in connections.values()
             if isinstance(connection, dict)
             and isinstance((credential := connection.get("credential")), dict)
             and isinstance(credential.get("env"), str)
@@ -136,13 +162,13 @@ def _replace_native_model_settings(
             if request.retry is not None
             else {"max_attempts_per_model": 2}
         )
+        model_request: dict[str, Any] = {"retry": retry}
+        if groups:
+            model_request = {"default_model_group": group_name, "retry": retry}
         agents = [
             {
                 "alias": agent_alias,
-                "model_request": {
-                    "default_model_group": group_name,
-                    "retry": retry,
-                },
+                "model_request": model_request,
             }
         ]
         for env_name, value in request.credential_values.items():
@@ -151,10 +177,10 @@ def _replace_native_model_settings(
                 set_user_credential(user_lara_root, env_name, secret)
         replace_user_model_config(
             user_lara_root,
-            model_config=request.native_model_config,
+            model_config=native,
             agents=agents,
         )
-    except ValueError as exc:
+    except (TypeError, ValueError) as exc:
         raise HTTPException(
             status_code=422,
             detail={
@@ -165,8 +191,64 @@ def _replace_native_model_settings(
         ) from exc
 
 
+def _validate_native_model_config(
+    connections: dict[str, Any],
+    models: dict[str, Any],
+    groups: dict[str, Any],
+) -> dict[str, set[str]]:
+    """Validate the native subtree layer by layer.
+
+    Pygent's ``ModelConfig.from_mapping()`` rejects empty ``connections`` and
+    ``models``, so it cannot validate the progressively filled states the
+    settings UI saves. Each present layer is validated with its own Pygent
+    schema and cross-referenced here; the loader runs the whole-mapping parse
+    on complete configurations when it loads them.
+    """
+
+    parsed_connections: dict[str, ConnectionConfig] = {}
+    for name, item in connections.items():
+        _require_native_name(name, "connection name")
+        if not isinstance(item, dict):
+            raise ValueError(f"connection {name!r} must be a mapping")
+        parsed_connections[name] = ConnectionConfig.from_mapping(item)
+    for key, item in models.items():
+        _require_native_name(key, "model key")
+        if not isinstance(item, dict):
+            raise ValueError(f"model {key!r} must be a mapping")
+        entry = EnabledModelConfig.from_mapping(item)
+        connection = parsed_connections.get(entry.connection_key)
+        if connection is None:
+            raise ValueError(
+                f"model {key!r} references unknown connection {entry.connection_key!r}"
+            )
+        if entry.protocol not in connection.protocols:
+            raise ValueError(
+                f"connection {entry.connection_key!r} does not provide protocol "
+                f"{entry.protocol!r}"
+            )
+    group_models: dict[str, set[str]] = {}
+    for name, item in groups.items():
+        _require_native_name(name, "model group name")
+        if not isinstance(item, dict):
+            raise ValueError(f"model group {name!r} must be a mapping")
+        group = ModelGroupConfig.from_mapping(item)
+        unknown_models = set(group.model_keys) - set(models)
+        if unknown_models:
+            raise ValueError(
+                "model group references an unknown model: "
+                + ", ".join(sorted(unknown_models))
+            )
+        group_models[name] = set(group.model_keys)
+    return group_models
+
+
+def _require_native_name(name: str, label: str) -> None:
+    if not name.strip():
+        raise ValueError(f"{label} must be a non-empty string")
+
+
 def _guard_persisted_session_selections(
-    context: ApiContext, replacement: ModelConfig
+    context: ApiContext, group_models: dict[str, set[str]]
 ) -> None:
     from lara_api.project_state import build_session_scopes
 
@@ -190,15 +272,13 @@ def _guard_persisted_session_selections(
             model_key = metadata.get("selected_model_key")
             if not isinstance(group_name, str) or not group_name:
                 continue
-            group = replacement.model_groups.get(group_name)
-            if group is None:
+            model_keys = group_models.get(group_name)
+            if model_keys is None:
                 raise HTTPException(
                     status_code=409,
                     detail=f"Model group {group_name!r} is used by an existing session",
                 )
-            if isinstance(model_key, str) and model_key not in {
-                entry.key for entry in group.models
-            }:
+            if isinstance(model_key, str) and model_key not in model_keys:
                 raise HTTPException(
                     status_code=409,
                     detail=f"Model {model_key!r} is used by an existing session",

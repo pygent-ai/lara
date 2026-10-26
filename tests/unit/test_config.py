@@ -92,7 +92,7 @@ def test_native_pygent_model_config_is_loaded_without_route_translation(tmp_path
     assert tuple(entry.key for entry in config.model_config.model_groups["coding"].models) == ("main",)
     assert config.resolved_agent is not None
     assert config.resolved_agent.default_model_group == "coding"
-    assert config.resolved_agent.retry.max_attempts_per_model == 3
+    assert config.model_retry.max_attempts_per_model == 3
     assert config.model_configuration_status == "configured"
     assert config.model_configuration_error is None
 
@@ -127,6 +127,24 @@ def test_native_model_fields_are_validated_by_pygent(tmp_path: Path) -> None:
     home = write_user_config(tmp_path, invalid)
     with patch("lara.config.loader.Path.home", return_value=home), pytest.raises(ValueError, match="missing model fields: connection"):
         load_run_config(workspace_root=tmp_path)
+
+
+@pytest.mark.parametrize("config", [NATIVE_CONFIG.split("models:")[0], NATIVE_CONFIG.split("model_groups:")[0]], ids=["connections-only", "models-without-groups"])
+def test_partial_native_model_config_boots_as_explicitly_unconfigured(tmp_path: Path, config: str) -> None:
+    home = write_user_config(tmp_path, config)
+    with patch("lara.config.loader.Path.home", return_value=home):
+        loaded = load_run_config(workspace_root=tmp_path)
+    assert loaded.model_config is None
+    assert loaded.resolved_agent is None
+    assert loaded.model_configuration_status == "unconfigured"
+    assert loaded.model_configuration_error == "model_configuration_incomplete: configure at least one model and model group"
+    # The raw mapping survives so the settings UI keeps showing saved layers.
+    assert loaded.model_config_mapping["connections"]["primary"]["provider"] == "openai"
+    if "models:" in config:
+        assert loaded.model_config_mapping["models"]["main"]["model_id"] == "model-a"
+        assert "model_groups" not in loaded.model_config_mapping
+    else:
+        assert "models" not in loaded.model_config_mapping
 
 
 def test_default_configuration_is_explicitly_unconfigured(tmp_path: Path) -> None:
@@ -215,6 +233,34 @@ def test_replace_user_model_config_preserves_non_model_settings(tmp_path: Path) 
     assert saved["models"] == model_config["models"]
     assert saved["model_groups"] == model_config["model_groups"]
     assert "routes" not in path.read_text(encoding="utf-8")
+
+
+def test_replace_user_model_config_persists_states_without_model_groups(tmp_path: Path) -> None:
+    user_root = tmp_path / ".lara"
+    user_root.mkdir()
+    path = user_root / "config.yaml"
+    native = parse_yaml_subset(NATIVE_CONFIG)
+    model_config = {"connections": native["connections"], "models": native["models"]}
+    agents = [{"alias": "dev", "model_request": {"retry": {"max_attempts_per_model": 3}}}]
+
+    replace_user_model_config(user_root, model_config=model_config, agents=agents)
+
+    saved = parse_yaml_subset(path.read_text(encoding="utf-8"))
+    assert saved["models"] == model_config["models"]
+    assert saved["model_groups"] == {}
+    assert saved["agents"] == agents
+
+
+def test_replace_user_model_config_rejects_default_group_without_groups(tmp_path: Path) -> None:
+    user_root = tmp_path / ".lara"
+    user_root.mkdir()
+    native = parse_yaml_subset(NATIVE_CONFIG)
+    with pytest.raises(ValueError, match="references unknown model group 'coding'"):
+        replace_user_model_config(
+            user_root,
+            model_config={"connections": native["connections"], "models": native["models"]},
+            agents=[{"alias": "dev", "model_request": {"default_model_group": "coding"}}],
+        )
 
 
 def test_clear_user_model_config_preserves_non_model_settings(tmp_path: Path) -> None:
