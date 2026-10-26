@@ -44,7 +44,7 @@ import {
   CONTEXT_SNAPSHOT_LIMIT,
   SESSION_HISTORY_LIMIT,
   TRACE_EVENT_LIMIT,
-  refreshActiveSession,
+  createActiveSessionSync,
 } from "./activeSessionSync.js";
 import { loadWorkbenchPreferences, saveWorkbenchPreferences } from "./workbenchPreferences.js";
 import { DEFAULT_PANEL_WIDTHS, PANEL_LIMITS, normalizePanelWidths, fitPanelWidths } from "./panelWidths.js";
@@ -217,7 +217,6 @@ export function App() {
     () => flattenSessionGroups(sessionGroups).find((session) => session.session_id === activeSessionId) || null,
     [sessionGroups, activeSessionId],
   );
-  const activeSessionListSignature = sessionFreshnessSignature(activeSessionListRecord);
   const visibleSessionGroups = useMemo(
     () => applyRunningSessionStatus(sessionGroups, runningSessionIds),
     [sessionGroups, runningSessionIds],
@@ -420,6 +419,10 @@ export function App() {
       activeSessionIdRef.current = detail.session.session_id || sessionId;
       const loadedSession = sessionFromDetail(detail);
       setActiveSession(loadedSession);
+      // The follow loop measures convergence against what the view actually
+      // rendered; a fresh load is the new baseline (and cancels its own
+      // racing background attempt).
+      activeSessionSync.observeDetail(detail);
       messagesRef.current = resolvedMessages;
       setMessages(resolvedMessages);
       setPendingSteerings((items) => reconcilePendingSteerings(items, sessionId, resolvedMessages));
@@ -1121,101 +1124,101 @@ export function App() {
   );
   resumeSessionRef.current = (detail) => handleSendMessage("", detail);
 
+  // Single owner of the open-session follow loop: the sidebar record is the
+  // convergence target, attach and snapshot outcomes are explicit, and a
+  // dropped attempt re-runs at once instead of waiting for an unrelated
+  // state change to retrigger it.
+  const activeSessionSync = useMemo(
+    () => createActiveSessionSync({
+      api,
+      onAttach: (detail) => {
+        // The live stream owns the trace from here: invalidate any in-flight
+        // trace load so the replay cannot paint over the stream's events.
+        traceLoadTokenRef.current += 1;
+        setActiveSession(sessionFromDetail(detail));
+        resumeSessionRef.current?.(detail);
+      },
+      onSnapshot: (detail, trace, activity) => {
+        traceLoadTokenRef.current += 1;
+        const sessionId = activeSessionIdRef.current;
+        const loadedSession = sessionFromDetail(detail);
+        const activeSessionSignature = sessionDetailSignature(loadedSession);
+        if (activeSessionSignatureRef.current !== activeSessionSignature) {
+          activeSessionSignatureRef.current = activeSessionSignature;
+          setActiveSession(loadedSession);
+        }
+        const traceEventsSignature = traceResponseSignature(trace, "events");
+        if (traceEventsSignatureRef.current !== traceEventsSignature) {
+          traceEventsSignatureRef.current = traceEventsSignature;
+          setTraceEvents(trace.events || []);
+          setTraceWindow({
+            shown: (trace.events || []).length,
+            total: trace.events_total || 0,
+            truncated: Boolean(trace.events_truncated),
+          });
+        }
+        const contextSnapshotsSignature = traceResponseSignature(trace, "context_snapshots");
+        if (contextSnapshotsSignatureRef.current !== contextSnapshotsSignature) {
+          contextSnapshotsSignatureRef.current = contextSnapshotsSignature;
+          setContextSnapshots(trace.context_snapshots || []);
+        }
+        const activitySignature = traceResponseSignature(activity, "events");
+        if (activitySignatureRef.current !== activitySignature) {
+          activitySignatureRef.current = activitySignature;
+          setSessionActivity({
+            events: activity.events || [],
+            shown: (activity.events || []).length,
+            total: activity.events_total || 0,
+            truncated: Boolean(activity.events_truncated),
+          });
+        }
+        sessionLiveEventsRef.current.delete(sessionId);
+        setLiveEvents((current) => current.length ? [] : current);
+        const messagesHistorySignature = sessionHistorySignature(detail);
+        const pendingLiveMessages = pendingSessionMessagesRef.current.get(sessionId);
+        // A transcript this client still owns (a running turn, or one kept
+        // on screen after an interrupt) wins over the persisted history
+        // snapshot, or the rebuild would remount every activity collapsed.
+        if (messagesHistorySignatureRef.current !== messagesHistorySignature
+          && !(Array.isArray(pendingLiveMessages) && pendingLiveMessages.length > 0)) {
+          messagesHistorySignatureRef.current = messagesHistorySignature;
+          // The freshness page replaces its own tail range; older rows the
+          // user paged in survive so the poll never truncates the transcript
+          // back to the display window.
+          const storedHistory = sessionHistoryRef.current.get(sessionId);
+          const historyRows = mergeHistoryRows(storedHistory?.rows, detail.history || []);
+          const historyBeforeCount = storedHistory
+            ? storedHistory.beforeCount
+            : Number(detail.history_before_count || 0);
+          rememberSessionHistory(sessionHistoryRef.current, sessionId, {
+            rows: historyRows,
+            beforeCount: historyBeforeCount,
+          });
+          const nextMessages = historyToMessages(historyRows);
+          messagesRef.current = nextMessages;
+          setMessages(nextMessages);
+          setHistoryEarlier({ remaining: historyBeforeCount, loading: false });
+          setPendingSteerings((items) => reconcilePendingSteerings(items, sessionId, nextMessages));
+          rememberSessionView(sessionViewCacheRef.current, sessionId, {
+            session: loadedSession,
+            messages: nextMessages,
+          });
+        }
+      },
+      includeContextSnapshots: () => !traceCollapsedRef.current,
+    }),
+    [api],
+  );
+  useEffect(() => () => activeSessionSync.dispose(), [activeSessionSync]);
+
   useEffect(() => {
-    if (!activeSessionId || !activeSessionListRecord || running) return undefined;
-    if (!activeSessionNeedsRefresh(activeSession, activeSessionListRecord)
-      && !activeSessionRunAwaitingAttach(
-        activeSession,
-        activeSessionListRecord,
-        runningSessionIdsRef.current,
-      )) return undefined;
-    const controller = new AbortController();
-    void (async () => {
-      const { signal } = controller;
-      const token = sessionLoadTokenRef.current;
-      const traceToken = traceLoadTokenRef.current;
-      const isCurrent = () => activeSessionIdRef.current === activeSessionId
-        && sessionLoadTokenRef.current === token
-        && traceLoadTokenRef.current === traceToken
-        && !runningSessionIdsRef.current[activeSessionId];
-      await refreshActiveSession({
-        api, sessionId: activeSessionId, scopeId: activeSession?.scope_id, signal, isCurrent,
-        includeContextSnapshots: !traceCollapsedRef.current,
-        onResume: (detail) => {
-          traceLoadTokenRef.current += 1;
-          setActiveSession(sessionFromDetail(detail));
-          resumeSessionRef.current?.(detail);
-        },
-        onSnapshot: (detail, trace, activity) => {
-          traceLoadTokenRef.current += 1;
-          const loadedSession = sessionFromDetail(detail);
-          const activeSessionSignature = sessionDetailSignature(loadedSession);
-          if (activeSessionSignatureRef.current !== activeSessionSignature) {
-            activeSessionSignatureRef.current = activeSessionSignature;
-            setActiveSession(loadedSession);
-          }
-          const traceEventsSignature = traceResponseSignature(trace, "events");
-          if (traceEventsSignatureRef.current !== traceEventsSignature) {
-            traceEventsSignatureRef.current = traceEventsSignature;
-            setTraceEvents(trace.events || []);
-            setTraceWindow({
-              shown: (trace.events || []).length,
-              total: trace.events_total || 0,
-              truncated: Boolean(trace.events_truncated),
-            });
-          }
-          const contextSnapshotsSignature = traceResponseSignature(trace, "context_snapshots");
-          if (contextSnapshotsSignatureRef.current !== contextSnapshotsSignature) {
-            contextSnapshotsSignatureRef.current = contextSnapshotsSignature;
-            setContextSnapshots(trace.context_snapshots || []);
-          }
-          const activitySignature = traceResponseSignature(activity, "events");
-          if (activitySignatureRef.current !== activitySignature) {
-            activitySignatureRef.current = activitySignature;
-            setSessionActivity({
-              events: activity.events || [],
-              shown: (activity.events || []).length,
-              total: activity.events_total || 0,
-              truncated: Boolean(activity.events_truncated),
-            });
-          }
-          sessionLiveEventsRef.current.delete(activeSessionId);
-          setLiveEvents((current) => current.length ? [] : current);
-          const messagesHistorySignature = sessionHistorySignature(detail);
-          const pendingLiveMessages = pendingSessionMessagesRef.current.get(activeSessionId);
-          // A transcript this client still owns (a running turn, or one kept
-          // on screen after an interrupt) wins over the persisted history
-          // snapshot, or the rebuild would remount every activity collapsed.
-          if (messagesHistorySignatureRef.current !== messagesHistorySignature
-            && !(Array.isArray(pendingLiveMessages) && pendingLiveMessages.length > 0)) {
-            messagesHistorySignatureRef.current = messagesHistorySignature;
-            // The freshness page replaces its own tail range; older rows the
-            // user paged in survive so the poll never truncates the transcript
-            // back to the display window.
-            const storedHistory = sessionHistoryRef.current.get(activeSessionId);
-            const historyRows = mergeHistoryRows(storedHistory?.rows, detail.history || []);
-            const historyBeforeCount = storedHistory
-              ? storedHistory.beforeCount
-              : Number(detail.history_before_count || 0);
-            rememberSessionHistory(sessionHistoryRef.current, activeSessionId, {
-              rows: historyRows,
-              beforeCount: historyBeforeCount,
-            });
-            const nextMessages = historyToMessages(historyRows);
-            messagesRef.current = nextMessages;
-            setMessages(nextMessages);
-            setHistoryEarlier({ remaining: historyBeforeCount, loading: false });
-            setPendingSteerings((items) => reconcilePendingSteerings(items, activeSessionId, nextMessages));
-            rememberSessionView(sessionViewCacheRef.current, activeSessionId, {
-              session: loadedSession,
-              messages: nextMessages,
-            });
-          }
-        },
-      });
-    })().catch(() => {});
-    return () => controller.abort();
-  }, [api, activeSessionId, activeSession?.scope_id, activeSessionListSignature, running]);
+    activeSessionSync.update({
+      sessionId: activeSessionId,
+      scopeId: activeSession?.scope_id,
+      listRecord: activeSessionListRecord,
+      streamingIds: runningSessionIdsRef.current,
+    });
+  }, [activeSessionSync, activeSessionId, activeSession?.scope_id, activeSessionListRecord, runningSessionIds]);
 
   const handleSteering = useCallback(async (message, inputId, attachments = []) => {
     const sessionId = activeSessionIdRef.current;
@@ -4859,40 +4862,6 @@ function sessionDetailSignature(session) {
     session?.selected_model_key || "",
     stableListSignature(session?.selectable_models || [], modelSummarySignature),
   ].join("|");
-}
-
-function sessionFreshnessSignature(session) {
-  if (!session?.session_id) return "";
-  return [
-    session.session_id,
-    session.updated_at || "",
-    session.last_case_run_id || "",
-    session.last_case_run_status || "",
-    session.model_group_name || "",
-    session.selected_model_key || "",
-  ].join("|");
-}
-
-export function activeSessionNeedsRefresh(activeSession, listRecord) {
-  return Boolean(
-    activeSession?.session_id
-    && activeSession.session_id === listRecord?.session_id
-    && sessionFreshnessSignature(activeSession) !== sessionFreshnessSignature(listRecord)
-  );
-}
-
-export function activeSessionRunAwaitingAttach(activeSession, listRecord, runningIds) {
-  // A scheduler-driven turn leaves the list record running while this client
-  // has no live stream for the session: the execution id is published only
-  // after the runtime starts the run, and a failed attach also drops the
-  // running flag. Keep probing so the session follows the live turn instead
-  // of showing an unattachable spinner.
-  return Boolean(
-    activeSession?.session_id
-    && activeSession.session_id === listRecord?.session_id
-    && listRecord?.last_case_run_status === "running"
-    && !runningIds?.[activeSession.session_id]
-  );
 }
 
 export function rememberSessionView(cache, sessionId, view, limit = 5) {
