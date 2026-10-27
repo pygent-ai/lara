@@ -1,25 +1,31 @@
-"""Offload large inline images out of persisted conversation checkpoints.
+"""Offload large generated images out of persisted conversation checkpoints.
 
-Generated images reach the conversation as multi-megabyte inline payloads:
-markdown ``data:image/...;base64,`` URIs inside assistant text and inline
-media blocks in tool results. Storing them verbatim makes every session open
-transfer and decode the full bytes again. The checkpoint boundary rewrites
-those payloads into workspace files under ``.lara/uploads`` and keeps only
-resource references, which the uploads endpoint and the pygent workspace
-media resolver both resolve back to bytes.
+Generated images reach the conversation as multi-megabyte payloads: markdown
+``data:image/...;base64,`` URIs inside assistant text, inline media blocks in
+tool results, and markdown links to remote hosts. Storing them verbatim makes
+every session open transfer and decode the full bytes again, and remote links
+keep the image hostage to the host staying reachable and CORS-open. The
+checkpoint boundary rewrites all three shapes into workspace files under
+``.lara/uploads`` and keeps only resource references, which the uploads
+endpoint and the pygent workspace media resolver both resolve back to bytes.
 """
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import copy
 import hashlib
 import os
 import re
+import urllib.request
 import uuid
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
+
+from ..attachments import MEDIA_MAX_BYTES
 
 UPLOADS_SUBDIR = Path(".lara") / "uploads"
 
@@ -29,6 +35,10 @@ _MARKDOWN_DATA_IMAGE = re.compile(
     r"(!\[[^\]]*\]\()data:image/([a-z0-9.+-]+);base64,([A-Za-z0-9+/=]+)(\))"
 )
 
+# Same rule for remote hosts: only markdown image targets are fetched, so
+# plain links in prose or code fences survive untouched.
+_MARKDOWN_REMOTE_IMAGE = re.compile(r"(!\[[^\]]*\]\()(https?://[^\s)]+)(\))")
+
 # Tool-result and message media blocks round-trip through strict field
 # validation, so the replacement carries the full canonical source shape.
 _RESOURCE_SOURCE_KEYS = ("url", "base64_data")
@@ -36,6 +46,8 @@ _RESOURCE_SOURCE_KEYS = ("url", "base64_data")
 # Thumbnail-scale images stay inline: reloading them costs nothing and
 # offloading would litter the uploads directory.
 _INLINE_OFFLOAD_MIN_BYTES = 64 * 1024
+
+_REMOTE_FETCH_TIMEOUT_SECONDS = 30.0
 
 _MIME_EXTENSIONS = {
     "png": ".png",
@@ -65,6 +77,79 @@ def offload_inline_media(
         return _offload(copy.deepcopy(payload), Path(workspace_root))
     except OSError:
         return payload
+
+
+# Downloads one image URL and returns its bytes; transport errors surface as
+# exceptions and are converted to "keep the remote link" by the caller.
+RemoteMediaFetcher = Callable[[str], Awaitable[bytes]]
+
+
+async def offload_remote_media(
+    payload: dict[str, Any],
+    *,
+    workspace_root: str | Path,
+    fetch_url: RemoteMediaFetcher | None,
+) -> dict[str, Any]:
+    """Return `payload` with remote image URLs replaced by workspace files.
+
+    Markdown image links and ``kind: "url"`` media blocks pointing at
+    ``http(s)`` hosts are downloaded once and rewritten to the same stored
+    ``.lara/uploads`` references the inline path produces, so copies and
+    replays stop depending on the remote host. Fetch failures, sub-thumbnail
+    images, and oversized payloads keep their remote link: a dead host
+    degrades to the previous behavior instead of failing the turn. Storage
+    failures return the original payload, matching `offload_inline_media`.
+    Without a `fetch_url` the payload passes through unchanged.
+    """
+
+    if fetch_url is None or not str(workspace_root or "").strip():
+        return payload
+    try:
+        return await _offload_remote(
+            copy.deepcopy(payload), Path(workspace_root), fetch_url, {}
+        )
+    except OSError:
+        return payload
+
+
+async def _offload_remote(
+    node: Any,
+    workspace_root: Path,
+    fetch_url: RemoteMediaFetcher,
+    fetched: dict[str, bytes | None],
+) -> Any:
+    if isinstance(node, dict):
+        source = node.get("source")
+        if (
+            node.get("type") == "media"
+            and isinstance(source, dict)
+            and source.get("kind") == "url"
+        ):
+            replacement = await _remote_resource_source(
+                source.get("url"),
+                node.get("mime_type"),
+                workspace_root,
+                fetch_url,
+                fetched,
+            )
+            if replacement is not None:
+                node["source"] = replacement
+        for key, value in node.items():
+            if key == "content" and isinstance(value, str):
+                node[key] = await _offload_remote_content(
+                    value, workspace_root, fetch_url, fetched
+                )
+            else:
+                node[key] = await _offload_remote(
+                    value, workspace_root, fetch_url, fetched
+                )
+        return node
+    if isinstance(node, list):
+        return [
+            await _offload_remote(item, workspace_root, fetch_url, fetched)
+            for item in node
+        ]
+    return node
 
 
 def _offload(node: Any, workspace_root: Path) -> Any:
@@ -108,12 +193,65 @@ def _offload_content_data_uris(content: str, workspace_root: Path) -> str:
     return _MARKDOWN_DATA_IMAGE.sub(replace, content)
 
 
+async def _offload_remote_content(
+    content: str,
+    workspace_root: Path,
+    fetch_url: RemoteMediaFetcher,
+    fetched: dict[str, bytes | None],
+) -> str:
+    async def replace(match: re.Match[str]) -> str:
+        source = await _remote_resource_source(
+            match.group(2), None, workspace_root, fetch_url, fetched
+        )
+        if source is None:
+            return match.group(0)
+        return f"{match.group(1)}{source['uri']}{match.group(3)}"
+
+    return await _sub_async(_MARKDOWN_REMOTE_IMAGE, replace, content)
+
+
+async def _sub_async(
+    pattern: re.Pattern[str],
+    replace: Callable[[re.Match[str]], Awaitable[str]],
+    text: str,
+) -> str:
+    parts: list[str] = []
+    last = 0
+    for match in pattern.finditer(text):
+        parts.append(text[last : match.start()])
+        parts.append(await replace(match))
+        last = match.end()
+    parts.append(text[last:])
+    return "".join(parts)
+
+
+async def _remote_resource_source(
+    url: Any,
+    mime: Any,
+    workspace_root: Path,
+    fetch_url: RemoteMediaFetcher,
+    fetched: dict[str, bytes | None],
+) -> dict[str, Any] | None:
+    data = await _fetch_remote_media(url, fetch_url, fetched)
+    if data is None:
+        return None
+    if not (isinstance(mime, str) and mime.startswith("image/")):
+        mime = _sniff_image_mime(data)
+    return _stored_resource_source(data, mime, workspace_root)
+
+
 def _resource_source(
     encoded: Any, mime: Any, workspace_root: Path
 ) -> dict[str, Any] | None:
     data = _decode_inline(encoded)
     if data is None or len(data) < _INLINE_OFFLOAD_MIN_BYTES:
         return None
+    return _stored_resource_source(data, mime, workspace_root)
+
+
+def _stored_resource_source(
+    data: bytes, mime: Any, workspace_root: Path
+) -> dict[str, Any]:
     relative = _store_media_bytes(data, workspace_root, _mime_extension(mime))
     return {
         "kind": "resource",
@@ -122,6 +260,73 @@ def _resource_source(
         "sha256": hashlib.sha256(data).hexdigest(),
         "size_bytes": len(data),
     }
+
+
+async def _fetch_remote_media(
+    url: Any,
+    fetch_url: RemoteMediaFetcher,
+    fetched: dict[str, bytes | None],
+) -> bytes | None:
+    """Return one URL's bytes, or None when the link must stay remote.
+
+    Per-URL failures cache as None so every later reference to the same URL
+    keeps its link without re-attempting the download. Any transport failure
+    degrades to the remote link; storage errors still propagate to the
+    payload-level fallback in `offload_remote_media`.
+    """
+
+    if not isinstance(url, str) or not url.lower().startswith(("http://", "https://")):
+        return None
+    if url in fetched:
+        return fetched[url]
+    try:
+        data = await fetch_url(url)
+    except Exception:  # noqa: BLE001 - transport failures degrade per URL
+        fetched[url] = None
+        return None
+    # Thumbnail-scale images stay remote for the same reason inline ones stay
+    # inline: offloading them would litter the uploads directory. Oversized
+    # payloads stay remote instead of filling the workspace either.
+    if len(data) < _INLINE_OFFLOAD_MIN_BYTES or len(data) > MEDIA_MAX_BYTES:
+        fetched[url] = None
+        return None
+    fetched[url] = data
+    return data
+
+
+def _sniff_image_mime(data: bytes) -> str:
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return "image/png"
+
+
+def default_remote_fetcher(url: str) -> Awaitable[bytes]:
+    """Fetch one image over HTTP(S) via stdlib urllib, off the event loop.
+
+    Reads at most `MEDIA_MAX_BYTES + 1` bytes; the size check lives in the
+    caller so oversized payloads degrade to the remote link there.
+    """
+
+    async def fetch() -> bytes:
+        request = urllib.request.Request(
+            url, headers={"User-Agent": "lara-media-offload"}
+        )
+
+        def download() -> bytes:
+            with urllib.request.urlopen(
+                request, timeout=_REMOTE_FETCH_TIMEOUT_SECONDS
+            ) as response:
+                return response.read(MEDIA_MAX_BYTES + 1)
+
+        return await asyncio.to_thread(download)
+
+    return fetch()
 
 
 def _decode_inline(value: Any) -> bytes | None:

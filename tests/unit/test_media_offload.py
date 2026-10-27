@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from lara.runtime.agent.media_offload import UPLOADS_SUBDIR, offload_inline_media
+from lara.runtime.agent.media_offload import (
+    UPLOADS_SUBDIR,
+    offload_inline_media,
+    offload_remote_media,
+)
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"0" * (72 * 1024)
 PNG_BASE64 = base64.b64encode(PNG_BYTES).decode("ascii")
@@ -134,3 +138,182 @@ def test_same_image_reuses_one_file(tmp_path: Path) -> None:
 def test_empty_workspace_root_is_a_noop() -> None:
     payload = {"content": f"![image](data:image/png;base64,{PNG_BASE64})"}
     assert offload_inline_media(payload, workspace_root="") is payload
+
+
+REMOTE_URL = "https://r2.example.com/codex/6c9ea699.png"
+
+
+def make_fetcher(data: bytes, calls: list[str]) -> object:
+    async def fetch(url: str) -> bytes:
+        calls.append(url)
+        return data
+
+    return fetch
+
+
+async def test_offloads_remote_markdown_image(tmp_path: Path) -> None:
+    calls: list[str] = []
+    payload = {"content": f"看看这张\n\n![image]({REMOTE_URL})\n\n完毕"}
+    result = await offload_remote_media(
+        payload, workspace_root=tmp_path, fetch_url=make_fetcher(PNG_BYTES, calls)
+    )
+    stored = (UPLOADS_SUBDIR / f"media-{PNG_SHA256[:16]}.png").as_posix()
+    assert result["content"] == f"看看这张\n\n![image]({stored})\n\n完毕"
+    assert (tmp_path / stored).read_bytes() == PNG_BYTES
+    assert calls == [REMOTE_URL]
+
+
+async def test_offloads_remote_url_media_block(tmp_path: Path) -> None:
+    calls: list[str] = []
+    payload = {
+        "role": "tool",
+        "results": [
+            {
+                "call_id": "call-1",
+                "content": [
+                    {
+                        "type": "media",
+                        "media_type": "image",
+                        "mime_type": "image/jpeg",
+                        "source": {"kind": "url", "url": REMOTE_URL},
+                    }
+                ],
+            }
+        ],
+    }
+    result = await offload_remote_media(
+        payload, workspace_root=tmp_path, fetch_url=make_fetcher(PNG_BYTES, calls)
+    )
+    source = result["results"][0]["content"][0]["source"]
+    assert source == {
+        "kind": "resource",
+        "uri": (UPLOADS_SUBDIR / f"media-{PNG_SHA256[:16]}.jpg").as_posix(),
+        "url": None,
+        "base64_data": None,
+        "sha256": PNG_SHA256,
+        "size_bytes": len(PNG_BYTES),
+    }
+    assert (tmp_path / source["uri"]).read_bytes() == PNG_BYTES
+    assert calls == [REMOTE_URL]
+
+
+async def test_markdown_remote_image_sniffs_mime(tmp_path: Path) -> None:
+    jpeg = b"\xff\xd8\xff" + b"1" * (72 * 1024)
+    payload = {"content": f"![image]({REMOTE_URL})"}
+    result = await offload_remote_media(
+        payload, workspace_root=tmp_path, fetch_url=make_fetcher(jpeg, [])
+    )
+    sha = hashlib.sha256(jpeg).hexdigest()
+    assert result["content"] == f"![image]({(UPLOADS_SUBDIR / f'media-{sha[:16]}.jpg').as_posix()})"
+
+
+async def test_small_remote_images_stay_remote(tmp_path: Path) -> None:
+    payload = {"content": f"![icon]({REMOTE_URL})"}
+    result = await offload_remote_media(
+        payload,
+        workspace_root=tmp_path,
+        fetch_url=make_fetcher(b"tiny image bytes", []),
+    )
+    assert result["content"] == f"![icon]({REMOTE_URL})"
+    assert not (tmp_path / UPLOADS_SUBDIR).exists()
+
+
+async def test_remote_fetch_failure_keeps_link(tmp_path: Path) -> None:
+    async def failing(url: str) -> bytes:
+        raise TimeoutError("host unreachable")
+
+    payload = {"content": f"![image]({REMOTE_URL})"}
+    result = await offload_remote_media(
+        payload, workspace_root=tmp_path, fetch_url=failing
+    )
+    assert result["content"] == f"![image]({REMOTE_URL})"
+    assert not (tmp_path / UPLOADS_SUBDIR).exists()
+
+
+async def test_oversized_remote_image_stays_remote(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("lara.runtime.agent.media_offload.MEDIA_MAX_BYTES", 1024)
+    payload = {"content": f"![image]({REMOTE_URL})"}
+    result = await offload_remote_media(
+        payload, workspace_root=tmp_path, fetch_url=make_fetcher(PNG_BYTES, [])
+    )
+    assert result["content"] == f"![image]({REMOTE_URL})"
+    assert not (tmp_path / UPLOADS_SUBDIR).exists()
+
+
+async def test_no_fetcher_leaves_remote_urls(tmp_path: Path) -> None:
+    payload = {"content": f"![image]({REMOTE_URL})"}
+    result = await offload_remote_media(
+        payload, workspace_root=tmp_path, fetch_url=None
+    )
+    assert result is payload
+    assert result["content"] == f"![image]({REMOTE_URL})"
+    assert not (tmp_path / UPLOADS_SUBDIR).exists()
+
+
+async def test_non_http_url_is_not_fetched(tmp_path: Path) -> None:
+    calls: list[str] = []
+    payload = {
+        "media": [
+            {
+                "type": "media",
+                "mime_type": "image/png",
+                "source": {"kind": "url", "url": "file:///etc/passwd"},
+            }
+        ]
+    }
+    result = await offload_remote_media(
+        payload, workspace_root=tmp_path, fetch_url=make_fetcher(PNG_BYTES, calls)
+    )
+    assert result["media"][0]["source"]["kind"] == "url"
+    assert calls == []
+    assert not (tmp_path / UPLOADS_SUBDIR).exists()
+
+
+async def test_same_remote_url_downloaded_once(tmp_path: Path) -> None:
+    calls: list[str] = []
+    payload = {
+        "content": f"![one]({REMOTE_URL})\n\n![two]({REMOTE_URL})",
+        "media": [
+            {
+                "type": "media",
+                "mime_type": "image/png",
+                "source": {"kind": "url", "url": REMOTE_URL},
+            }
+        ],
+    }
+    result = await offload_remote_media(
+        payload, workspace_root=tmp_path, fetch_url=make_fetcher(PNG_BYTES, calls)
+    )
+    stored = (UPLOADS_SUBDIR / f"media-{PNG_SHA256[:16]}.png").as_posix()
+    assert result["content"] == f"![one]({stored})\n\n![two]({stored})"
+    assert result["media"][0]["source"]["uri"] == stored
+    assert calls == [REMOTE_URL]
+    assert [path.name for path in (tmp_path / UPLOADS_SUBDIR).iterdir()] == [
+        f"media-{PNG_SHA256[:16]}.png"
+    ]
+
+
+async def test_remote_storage_failure_keeps_original_payload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = {"content": f"![image]({REMOTE_URL})"}
+
+    def fail_write(self: Path, data: bytes) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(Path, "write_bytes", fail_write)
+    result = await offload_remote_media(
+        payload, workspace_root=tmp_path, fetch_url=make_fetcher(PNG_BYTES, [])
+    )
+    assert result is payload
+    assert result["content"] == f"![image]({REMOTE_URL})"
+
+
+async def test_remote_offload_input_is_not_mutated(tmp_path: Path) -> None:
+    payload = {"content": f"![image]({REMOTE_URL})"}
+    await offload_remote_media(
+        payload, workspace_root=tmp_path, fetch_url=make_fetcher(PNG_BYTES, [])
+    )
+    assert payload["content"] == f"![image]({REMOTE_URL})"
