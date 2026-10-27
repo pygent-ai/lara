@@ -542,11 +542,17 @@ def test_model_discovery_uses_transient_credential_without_echoing_it(
 
 
 def test_update_settings_rejects_unreferenced_credential_values(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from lara_api.models.requests import UpdateSettingsRequest
     from lara_api.routers.settings import update_settings
 
+    # The session-selection guard scans the user-level conversation scope;
+    # redirect it so the developer's real chats cannot fail this test.
+    monkeypatch.setattr(
+        "lara_api.services.project_state.user_lara_root",
+        lambda: tmp_path / "lara-home",
+    )
     context = ApiContext(
         workspace_root=str(tmp_path), state_path=str(tmp_path / "state.json")
     )

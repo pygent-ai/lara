@@ -20,6 +20,7 @@ from lara.core.io import (
 from lara.core.process import current_owner
 from lara.core.redaction import redact_secrets
 from lara.schema import AgentSession, CaseRunRef, RunConfig, SessionRef, SessionSpec
+from lara.sessions.directory import SessionDirectory, user_lara_root_for
 
 
 class SessionManager:
@@ -28,6 +29,7 @@ class SessionManager:
         self.workspace_root = Path(config.workspace_root)
         self.lara_root = Path(config.lara_root)
         self.sessions_root = self.lara_root / "sessions"
+        self._directory = SessionDirectory(user_lara_root_for(self.lara_root))
 
     def create(
         self,
@@ -69,6 +71,7 @@ class SessionManager:
                 "selected_model_key": selected_model,
             },
         )
+        self._register_in_directory(session_id=session_id, case_id=case_id, mode=mode)
         return SessionRef(
             session_id=session_id,
             session_dir=str(session_dir),
@@ -84,7 +87,25 @@ class SessionManager:
         data["session_dir"] = str(session_dir)
         session = AgentSession.from_dict(data)
         self._resolve_missing_selection(session)
-        return self._apply_history_checkpoints(session)
+        session = self._apply_history_checkpoints(session)
+        self._register_in_directory(
+            session_id=session_id,
+            case_id=str(session.metadata.get("active_case_id") or ""),
+            mode=str(session.metadata.get("mode") or ""),
+        )
+        return session
+
+    def _register_in_directory(
+        self, *, session_id: str, case_id: str, mode: str
+    ) -> None:
+        """Keep the user-level directory addressable across projects."""
+        self._directory.register_session(
+            session_id=session_id,
+            lara_root=str(self.lara_root),
+            workspace_root=str(self.workspace_root),
+            case_id=case_id,
+            mode=mode,
+        )
 
     def model_selection(self, session_id: str) -> tuple[str, str]:
         session = self.load(session_id)

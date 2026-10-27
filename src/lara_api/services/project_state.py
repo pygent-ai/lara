@@ -4,11 +4,11 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from lara.core.paths import project_lara_root
+from lara.core.paths import project_lara_root, user_lara_root
 
 
 def default_state_path() -> Path:
-    user_root = Path.home() / ".lara"
+    user_root = user_lara_root()
     return user_root / "gui" / "state.json"
 
 
@@ -194,7 +194,7 @@ class SessionScope:
 
 
 def build_session_scopes(state: GuiProjectState, *, active_workspace_root: str | None = None) -> list[SessionScope]:
-    user_root = Path.home() / ".lara"
+    user_root = user_lara_root()
     conversation_root = user_root / "conversations"
     project_paths = list(state.recent_project_paths or [])
     if active_workspace_root:

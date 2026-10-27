@@ -18,3 +18,11 @@ Cross-session collaboration operations and Agent-message inboxes are stored in
 a request fingerprint. Renewable target-session leases serialize background-start
 operations across processes; FIFO message claims provide durable, retryable
 delivery into a target execution.
+
+Cross-project addressing runs through the user-level directory
+`~/.lara/index/session-directory-v1.sqlite3` (`SessionDirectory`). Sessions
+register themselves on create, fork, and load; collaboration items register
+when enqueued. A message for a session in another project is written directly
+into the target project's store, so delivery on the receiving side is
+unchanged. Any session recorded in the directory is addressable; unknown
+sessions fail closed.

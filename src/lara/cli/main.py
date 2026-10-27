@@ -8,6 +8,7 @@ from typing import Any, Sequence
 
 from lara.cli.credentials import register_credentials_parser
 from lara.cli.automations import register_automation_parser
+from lara.cli.projects import register_projects_parser
 from lara.cli.sessions import register_session_parser
 from lara.config import load_run_config
 from lara.evaluation import (
@@ -136,6 +137,7 @@ def build_parser() -> argparse.ArgumentParser:
     optimize.set_defaults(handler=_optimize)
 
     register_credentials_parser(sub)
+    register_projects_parser(sub)
     return parser
 
 

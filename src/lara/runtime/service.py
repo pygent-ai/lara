@@ -440,23 +440,24 @@ class LaraRuntimeService:
                 raise PermissionError(
                     f"collaboration with agent {agent_alias!r} is not allowed"
                 )
+            model_group = arguments.get("model_group")
             child_config = self._child_agent_config(agent_alias)
+            if model_group is not None:
+                self._require_model_group(child_config, str(model_group))
             operation = await collaboration.start(
                 config=child_config,
                 manager=SessionManager(child_config),
                 source_session_id=actor.session_id,
                 message=str(arguments["task"]),
                 submission_id=submission_id,
+                model_group=None if model_group is None else str(model_group),
             )
             return operation.to_dict()
         if name == "agent_send":
+            # Addressing policy: every session registered in the user-level
+            # directory is reachable, across projects included; unknown
+            # sessions fail closed inside collaboration.send.
             target_session_id = str(arguments["session_id"])
-            if not await collaboration.related_sessions(
-                config=self.config,
-                first_session_id=actor.session_id,
-                second_session_id=target_session_id,
-            ):
-                raise PermissionError("Agent sessions are not related collaborators")
             message = await collaboration.send(
                 config=self.config,
                 manager=SessionManager(self.config),
@@ -780,6 +781,15 @@ class LaraRuntimeService:
             max_steps=self.config.max_steps,
             context_window=self.config.context_window,
         )
+
+    @staticmethod
+    def _require_model_group(child_config: RunConfig, model_group: str) -> None:
+        native = child_config.model_config
+        if native is None or model_group not in native.model_groups:
+            raise ValueError(
+                f"unknown model group {model_group!r} for agent "
+                f"{child_config.agent_alias!r}"
+            )
 
     async def bind(self, module: Any, agent: LaraAgent) -> Any:
         await self.initialize()

@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pygent.llm import ModelConfig
 
-from lara.core.paths import project_lara_root
+from lara.core.paths import project_lara_root, user_lara_root
 
 
 def _abs_path(value: str | Path) -> str:
@@ -310,7 +310,7 @@ class RunConfig:
 
     def __post_init__(self) -> None:
         self.workspace_root = _abs_path(self.workspace_root)
-        self.user_lara_root = _abs_path(self.user_lara_root or (Path.home() / ".lara"))
+        self.user_lara_root = _abs_path(self.user_lara_root or user_lara_root())
         self.lara_root = _abs_path(
             self.lara_root
             or project_lara_root(self.workspace_root, self.user_lara_root)
