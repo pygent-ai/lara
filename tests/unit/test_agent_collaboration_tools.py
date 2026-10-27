@@ -74,10 +74,6 @@ class _Collaboration:
             agent_alias=self.agent_alias,
         )
 
-    async def related_sessions(self, **kwargs: Any) -> bool:
-        self.calls.append(("related", kwargs))
-        return True
-
     async def send(self, **kwargs: Any) -> AgentMessage:
         self.calls.append(("send", kwargs))
         return AgentMessage(

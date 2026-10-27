@@ -44,6 +44,13 @@ AGENT_START_TOOL_SPEC = _spec(
                 "minLength": 1,
                 "description": "Complete task for the new agent session.",
             },
+            "model_group": {
+                "type": "string",
+                "description": (
+                    "Optional model group from the target agent's configuration "
+                    "to run the new session with."
+                ),
+            },
         },
         "required": ["agent", "task"],
         "additionalProperties": False,
@@ -54,13 +61,13 @@ AGENT_START_TOOL_SPEC = _spec(
 
 AGENT_SEND_TOOL_SPEC = _spec(
     "agent_send",
-    "Queue a message for a related parent or child agent session without starting a new turn.",
+    "Queue a message for any registered parent or child agent session, including sessions in other projects, without starting a new turn.",
     {
         "type": "object",
         "properties": {
             "session_id": {
                 "type": "string",
-                "description": "Related parent or child session ID.",
+                "description": "Target session ID; may belong to another project.",
             },
             "message": {
                 "type": "string",

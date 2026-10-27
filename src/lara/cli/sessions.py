@@ -50,6 +50,11 @@ def register_session_parser(subparsers: Any) -> None:
         "start", help="Create a session and queue a background task"
     )
     _add_collaboration_submission(start)
+    start.add_argument(
+        "--model-group",
+        default=None,
+        help="Model group from the agent's configuration for the new session",
+    )
     start.set_defaults(handler=_session_start)
 
     fork = commands.add_parser(
@@ -72,6 +77,11 @@ def register_session_parser(subparsers: Any) -> None:
         "--source-session",
         default=None,
         help="Session ID of the sending agent; omit for an external sender",
+    )
+    fork.add_argument(
+        "--model-group",
+        default=None,
+        help="Model group from the agent's configuration for the forked session",
     )
     fork.set_defaults(handler=_session_fork)
 
@@ -161,6 +171,7 @@ async def _enqueue_fork_start(
             source_session_id=args.source_session,
             submission_id=args.submission_id,
             fork_from=args.session_id,
+            model_group=args.model_group,
         )
         return operation, config
 
@@ -191,6 +202,7 @@ async def _enqueue_collaboration_start(
             "message": args.message,
             "source_session_id": args.source_session,
             "submission_id": args.submission_id,
+            "model_group": args.model_group,
         }
         operation = await host.collaboration.enqueue_start(**values)
         return operation, config

@@ -124,6 +124,7 @@ class CollaborationOperation:
     case_run_id: str | None = None
     final_answer: str = ""
     error: str | None = None
+    model_group: str | None = None
 
     @property
     def done(self) -> bool:
@@ -144,6 +145,7 @@ class CollaborationOperation:
             "case_run_id": self.case_run_id,
             "final_answer": self.final_answer,
             "error": self.error,
+            "model_group": self.model_group,
         }
         if include_message:
             value["message"] = self.message
@@ -168,6 +170,7 @@ class SessionCollaborationStore:
         agent_alias: str,
         case_id: str,
         message: str,
+        model_group: str | None = None,
     ) -> CollaborationOperation:
         if not submission_id.strip():
             raise ValueError("submission_id must be non-empty")
@@ -177,6 +180,8 @@ class SessionCollaborationStore:
         ):
             if value is not None:
                 validate_path_id(value, name)
+        if model_group is not None and not model_group.strip():
+            raise ValueError("model_group must be non-empty when provided")
         operation_id = f"op-{uuid.uuid4().hex}"
         now = utc_now()
         with closing(self._connect()) as connection, connection:
@@ -186,8 +191,8 @@ class SessionCollaborationStore:
                     INSERT INTO collaboration_operations (
                         operation_id, submission_id, fingerprint,
                         source_session_id, target_session_id, agent_alias,
-                        case_id, message, state, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        case_id, message, model_group, state, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         operation_id,
@@ -198,6 +203,7 @@ class SessionCollaborationStore:
                         agent_alias,
                         case_id,
                         message,
+                        model_group,
                         "queued" if target_session_id is not None else "preparing",
                         now,
                         now,
@@ -257,26 +263,6 @@ class SessionCollaborationStore:
         if row is None:
             raise FileNotFoundError(f"Agent message {message_id!r} does not exist")
         return self._agent_message(row)
-
-    def related_sessions(self, first_session_id: str, second_session_id: str) -> bool:
-        validate_path_id(first_session_id, "first_session_id")
-        validate_path_id(second_session_id, "second_session_id")
-        with closing(self._connect()) as connection:
-            row = connection.execute(
-                """
-                SELECT 1 FROM collaboration_operations
-                WHERE (source_session_id = ? AND target_session_id = ?)
-                   OR (source_session_id = ? AND target_session_id = ?)
-                LIMIT 1
-                """,
-                (
-                    first_session_id,
-                    second_session_id,
-                    second_session_id,
-                    first_session_id,
-                ),
-            ).fetchone()
-        return row is not None
 
     def list_operations(
         self, session_id: str, *, limit: int = 100
@@ -713,6 +699,16 @@ class SessionCollaborationStore:
         connection.execute(
             "CREATE INDEX IF NOT EXISTS collaboration_target_state_idx ON collaboration_operations(target_session_id, state, lease_until_epoch)"
         )
+        columns = {
+            str(row[1])
+            for row in connection.execute(
+                "PRAGMA table_info(collaboration_operations)"
+            )
+        }
+        if "model_group" not in columns:
+            connection.execute(
+                "ALTER TABLE collaboration_operations ADD COLUMN model_group TEXT"
+            )
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS agent_messages (
@@ -761,6 +757,7 @@ class SessionCollaborationStore:
             case_run_id=None if row["case_run_id"] is None else str(row["case_run_id"]),
             final_answer=str(row["final_answer"] or ""),
             error=None if row["error"] is None else str(row["error"]),
+            model_group=None if row["model_group"] is None else str(row["model_group"]),
         )
 
     @staticmethod

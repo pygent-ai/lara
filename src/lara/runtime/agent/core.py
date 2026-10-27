@@ -27,6 +27,7 @@ from pygent.runtime.codec import context_to_dict
 from pygent.tool import StandardTools, ToolSpec
 
 from lara.core.io import aclose_if_supported, plain_data
+from lara.core.redaction import redact_secrets
 from lara.runtime.context import LARA_CONTEXT_CODECS, LaraContext
 from lara.runtime.bash_tasks import BashTaskObservations
 from lara.runtime.context_compression import COMPRESSION_REQUEST_PROMPT
@@ -113,7 +114,23 @@ def _error_trace_payload(error: BaseException) -> dict[str, Any]:
         payload["sqlite_errorcode"] = getattr(error, "sqlite_errorcode", None)
         payload["sqlite_errorname"] = getattr(error, "sqlite_errorname", None)
     if isinstance(error, ModelCallError):
-        payload["model_failure"] = error.failure.to_dict()
+        payload["model_failure"] = _sanitized_model_failure(error.failure)
+    return payload
+
+
+def _sanitized_model_failure(failure: Any) -> dict[str, Any]:
+    """Strip credentials from provider diagnostics before they reach traces.
+
+    pygent forwards provider error text verbatim; the trace payload promises
+    sanitized diagnostics, so the boundary redacts it here.
+    """
+    payload = failure.to_dict()
+    attempts = payload.get("details", {}).get("attempts")
+    if isinstance(attempts, list):
+        for attempt in attempts:
+            message = attempt.get("provider_message")
+            if isinstance(message, str):
+                attempt["provider_message"] = redact_secrets(message)
     return payload
 
 

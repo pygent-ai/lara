@@ -176,8 +176,32 @@ def test_model_call_error_trace_preserves_sanitized_attempt_diagnostics() -> Non
             "attempt": 1,
             "reason_code": "invalid_parameter",
             "http_status": 400,
+            "provider_message": None,
         }
     ]
+
+
+def test_model_call_error_trace_sanitizes_provider_message() -> None:
+    error = ModelCallError(
+        "model call failed",
+        kind=ModelErrorKind.INVALID_REQUEST,
+        attempts=(
+            ModelAttempt(
+                "primary",
+                "failed",
+                ModelErrorKind.INVALID_REQUEST,
+                provider_message=(
+                    "Authorization failed for key "
+                    "sk-proj-AbCdEf1234567890AbCdEf1234567890AbCdEf12"
+                ),
+            ),
+        ),
+    )
+
+    payload = _error_trace_payload(error)
+
+    attempts = payload["model_failure"]["details"]["attempts"]
+    assert attempts[0]["provider_message"] == "Authorization failed for key [REDACTED]"
 
 
 def test_file_editing_guidance_comes_from_pygent_tool_definitions(

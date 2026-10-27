@@ -17,7 +17,9 @@ from lara.sessions import (
     CollaborationOperation,
     CollaborationState,
     SessionCollaborationStore,
+    SessionDirectory,
     SessionManager,
+    user_lara_root_for,
 )
 
 from .managed_turn import ManagedSessionTurn
@@ -43,6 +45,7 @@ class SessionCollaborationService:
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._turns: dict[str, ManagedSessionTurn] = {}
         self._stores: dict[str, SessionCollaborationStore] = {}
+        self._directories: dict[str, SessionDirectory] = {}
         self._accepting = True
         self._lock = asyncio.Lock()
 
@@ -57,10 +60,18 @@ class SessionCollaborationService:
         source_agent_alias: str | None = None,
         submission_id: str | None = None,
     ) -> AgentMessage:
-        self._validate_request(manager, source_session_id, target_session_id, message)
+        if not message.strip():
+            raise ValueError("message must be non-empty")
+        if source_session_id is not None and source_session_id == target_session_id:
+            raise ValueError("source and target sessions must be different")
         async with self._lock:
             if not self._accepting:
                 raise RuntimeError("session collaboration service is closing")
+        if source_session_id is not None:
+            await self._resolve_session_root(config, manager, source_session_id)
+        target_root = await self._resolve_session_root(
+            config, manager, target_session_id
+        )
         effective_submission_id = submission_id or f"submission-{uuid.uuid4().hex}"
         fingerprint = _fingerprint(
             intent="agent-message",
@@ -69,8 +80,11 @@ class SessionCollaborationService:
             message=message,
             source_agent_alias=source_agent_alias,
         )
-        return await asyncio.to_thread(
-            self._store(config).enqueue_message,
+        # Messages are always enqueued into the project store that owns the
+        # target session: the target runtime claims from its own store, so
+        # cross-project delivery needs no changes on the receiving side.
+        queued = await asyncio.to_thread(
+            self._store_for_root(target_root).enqueue_message,
             submission_id=effective_submission_id,
             fingerprint=fingerprint,
             source_session_id=source_session_id,
@@ -78,6 +92,15 @@ class SessionCollaborationService:
             target_session_id=target_session_id,
             content=message,
         )
+        await asyncio.to_thread(
+            self._directory_for_root(target_root).register_item,
+            item_id=queued.message_id,
+            kind="message",
+            lara_root=target_root,
+            source_session_id=source_session_id,
+            target_session_id=target_session_id,
+        )
+        return queued
 
     async def message_status(
         self,
@@ -85,20 +108,54 @@ class SessionCollaborationService:
         config: RunConfig,
         message_id: str,
     ) -> AgentMessage:
-        return await asyncio.to_thread(self._store(config).get_message, message_id)
+        try:
+            return await asyncio.to_thread(
+                self._store(config).get_message, message_id
+            )
+        except FileNotFoundError:
+            store = await self._routed_store(config, message_id)
+            if store is None:
+                raise
+            return await asyncio.to_thread(store.get_message, message_id)
 
-    async def related_sessions(
-        self,
-        *,
-        config: RunConfig,
-        first_session_id: str,
-        second_session_id: str,
-    ) -> bool:
-        return await asyncio.to_thread(
-            self._store(config).related_sessions,
-            first_session_id,
-            second_session_id,
+    async def _routed_store(
+        self, config: RunConfig, collaboration_id: str
+    ) -> SessionCollaborationStore | None:
+        """Resolve the project store holding a collaboration item.
+
+        Items register in the user-level directory when they are enqueued;
+        the directory routes lookups from any project.
+        """
+        location = await asyncio.to_thread(
+            self._directory_for_root(config.lara_root).locate_item, collaboration_id
         )
+        if location is None:
+            return None
+        return self._store_for_root(location.lara_root)
+
+    async def _resolve_session_root(
+        self,
+        config: RunConfig,
+        manager: SessionManager,
+        session_id: str,
+    ) -> str:
+        """Resolve the project root owning a session.
+
+        Project-local sessions resolve through the manager; any session
+        registered in the user-level directory is addressable across
+        projects. Unknown sessions fail closed.
+        """
+        try:
+            manager.load(session_id)
+            return str(manager.lara_root)
+        except FileNotFoundError:
+            location = await asyncio.to_thread(
+                self._directory_for_root(config.lara_root).locate_session,
+                session_id,
+            )
+            if location is None:
+                raise
+            return location.lara_root
 
     async def list_operations(
         self,
@@ -190,6 +247,7 @@ class SessionCollaborationService:
         submission_id: str | None = None,
         case_id: str = "collaboration",
         fork_from: str | None = None,
+        model_group: str | None = None,
     ) -> CollaborationOperation:
         return await self._start(
             config=config,
@@ -199,6 +257,7 @@ class SessionCollaborationService:
             submission_id=submission_id,
             case_id=case_id,
             fork_from=fork_from,
+            model_group=model_group,
             dispatch=True,
         )
 
@@ -212,6 +271,7 @@ class SessionCollaborationService:
         submission_id: str | None = None,
         case_id: str = "collaboration",
         fork_from: str | None = None,
+        model_group: str | None = None,
     ) -> CollaborationOperation:
         return await self._start(
             config=config,
@@ -221,6 +281,7 @@ class SessionCollaborationService:
             submission_id=submission_id,
             case_id=case_id,
             fork_from=fork_from,
+            model_group=model_group,
             dispatch=False,
         )
 
@@ -234,12 +295,22 @@ class SessionCollaborationService:
         submission_id: str | None,
         case_id: str,
         fork_from: str | None,
+        model_group: str | None,
         dispatch: bool,
     ) -> CollaborationOperation:
         if not message.strip():
             raise ValueError("message must be non-empty")
+        if model_group is not None and not model_group.strip():
+            raise ValueError("model_group must be non-empty when provided")
+        model_group = model_group or None
+        if model_group is not None:
+            native = config.model_config
+            if native is None or model_group not in native.model_groups:
+                raise ValueError(f"unknown model group {model_group!r}")
+        # The source session may live in another project; the fork source must
+        # be project-local because fork copies session files.
         if source_session_id is not None:
-            manager.load(source_session_id)
+            await self._resolve_session_root(config, manager, source_session_id)
         if fork_from is not None:
             manager.load(fork_from)
         operation = await self._reserve(
@@ -251,6 +322,7 @@ class SessionCollaborationService:
             case_id=case_id,
             intent="start",
             fork_from=fork_from,
+            model_group=model_group,
         )
         store = self._store(config)
         if operation.target_session_id is None:
@@ -261,6 +333,14 @@ class SessionCollaborationService:
                 case_id=case_id,
                 fork_from=fork_from,
             )
+        await asyncio.to_thread(
+            self._directory_for_root(config.lara_root).register_item,
+            item_id=operation.operation_id,
+            kind="operation",
+            lara_root=str(config.lara_root),
+            source_session_id=source_session_id,
+            target_session_id=operation.target_session_id,
+        )
         if dispatch:
             await self._schedule(operation.operation_id, config=config, manager=manager)
         return operation
@@ -268,7 +348,13 @@ class SessionCollaborationService:
     async def status(
         self, *, config: RunConfig, operation_id: str
     ) -> CollaborationOperation:
-        return await asyncio.to_thread(self._store(config).get, operation_id)
+        try:
+            return await asyncio.to_thread(self._store(config).get, operation_id)
+        except FileNotFoundError:
+            store = await self._routed_store(config, operation_id)
+            if store is None:
+                raise
+            return await asyncio.to_thread(store.get, operation_id)
 
     async def wait(
         self,
@@ -335,6 +421,7 @@ class SessionCollaborationService:
         case_id: str,
         intent: str,
         fork_from: str | None = None,
+        model_group: str | None = None,
     ) -> CollaborationOperation:
         async with self._lock:
             if not self._accepting:
@@ -348,6 +435,7 @@ class SessionCollaborationService:
             case_id=case_id,
             message=message,
             fork_from=fork_from,
+            model_group=model_group,
         )
         return await asyncio.to_thread(
             self._store(config).reserve,
@@ -358,6 +446,7 @@ class SessionCollaborationService:
             agent_alias=config.agent_alias,
             case_id=case_id,
             message=message,
+            model_group=model_group,
         )
 
     async def _schedule(
@@ -544,7 +633,11 @@ class SessionCollaborationService:
                     if fork_from is not None:
                         target = manager.fork(fork_from, mode="agent")
                     else:
-                        target = manager.create(case_id, mode="agent")
+                        target = manager.create(
+                            case_id,
+                            mode="agent",
+                            model_group_name=operation.model_group,
+                        )
                     return await asyncio.to_thread(
                         store.attach_target,
                         operation_id,
@@ -561,29 +654,20 @@ class SessionCollaborationService:
                     raise
             await asyncio.sleep(self.poll_interval)
 
-    def _store(self, config: RunConfig) -> SessionCollaborationStore:
-        key = str(Path(config.lara_root).resolve())
+    def _store_for_root(self, lara_root: str | Path) -> SessionCollaborationStore:
+        key = str(Path(lara_root).resolve())
         return self._stores.setdefault(key, SessionCollaborationStore(key))
+
+    def _store(self, config: RunConfig) -> SessionCollaborationStore:
+        return self._store_for_root(config.lara_root)
+
+    def _directory_for_root(self, lara_root: str | Path) -> SessionDirectory:
+        key = str(user_lara_root_for(lara_root))
+        return self._directories.setdefault(key, SessionDirectory(key))
 
     def _forget_task(self, operation_id: str, completed: asyncio.Task[None]) -> None:
         if self._tasks.get(operation_id) is completed:
             self._tasks.pop(operation_id, None)
-
-    @staticmethod
-    def _validate_request(
-        manager: SessionManager,
-        source_session_id: str | None,
-        target_session_id: str,
-        message: str,
-    ) -> None:
-        if not message.strip():
-            raise ValueError("message must be non-empty")
-        manager.load(target_session_id)
-        if source_session_id is not None:
-            manager.load(source_session_id)
-            if source_session_id == target_session_id:
-                raise ValueError("source and target sessions must be different")
-
 
 def _fingerprint(**values: Any) -> str:
     payload = json.dumps(

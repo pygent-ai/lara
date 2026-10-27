@@ -2,20 +2,24 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 
 from lara.orchestration import SessionCollaborationService
+from lara.orchestration.session_collaboration import _fingerprint
 from lara.schema import CaseRunRef, RunConfig
 from lara.sessions import (
     AgentMessageState,
     CollaborationOperation,
     CollaborationState,
     SessionCollaborationStore,
+    SessionDirectory,
     SessionManager,
 )
+from tests.unit.test_model_configuration import native_runtime_config
 
 
 class _Turn:
@@ -94,21 +98,80 @@ def test_store_binds_idempotency_key_to_request_fingerprint(tmp_path) -> None:
         store.reserve(**{**values, "fingerprint": "different"})
 
 
-def test_store_recognizes_only_persisted_parent_child_relationships(tmp_path) -> None:
+def test_store_persists_model_group_and_binds_it_to_the_fingerprint(tmp_path) -> None:
     store = SessionCollaborationStore(tmp_path / ".lara")
-    store.reserve(
-        submission_id="relationship",
-        fingerprint="relationship",
-        source_session_id="parent",
-        target_session_id="child",
+    values = {
+        "submission_id": "submission-1",
+        "fingerprint": "same",
+        "source_session_id": None,
+        "target_session_id": "target-1",
+        "agent_alias": "default",
+        "case_id": "collaboration",
+        "message": "hello",
+        "model_group": "coding",
+    }
+
+    first = store.reserve(**values)
+    second = store.reserve(**values)
+
+    assert first.model_group == "coding"
+    assert second.operation_id == first.operation_id
+    assert second.model_group == "coding"
+    with pytest.raises(ValueError, match="different request"):
+        store.reserve(**{**values, "fingerprint": "different"})
+
+
+def test_request_fingerprint_distinguishes_model_groups() -> None:
+    base = _fingerprint(intent="start", message="task", model_group="coding")
+    other = _fingerprint(intent="start", message="task", model_group="backup")
+
+    assert base != other
+    assert base == _fingerprint(intent="start", message="task", model_group="coding")
+
+
+def test_store_adds_model_group_to_databases_created_before_it(tmp_path) -> None:
+    database_path = tmp_path / ".lara" / "runtime" / "session-collaboration-v1.sqlite3"
+    database_path.parent.mkdir(parents=True)
+    connection = sqlite3.connect(database_path)
+    connection.execute(
+        """
+        CREATE TABLE collaboration_operations (
+            operation_id TEXT PRIMARY KEY,
+            submission_id TEXT NOT NULL UNIQUE,
+            fingerprint TEXT NOT NULL,
+            source_session_id TEXT,
+            target_session_id TEXT,
+            agent_alias TEXT NOT NULL,
+            case_id TEXT NOT NULL,
+            message TEXT NOT NULL,
+            state TEXT NOT NULL,
+            execution_id TEXT,
+            case_run_id TEXT,
+            final_answer TEXT NOT NULL DEFAULT '',
+            error TEXT,
+            owner_id TEXT,
+            lease_until_epoch REAL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.commit()
+    connection.close()
+
+    store = SessionCollaborationStore(tmp_path / ".lara")
+    operation = store.reserve(
+        submission_id="legacy",
+        fingerprint="legacy",
+        source_session_id=None,
+        target_session_id="target-legacy",
         agent_alias="default",
         case_id="collaboration",
-        message="work",
+        message="hello",
+        model_group="coding",
     )
 
-    assert store.related_sessions("parent", "child")
-    assert store.related_sessions("child", "parent")
-    assert not store.related_sessions("parent", "unrelated")
+    assert operation.model_group == "coding"
 
 
 def test_store_lists_only_operations_related_to_the_session(tmp_path) -> None:
@@ -481,6 +544,135 @@ async def test_close_marks_owned_execution_skipped(tmp_path) -> None:
     status = await service.status(config=config, operation_id=operation.operation_id)
 
     assert status.state is CollaborationState.SKIPPED
+
+
+def _cross_project_setup(tmp_path):
+    user_root = tmp_path / "home"
+    config_a = RunConfig(
+        workspace_root=str(tmp_path / "workspace-a"),
+        lara_root=str(user_root / "projects" / "a"),
+    )
+    config_b = RunConfig(
+        workspace_root=str(tmp_path / "workspace-b"),
+        lara_root=str(user_root / "projects" / "b"),
+    )
+    manager_a = SessionManager(config_a)
+    manager_b = SessionManager(config_b)
+    source = manager_a.create("chat", mode="chat").session_id
+    target = manager_b.create("chat", mode="chat").session_id
+    return user_root, config_a, config_b, manager_a, manager_b, source, target
+
+
+@pytest.mark.asyncio
+async def test_send_delivers_cross_project_messages_into_the_target_store(
+    tmp_path,
+) -> None:
+    (
+        user_root,
+        config_a,
+        _config_b,
+        manager_a,
+        _manager_b,
+        source,
+        target,
+    ) = _cross_project_setup(tmp_path)
+    service = SessionCollaborationService(turns=cast(Any, _Turns()), poll_interval=0.01)
+
+    queued = await service.send(
+        config=config_a,
+        manager=manager_a,
+        source_session_id=source,
+        target_session_id=target,
+        message="cross project hello",
+        submission_id="submission-cross",
+    )
+
+    store_b = SessionCollaborationStore(user_root / "projects" / "b")
+    claimed = store_b.claim_messages(target, claim_id="claim-b", lease_seconds=30.0)
+    assert [message.message_id for message in claimed] == [queued.message_id]
+    located = SessionDirectory(user_root).locate_session(target)
+    assert located is not None
+    assert located.lara_root == str((user_root / "projects" / "b").resolve())
+    await service.aclose()
+
+
+@pytest.mark.asyncio
+async def test_status_routes_cross_project_items_through_the_directory(tmp_path) -> None:
+    (
+        _user_root,
+        config_a,
+        config_b,
+        manager_a,
+        _manager_b,
+        source,
+        _target,
+    ) = _cross_project_setup(tmp_path)
+    turns = _Turns()
+    service_a = SessionCollaborationService(turns=cast(Any, turns), poll_interval=0.01)
+    service_b = SessionCollaborationService(turns=cast(Any, turns), poll_interval=0.01)
+
+    operation = await service_a.enqueue_start(
+        config=config_a,
+        manager=manager_a,
+        source_session_id=source,
+        message="start work",
+        submission_id="submission-op",
+    )
+
+    routed = await service_b.status(config=config_b, operation_id=operation.operation_id)
+    assert routed.operation_id == operation.operation_id
+    with pytest.raises(FileNotFoundError):
+        await service_b.status(config=config_b, operation_id=f"op-{'a' * 32}")
+    await service_a.aclose()
+    await service_b.aclose()
+
+
+@pytest.mark.asyncio
+async def test_send_fails_closed_for_unregistered_sessions(tmp_path) -> None:
+    config, manager, source, _target = _setup(tmp_path)
+    service = SessionCollaborationService(turns=cast(Any, _Turns()), poll_interval=0.01)
+
+    with pytest.raises(FileNotFoundError):
+        await service.send(
+            config=config,
+            manager=manager,
+            source_session_id=source,
+            target_session_id="chat-chat-20260101-000000-aaaaaaaa",
+            message="hello",
+        )
+
+    await service.aclose()
+
+
+@pytest.mark.asyncio
+async def test_start_creates_the_target_session_with_the_requested_model_group(
+    tmp_path,
+) -> None:
+    config = native_runtime_config(tmp_path / "project")
+    assert config.model_config is not None
+    group_name = next(iter(config.model_config.model_groups))
+    manager = SessionManager(config)
+    service = SessionCollaborationService(turns=cast(Any, _Turns()), poll_interval=0.01)
+
+    operation = await service.enqueue_start(
+        config=config,
+        manager=manager,
+        message="start with a model",
+        model_group=group_name,
+    )
+
+    assert operation.model_group == group_name
+    assert operation.target_session_id is not None
+    target_session = manager.load(operation.target_session_id)
+    assert target_session.model_group_name == group_name
+    with pytest.raises(ValueError, match="unknown model group"):
+        await service.enqueue_start(
+            config=config,
+            manager=manager,
+            message="start with a bad model",
+            model_group="does-not-exist",
+        )
+    await service.aclose()
 
 
 async def _eventually(predicate, *, timeout: float = 1.0) -> None:

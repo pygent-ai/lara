@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pygent.llm import ModelConfig
 
 from lara.core.io import non_empty_string as _non_empty
+from lara.core.paths import user_lara_root
 from lara.credentials import load_credentials
 from lara.schema import (
     BashCliPreset,
@@ -43,9 +44,9 @@ def load_run_config(
         .expanduser()
         .resolve()
     )
-    user_lara_root = (Path.home() / ".lara").expanduser().resolve()
-    load_credentials(user_lara_root=user_lara_root)
-    config_path = user_lara_root / USER_CONFIG_FILENAME
+    user_root = user_lara_root()
+    load_credentials(user_lara_root=user_root)
+    config_path = user_root / USER_CONFIG_FILENAME
     file_config = _read_config(config_path if config_path.exists() else None)
     config_data = _merge_config(_default_config(), file_config)
     _validate_config_shape(config_data)
@@ -105,7 +106,7 @@ def load_run_config(
             _dig(config_data, "allow_read_outside_workspace"),
             default=True,
         ),
-        user_lara_root=str(user_lara_root),
+        user_lara_root=str(user_root),
         context_window=_optional_int_config(
             context_window,
             model_request.get("context_window"),
