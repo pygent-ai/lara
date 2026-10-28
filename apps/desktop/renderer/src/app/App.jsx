@@ -1226,11 +1226,17 @@ export function App() {
     if (!execution || !runningSessionIdsRef.current[sessionId]) {
       throw new Error("执行尚未连接或已经结束，请稍后重试。");
     }
-    await api.steerChat(execution.executionId, { sessionId, inputId, message, attachments });
-    // Show the input right away, but keep it pending: the runtime decides where
-    // the ReAct boundary falls, and only its boundary event moves the activity
-    // and places the input into the transcript.
+    // Show the chip before the POST resolves: immediate steering can drain the
+    // input and emit its boundary while steerChat is still in flight, and a
+    // chip added after that boundary event would never be resolved.
     setPendingSteerings((items) => addPendingSteering(items, sessionId, { inputId, text: message, attachments }));
+    try {
+      await api.steerChat(execution.executionId, { sessionId, inputId, message, attachments });
+    } catch (err) {
+      // The runtime never accepted the input, so no boundary event will resolve it.
+      setPendingSteerings((items) => resolvePendingSteering(items, sessionId, inputId));
+      throw err;
+    }
     if (activeSessionIdRef.current === sessionId) {
       setNotice("指令已送达，将打断当前步骤并立即生效。");
     }
