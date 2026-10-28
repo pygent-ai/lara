@@ -113,6 +113,8 @@ test("a 304 (null) response keeps the current groups untouched", async () => {
   response = null; // conditional GET answered 304 Not Modified
   await env.tick();
   assert.equal(updates.length, 1);
+  // An awaited refresh returns the last known payload instead of the 304 null.
+  assert.deepEqual(await sync.refresh(), { groups: [{ sessions: [{ session_id: "one" }] }] });
   stop();
 });
 

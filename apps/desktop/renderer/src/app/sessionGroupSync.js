@@ -1,6 +1,7 @@
 // Share ordering between explicit workbench refreshes and background list refreshes.
 export function createSessionGroupSync(api, onGroups) {
   let revision = 0;
+  let lastGroups = null;
 
   async function refresh(options = {}) {
     const requestRevision = ++revision;
@@ -8,9 +9,12 @@ export function createSessionGroupSync(api, onGroups) {
     // A conditional GET answers null on 304: the payload is unchanged and
     // consumers keep their current state.
     if (response && requestRevision === revision && !options.signal?.aborted) {
+      lastGroups = response;
       onGroups(response.groups || []);
     }
-    return response;
+    // Awaited callers (refreshWorkbench) dereference the payload, so a 304
+    // must hand back the groups they already have instead of null.
+    return response || lastGroups;
   }
 
   return { refresh, start: (options) => startBackgroundRefresh(refresh, options) };
