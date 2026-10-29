@@ -10,6 +10,7 @@ from pygent.llm import ModelExecution, ModelProviderResponse
 
 from lara.config import load_run_config
 from lara.core.io import plain_data
+from lara.dispatch import DispatchItem, DispatchItemState
 from tests.unit.test_model_configuration import native_runtime_config
 from lara.runtime.agent_collaboration import AGENT_WAIT_TOOL_SPEC
 from lara.runtime.service import LaraRuntimeService
@@ -60,19 +61,41 @@ def _operation(
     )
 
 
+def _dispatch_item(
+    *,
+    source_session_id: str,
+    item_id: str = "op-related",
+) -> DispatchItem:
+    return DispatchItem(
+        item_id=item_id,
+        kind="start",
+        workspace_root="/workspace",
+        agent_alias="default",
+        case_id="collaboration",
+        message="research",
+        state=DispatchItemState.QUEUED,
+        created_at="now",
+        updated_at="now",
+        source_session_id=source_session_id,
+        submission_id="start-call",
+    )
+
+
+class _Dispatch:
+    def __init__(self, parent_session_id: str) -> None:
+        self.parent_session_id = parent_session_id
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    def submit_start(self, **kwargs: Any) -> DispatchItem:
+        self.calls.append(("submit_start", kwargs))
+        return _dispatch_item(source_session_id=self.parent_session_id)
+
+
 class _Collaboration:
     def __init__(self, parent_session_id: str, agent_alias: str) -> None:
         self.parent_session_id = parent_session_id
         self.agent_alias = agent_alias
         self.calls: list[tuple[str, dict[str, Any]]] = []
-
-    async def start(self, **kwargs: Any) -> CollaborationOperation:
-        self.calls.append(("start", kwargs))
-        return _operation(
-            state=CollaborationState.QUEUED,
-            parent_session_id=self.parent_session_id,
-            agent_alias=self.agent_alias,
-        )
 
     async def send(self, **kwargs: Any) -> AgentMessage:
         self.calls.append(("send", kwargs))
@@ -115,14 +138,6 @@ class _Collaboration:
                 agent_alias=self.agent_alias,
             )
         ]
-
-    async def resume_operation(self, **kwargs: Any) -> CollaborationOperation:
-        self.calls.append(("resume", kwargs))
-        return _operation(
-            state=CollaborationState.RUNNING,
-            parent_session_id=self.parent_session_id,
-            agent_alias=self.agent_alias,
-        )
 
     async def wait_any(
         self, **kwargs: Any
@@ -230,8 +245,13 @@ async def test_model_tools_share_the_injected_session_collaboration_service(
     parent = manager.create("parent", mode="agent")
     run = manager.start_case_run(parent.session_id, "parent", run_config=config)
     collaboration = _Collaboration(parent.session_id, agent_alias)
+    dispatch = _Dispatch(parent.session_id)
     invoker = _Invoker(agent_alias)
-    service = LaraRuntimeService(config, collaboration=cast(Any, collaboration))
+    service = LaraRuntimeService(
+        config,
+        collaboration=cast(Any, collaboration),
+        dispatch=cast(Any, dispatch),
+    )
     service._model_invokers[config.resolved_agent.alias] = invoker
     for agent in service._agent_definitions.values():
         agent.llm = invoker
@@ -261,15 +281,20 @@ async def test_model_tools_share_the_injected_session_collaboration_service(
         "succeeded",
         "succeeded",
     ], repr(tool_message.results)
+    started = plain_data(tool_message.results[0].output)
+    assert started["operation_id"] == "op-related"
+    assert started["status"] == "queued"
+    assert started["source_session_id"] == parent.session_id
     listed = plain_data(tool_message.results[3].output)
     assert [item["operation_id"] for item in listed["operations"]] == ["op-related"]
     waited = plain_data(tool_message.results[5].output)
     assert [item["operation_id"] for item in waited["ready"]] == ["op-ready"]
     assert [item["operation_id"] for item in waited["pending"]] == ["op-related"]
     assert waited["timed_out"] is False
+    calls = {name: values for name, values in dispatch.calls}
+    assert calls["submit_start"]["source_session_id"] == parent.session_id
+    assert calls["submit_start"]["submission_id"] == "start-call"
     calls = {name: values for name, values in collaboration.calls}
-    assert calls["start"]["source_session_id"] == parent.session_id
-    assert calls["start"]["submission_id"] == "start-call"
     assert calls["send"]["source_session_id"] == parent.session_id
     assert calls["send"]["submission_id"] == "send-call"
     assert calls["list_operations"]["session_id"] == parent.session_id
@@ -277,14 +302,19 @@ async def test_model_tools_share_the_injected_session_collaboration_service(
 
 
 @pytest.mark.asyncio
-async def test_wait_any_checks_every_id_before_resuming_work(tmp_path: Path) -> None:
+async def test_wait_any_checks_every_id_before_waiting(tmp_path: Path) -> None:
     config = native_runtime_config(tmp_path)
     assert config.resolved_agent is not None
     agent_alias = config.resolved_agent.alias
     config.delegation.allowed_agents = (agent_alias,)
     parent = SessionManager(config).create("parent", mode="agent")
     collaboration = _Collaboration(parent.session_id, agent_alias)
-    service = LaraRuntimeService(config, collaboration=cast(Any, collaboration))
+    dispatch = _Dispatch(parent.session_id)
+    service = LaraRuntimeService(
+        config,
+        collaboration=cast(Any, collaboration),
+        dispatch=cast(Any, dispatch),
+    )
     try:
         with pytest.raises(PermissionError, match="outside this collaboration"):
             await service._wait_for_agent_collaborations(
@@ -297,4 +327,10 @@ async def test_wait_any_checks_every_id_before_resuming_work(tmp_path: Path) -> 
     finally:
         await service.close()
 
-    assert not any(name == "resume" for name, _kwargs in collaboration.calls)
+    # Every id is status-checked first; the foreign one fails the check before
+    # anything is waited on or submitted.
+    assert [name for name, _kwargs in collaboration.calls] == [
+        "item_status",
+        "item_status",
+    ]
+    assert dispatch.calls == []

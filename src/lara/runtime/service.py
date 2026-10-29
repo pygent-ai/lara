@@ -74,8 +74,14 @@ from lara.runtime.attachments import (
 from lara.runtime.bash_tasks import BashTaskObservations
 from lara.runtime.mcp import ReadinessRetryingTransport
 from lara.runtime.reminders import ReminderService
+from lara.dispatch import DispatchOperationView, DispatchService, DispatchStore
 from lara.schema import AgentSession, CaseRunRef, RunConfig
-from lara.sessions import AgentMessage, CollaborationOperation, SessionManager
+from lara.sessions import (
+    AgentMessage,
+    CollaborationOperation,
+    SessionManager,
+    user_lara_root_for,
+)
 from lara.tracing import DIFF_TOOL_SPEC, DiffTool, EventStore
 
 from .agent.common import (
@@ -261,9 +267,11 @@ class LaraRuntimeService:
         reminders: ReminderService | None = None,
         own_reminders: bool | None = None,
         collaboration: SessionCollaborationService | None = None,
+        dispatch: DispatchService | None = None,
     ) -> None:
         self.config = config
         self.collaboration = collaboration
+        self._dispatch = dispatch
         self.reminders = reminders or ReminderService(config)
         self._owns_reminders = (
             reminders is None if own_reminders is None else own_reminders
@@ -444,15 +452,17 @@ class LaraRuntimeService:
             child_config = self._child_agent_config(agent_alias)
             if model_group is not None:
                 self._require_model_group(child_config, str(model_group))
-            operation = await collaboration.start(
+            # Background starts are dispatched user-globally; the dispatch
+            # scheduler claims and drives them outside this process.
+            item = await asyncio.to_thread(
+                self._dispatch_service().submit_start,
                 config=child_config,
-                manager=SessionManager(child_config),
                 source_session_id=actor.session_id,
                 message=str(arguments["task"]),
                 submission_id=submission_id,
                 model_group=None if model_group is None else str(model_group),
             )
-            return operation.to_dict()
+            return DispatchOperationView.from_item(item).to_dict()
         if name == "agent_send":
             # Addressing policy: every session registered in the user-level
             # directory is reachable, across projects included; unknown
@@ -582,14 +592,8 @@ class LaraRuntimeService:
             completed = items
             timed_out = False
         else:
-            for item in items:
-                if isinstance(item, CollaborationOperation):
-                    child_config = self._child_agent_config(item.agent_alias)
-                    await collaboration.resume_operation(
-                        config=child_config,
-                        manager=SessionManager(child_config),
-                        operation_id=item.operation_id,
-                    )
+            # Dispatched items are driven by the dispatch scheduler; waiting is
+            # pure polling, there is no in-process resume anymore.
             completed, timed_out = await collaboration.wait_any(
                 config=self.config,
                 collaboration_ids=collaboration_ids,
@@ -608,7 +612,7 @@ class LaraRuntimeService:
     @classmethod
     def _require_collaboration_access(
         cls,
-        item: AgentMessage | CollaborationOperation,
+        item: AgentMessage | CollaborationOperation | DispatchOperationView,
         actor_session_id: str,
     ) -> None:
         if isinstance(item, AgentMessage):
@@ -618,7 +622,8 @@ class LaraRuntimeService:
 
     @staticmethod
     def _require_operation_access(
-        operation: CollaborationOperation, actor_session_id: str
+        operation: CollaborationOperation | DispatchOperationView,
+        actor_session_id: str,
     ) -> None:
         if actor_session_id not in {
             operation.source_session_id,
@@ -771,6 +776,15 @@ class LaraRuntimeService:
             self._model_invokers.setdefault(resolved.alias, agent.llm)
         self._agent_definitions[key] = agent
         return agent
+
+    def _dispatch_service(self) -> DispatchService:
+        """User-level dispatch service; overridable via the constructor."""
+        if self._dispatch is None:
+            root = user_lara_root_for(self.config.lara_root)
+            self._dispatch = DispatchService(
+                DispatchStore(Path(root) / "dispatch-v1.sqlite3")
+            )
+        return self._dispatch
 
     def _child_agent_config(self, alias: str) -> RunConfig:
         if alias == self.config.agent_alias:

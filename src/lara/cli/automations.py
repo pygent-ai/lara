@@ -5,8 +5,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from lara.automations import AutomationService, AutomationStore
 from lara.config import load_run_config
+from lara.dispatch import (
+    DispatchService,
+    DispatchStore,
+    automation_payload,
+    run_payload,
+)
 
 
 def register_automation_parser(subparsers: Any) -> None:
@@ -75,13 +80,13 @@ def _add_schedule(parser: argparse.ArgumentParser, *, required: bool) -> None:
     group.add_argument("--rrule", help="RFC 5545 recurrence rule")
 
 
-def _store(args: argparse.Namespace) -> AutomationStore:
+def _store(args: argparse.Namespace) -> DispatchStore:
     config = load_run_config(workspace_root=args.workspace_root)
-    return AutomationStore(Path(config.user_lara_root) / "automations-v1.sqlite3")
+    return DispatchStore(Path(config.user_lara_root) / "dispatch-v1.sqlite3")
 
 
-def _service(args: argparse.Namespace) -> AutomationService:
-    return AutomationService(_store(args))
+def _service(args: argparse.Namespace) -> DispatchService:
+    return DispatchService(_store(args))
 
 
 def _prompt(args: argparse.Namespace) -> str | None:
@@ -107,7 +112,7 @@ def _destination(args: argparse.Namespace) -> tuple[str | None, str | None]:
 def _create(args: argparse.Namespace) -> dict[str, object]:
     destination, target = _destination(args)
     assert destination is not None
-    return _service(args).create(
+    task = _service(args).create(
         name=args.name,
         prompt=_prompt(args) or "",
         workspace_root=str(Path(args.workspace_root or Path.cwd()).resolve()),
@@ -116,25 +121,33 @@ def _create(args: argparse.Namespace) -> dict[str, object]:
         timezone_name=args.timezone,
         at_time=args.at_time,
         rrule=args.rrule,
-    ).to_dict()
+    )
+    return automation_payload(task, _store(args))
 
 
 def _list(args: argparse.Namespace) -> dict[str, object]:
+    store = _store(args)
     return {
-        "automations": [item.to_dict() for item in _store(args).list(status=args.status)]
+        "automations": [
+            automation_payload(item, store) for item in store.list(status=args.status)
+        ]
     }
 
 
 def _show(args: argparse.Namespace) -> dict[str, object]:
-    return _store(args).get(args.automation_id).to_dict()
+    store = _store(args)
+    return automation_payload(store.get(args.automation_id), store)
 
 
 def _update(args: argparse.Namespace) -> dict[str, object]:
     changes: dict[str, object] = {}
-    for name in ("name", "timezone", "at_time", "rrule"):
+    for name in ("name", "at_time", "rrule"):
         value = getattr(args, name, None)
         if value is not None:
             changes[name] = value
+    timezone = getattr(args, "timezone", None)
+    if timezone is not None:
+        changes["timezone_name"] = timezone
     prompt = _prompt(args)
     if prompt is not None:
         changes["prompt"] = prompt
@@ -144,15 +157,19 @@ def _update(args: argparse.Namespace) -> dict[str, object]:
         changes["target_session_id"] = target
     if not changes:
         raise ValueError("at least one update field is required")
-    return _service(args).update(args.automation_id, **changes).to_dict()
+    store = _store(args)
+    task = _service(args).update(args.automation_id, **changes)
+    return automation_payload(task, store)
 
 
 def _pause(args: argparse.Namespace) -> dict[str, object]:
-    return _service(args).pause(args.automation_id).to_dict()
+    store = _store(args)
+    return automation_payload(_service(args).pause(args.automation_id), store)
 
 
 def _resume(args: argparse.Namespace) -> dict[str, object]:
-    return _service(args).resume(args.automation_id).to_dict()
+    store = _store(args)
+    return automation_payload(_service(args).resume(args.automation_id), store)
 
 
 def _delete(args: argparse.Namespace) -> dict[str, object]:
@@ -160,14 +177,14 @@ def _delete(args: argparse.Namespace) -> dict[str, object]:
 
 
 def _run(args: argparse.Namespace) -> dict[str, object]:
-    return _store(args).request_run(args.automation_id).to_dict()
+    return run_payload(_store(args).request_run(args.automation_id))
 
 
 def _runs(args: argparse.Namespace) -> dict[str, object]:
     return {
         "runs": [
-            item.to_dict()
-            for item in _store(args).list_runs(args.automation_id, limit=args.limit)
+            run_payload(item)
+            for item in _store(args).list_items(args.automation_id, limit=args.limit)
         ]
     }
 

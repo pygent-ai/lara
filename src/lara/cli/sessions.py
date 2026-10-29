@@ -2,17 +2,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
 from lara.config import load_run_config
 from lara.core.io import plain_object
+from lara.dispatch import DispatchOperationView, DispatchService, DispatchStore
 from lara.orchestration import LocalExecutionHost, ManagedSessionTurn
 from lara.schema import RunConfig
-from lara.sessions import SessionManager
+from lara.sessions import SessionManager, user_lara_root_for
 
 
 def register_session_parser(subparsers: Any) -> None:
@@ -144,36 +143,36 @@ def _session_send(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _session_start(args: argparse.Namespace) -> dict[str, Any]:
-    operation, config = asyncio.run(_enqueue_collaboration_start(args))
-    _spawn_collaboration_worker(args, operation.operation_id, config)
-    return operation.to_dict()
+    config, _manager = _collaboration_config_and_manager(args)
+    item = _dispatch_service(config).submit_start(
+        config=config,
+        message=args.message,
+        source_session_id=args.source_session,
+        submission_id=args.submission_id,
+        model_group=args.model_group,
+    )
+    return DispatchOperationView.from_item(item).to_dict()
 
 
 def _session_fork(args: argparse.Namespace) -> dict[str, Any]:
     config, manager = _collaboration_config_and_manager(args)
     if not args.message:
         return manager.fork(args.session_id, mode="chat").to_dict()
-    operation, config = asyncio.run(_enqueue_fork_start(args, config, manager))
-    _spawn_collaboration_worker(args, operation.operation_id, config)
-    return operation.to_dict()
+    item = _dispatch_service(config).submit_fork(
+        config=config,
+        fork_from=args.session_id,
+        message=args.message,
+        submission_id=args.submission_id,
+        model_group=args.model_group,
+    )
+    return DispatchOperationView.from_item(item).to_dict()
 
 
-async def _enqueue_fork_start(
-    args: argparse.Namespace,
-    config: RunConfig,
-    manager: SessionManager,
-) -> tuple[Any, RunConfig]:
-    async with LocalExecutionHost() as host:
-        operation = await host.collaboration.enqueue_start(
-            config=config,
-            manager=manager,
-            message=args.message,
-            source_session_id=args.source_session,
-            submission_id=args.submission_id,
-            fork_from=args.session_id,
-            model_group=args.model_group,
-        )
-        return operation, config
+def _dispatch_service(config: RunConfig) -> DispatchService:
+    store = DispatchStore(
+        user_lara_root_for(config.lara_root) / "dispatch-v1.sqlite3"
+    )
+    return DispatchService(store)
 
 
 async def _enqueue_agent_message(args: argparse.Namespace) -> dict[str, Any]:
@@ -191,23 +190,6 @@ async def _enqueue_agent_message(args: argparse.Namespace) -> dict[str, Any]:
         return message.to_dict()
 
 
-async def _enqueue_collaboration_start(
-    args: argparse.Namespace,
-) -> tuple[Any, RunConfig]:
-    config, manager = _collaboration_config_and_manager(args)
-    async with LocalExecutionHost() as host:
-        values = {
-            "config": config,
-            "manager": manager,
-            "message": args.message,
-            "source_session_id": args.source_session,
-            "submission_id": args.submission_id,
-            "model_group": args.model_group,
-        }
-        operation = await host.collaboration.enqueue_start(**values)
-        return operation, config
-
-
 def _session_status(args: argparse.Namespace) -> dict[str, Any]:
     return asyncio.run(_read_collaboration_status(args))
 
@@ -215,16 +197,11 @@ def _session_status(args: argparse.Namespace) -> dict[str, Any]:
 async def _read_collaboration_status(args: argparse.Namespace) -> dict[str, Any]:
     config, _manager = _collaboration_config_and_manager(args)
     async with LocalExecutionHost() as host:
-        if args.collaboration_id.startswith("msg-"):
-            message = await host.collaboration.message_status(
-                config=config,
-                message_id=args.collaboration_id,
-            )
-            return message.to_dict()
-        operation = await host.collaboration.status(
-            config=config, operation_id=args.collaboration_id
+        item = await host.collaboration.item_status(
+            config=config,
+            collaboration_id=args.collaboration_id,
         )
-        return operation.to_dict()
+        return item.to_dict()
 
 
 def _session_wait(args: argparse.Namespace) -> dict[str, Any]:
@@ -232,7 +209,7 @@ def _session_wait(args: argparse.Namespace) -> dict[str, Any]:
 
 
 async def _wait_for_collaboration(args: argparse.Namespace) -> dict[str, Any]:
-    config, manager = _collaboration_config_and_manager(args)
+    config, _manager = _collaboration_config_and_manager(args)
     async with LocalExecutionHost() as host:
         if args.collaboration_id.startswith("msg-"):
             message = await host.collaboration.wait_message(
@@ -240,48 +217,13 @@ async def _wait_for_collaboration(args: argparse.Namespace) -> dict[str, Any]:
                 message_id=args.collaboration_id,
             )
             return message.to_dict()
-        await host.collaboration.resume_operation(
-            config=config,
-            manager=manager,
-            operation_id=args.collaboration_id,
-        )
+        # Dispatched items are driven by the dispatch scheduler; waiting is
+        # pure polling, there is no in-process resume anymore.
         operation = await host.collaboration.wait(
             config=config,
             operation_id=args.collaboration_id,
         )
         return operation.to_dict()
-
-
-def _spawn_collaboration_worker(
-    args: argparse.Namespace,
-    operation_id: str,
-    config: RunConfig,
-) -> None:
-    command = [
-        sys.executable,
-        "-m",
-        "lara.cli.collaboration_worker",
-        "--workspace-root",
-        config.workspace_root,
-        "--agent",
-        config.agent_alias,
-    ]
-    if args.max_steps is not None:
-        command.extend(("--max-steps", str(args.max_steps)))
-    command.append(operation_id)
-    options: dict[str, Any] = {
-        "stdin": subprocess.DEVNULL,
-        "stdout": subprocess.DEVNULL,
-        "stderr": subprocess.DEVNULL,
-        "close_fds": True,
-    }
-    if os.name == "nt":
-        options["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(
-            subprocess, "CREATE_NEW_PROCESS_GROUP", 0
-        )
-    else:
-        options["start_new_session"] = True
-    subprocess.Popen(command, **options)  # noqa: S603 - arguments are a fixed list.
 
 
 async def _run_session_turn(args: argparse.Namespace) -> dict[str, Any]:

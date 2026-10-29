@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import io
-import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -15,10 +14,14 @@ import pytest
 from lara.cli import build_parser, main
 from lara.cli.sessions import (
     _interactive_session_chat,
-    _spawn_collaboration_worker,
+    _session_fork,
+    _session_start,
     _turn_result_payload,
 )
+from lara.config import load_run_config
+from lara.dispatch import DispatchStore
 from lara.schema import CaseRunRef, RunConfig, default_cli_bash_presets
+from lara.sessions import SessionManager
 
 
 def test_main_prints_json_without_escaping_non_ascii() -> None:
@@ -98,36 +101,56 @@ def test_session_fork_command_accepts_optional_message() -> None:
     )
 
 
-def test_collaboration_worker_is_detached_with_explicit_runtime_context(
-    tmp_path,
+def test_session_start_and_fork_submit_dispatch_items_without_a_worker(
+    tmp_path, monkeypatch
 ) -> None:
-    args = argparse.Namespace(workspace_root=None, max_steps=7)
-    config = RunConfig(
-        workspace_root=str(tmp_path),
-        lara_root=str(tmp_path / ".lara"),
-        agent_alias="dev",
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    dispatch_path = tmp_path / ".lara" / "dispatch-v1.sqlite3"
+
+    start_payload = _session_start(
+        argparse.Namespace(
+            workspace_root=str(workspace),
+            agent_alias=None,
+            message="background task",
+            submission_id="start-call",
+            source_session=None,
+            model_group=None,
+            max_steps=None,
+        )
     )
 
-    with patch("lara.cli.sessions.subprocess.Popen") as popen:
-        _spawn_collaboration_worker(args, "op-1", config)
+    assert start_payload["operation_id"].startswith("op-")
+    assert start_payload["submission_id"] == "start-call"
+    assert start_payload["status"] == "queued"
+    store = DispatchStore(dispatch_path)
+    start_item = store.get_item(start_payload["operation_id"])
+    assert start_item.kind == "start"
+    assert start_item.message == "background task"
+    assert start_item.task_id is None
+    assert start_item.state.value == "queued"
 
-    command = popen.call_args.args[0]
-    options = popen.call_args.kwargs
-    assert command == [
-        sys.executable,
-        "-m",
-        "lara.cli.collaboration_worker",
-        "--workspace-root",
-        str(tmp_path.resolve()),
-        "--agent",
-        "dev",
-        "--max-steps",
-        "7",
-        "op-1",
-    ]
-    assert options["stdin"] is subprocess.DEVNULL
-    assert options["stdout"] is subprocess.DEVNULL
-    assert options["stderr"] is subprocess.DEVNULL
+    source_session = SessionManager(
+        load_run_config(workspace_root=str(workspace))
+    ).create("chat", mode="chat").session_id
+    fork_payload = _session_fork(
+        argparse.Namespace(
+            workspace_root=str(workspace),
+            agent_alias=None,
+            session_id=source_session,
+            message="branch task",
+            submission_id="fork-call",
+            source_session=None,
+            model_group=None,
+            max_steps=None,
+        )
+    )
+
+    fork_item = store.get_item(fork_payload["operation_id"])
+    assert fork_item.kind == "fork"
+    assert fork_item.source_session_id == source_session
+    assert fork_item.message == "branch task"
 
 
 def test_turn_result_payload_is_the_cli_result_contract() -> None:

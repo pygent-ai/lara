@@ -30,3 +30,28 @@ def lara_project_data_in_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
         return project_lara_root(workspace_root, user_root)
 
     monkeypatch.setattr("lara.schema.models.project_lara_root", redirected)
+
+
+@pytest.fixture(autouse=True)
+def lara_dispatch_store_in_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the user-level dispatch store out of ~/.lara.
+
+    App tests exercise the real lifespan, which starts the dispatch scheduler;
+    against the real store it would materialize due tasks and claim queued
+    work belonging to production. Tests that patch Path.home themselves keep
+    working: their store path no longer matches the real one, so the
+    redirect passes through.
+    """
+    from lara.dispatch import DispatchStore as real_store
+
+    real_dispatch_store = user_lara_root() / "dispatch-v1.sqlite3"
+    test_home = tmp_path / "lara-home"
+
+    def redirected(path: str | Path, *, legacy_path: str | Path | None = None):
+        if Path(path).resolve() == real_dispatch_store.resolve():
+            return real_store(
+                test_home / "dispatch-v1.sqlite3", legacy_path=legacy_path
+            )
+        return real_store(path, legacy_path=legacy_path)
+
+    monkeypatch.setattr("lara.dispatch.DispatchStore", redirected)

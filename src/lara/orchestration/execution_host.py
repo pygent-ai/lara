@@ -26,7 +26,7 @@ class LocalExecutionHost:
             coordinator=self.coordinator,
             acquire_runtime=self.acquire_runtime,
         )
-        self.collaboration = SessionCollaborationService(turns=self.turns)
+        self.collaboration = SessionCollaborationService()
         attach_collaboration = getattr(self.runtime_pool, "attach_collaboration", None)
         if callable(attach_collaboration):
             attach_collaboration(self.collaboration)
