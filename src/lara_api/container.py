@@ -13,12 +13,11 @@ from lara.sessions import SessionManager
 from .project_state import GuiProjectState, SessionScope
 
 if TYPE_CHECKING:
-    from lara.automations import AutomationScheduler, AutomationService, AutomationStore
+    from lara.dispatch import DispatchScheduler, DispatchService, DispatchStore
     from lara.orchestration import (
         RuntimeLease,
         SessionCollaborationService,
         SessionExecutionCoordinator,
-        SessionTurnService,
         WorkspaceRuntimePool,
     )
     from lara.runtime.reminders import ReminderService
@@ -39,13 +38,12 @@ class ApiContext:
     _reminders: ReminderService | None = None
     _chat_registry: Any | None = None
     _session_coordinator: SessionExecutionCoordinator | None = None
-    _session_turns: SessionTurnService | None = None
     _session_collaboration: SessionCollaborationService | None = None
     _runtime_pool: WorkspaceRuntimePool | None = None
     _terminal_service: Any | None = None
-    _automation_store: AutomationStore | None = None
-    _automation_service: AutomationService | None = None
-    _automation_scheduler: AutomationScheduler | None = None
+    _dispatch_store: DispatchStore | None = None
+    _dispatch_service: DispatchService | None = None
+    _dispatch_scheduler: DispatchScheduler | None = None
     _stale_runs_reconciled: bool = False
     _lock: RLock = field(default_factory=RLock)
 
@@ -108,18 +106,9 @@ class ApiContext:
     def session_collaboration(self) -> SessionCollaborationService:
         with self._lock:
             if self._session_collaboration is None:
-                from lara.orchestration import (
-                    SessionCollaborationService,
-                    SessionTurnService,
-                )
+                from lara.orchestration import SessionCollaborationService
 
-                self._session_turns = SessionTurnService(
-                    coordinator=self.session_coordinator,
-                    acquire_runtime=self.acquire_runtime,
-                )
-                self._session_collaboration = SessionCollaborationService(
-                    turns=self._session_turns
-                )
+                self._session_collaboration = SessionCollaborationService()
                 self.runtime_pool.attach_collaboration(self._session_collaboration)
             return self._session_collaboration
 
@@ -153,46 +142,46 @@ class ApiContext:
             return self._terminal_service
 
     @property
-    def automation_store(self) -> AutomationStore:
+    def dispatch_store(self) -> DispatchStore:
         with self._lock:
-            if self._automation_store is None:
-                from lara.automations import AutomationStore
+            if self._dispatch_store is None:
+                from lara.dispatch import DispatchStore
 
-                self._automation_store = AutomationStore(
-                    Path(self.config.user_lara_root) / "automations-v1.sqlite3"
+                self._dispatch_store = DispatchStore(
+                    Path(self.config.user_lara_root) / "dispatch-v1.sqlite3"
                 )
-            return self._automation_store
+            return self._dispatch_store
 
     @property
-    def automation_service(self) -> AutomationService:
+    def dispatch_service(self) -> DispatchService:
         with self._lock:
-            if self._automation_service is None:
-                from lara.automations import AutomationService
+            if self._dispatch_service is None:
+                from lara.dispatch import DispatchService
 
-                self._automation_service = AutomationService(self.automation_store)
-            return self._automation_service
+                self._dispatch_service = DispatchService(self.dispatch_store)
+            return self._dispatch_service
 
     @property
-    def automation_scheduler(self) -> AutomationScheduler:
+    def dispatch_scheduler(self) -> DispatchScheduler:
         with self._lock:
-            if self._automation_scheduler is None:
-                from lara.automations import AutomationScheduler
+            if self._dispatch_scheduler is None:
+                from lara.dispatch import DispatchScheduler
 
-                self._automation_scheduler = AutomationScheduler(
-                    store=self.automation_store,
+                self._dispatch_scheduler = DispatchScheduler(
+                    store=self.dispatch_store,
                     coordinator=self.session_coordinator,
                     acquire_runtime=self.acquire_runtime,
-                    config_factory=self._automation_config,
+                    config_factory=self._dispatch_config,
                 )
-            return self._automation_scheduler
+            return self._dispatch_scheduler
 
-    def start_automation_scheduler(self) -> None:
-        self.automation_scheduler.start()
+    def start_dispatch_scheduler(self) -> None:
+        self.dispatch_scheduler.start()
 
-    def _automation_config(self, workspace_root: str) -> RunConfig:
+    def _dispatch_config(self, workspace_root: str, agent_alias: str | None) -> RunConfig:
         return load_run_config(
             workspace_root=workspace_root,
-            agent_alias=self.agent_alias,
+            agent_alias=agent_alias or self.agent_alias,
             max_steps=self.max_steps,
             context_window=self.context_window,
         )
@@ -205,8 +194,8 @@ class ApiContext:
 
     async def aclose(self) -> None:
         with self._lock:
-            automation_scheduler = self._automation_scheduler
-            self._automation_scheduler = None
+            dispatch_scheduler = self._dispatch_scheduler
+            self._dispatch_scheduler = None
             reminders = self._reminders
             self._reminders = None
             registry = self._chat_registry
@@ -215,13 +204,12 @@ class ApiContext:
             self._session_coordinator = None
             collaboration = self._session_collaboration
             self._session_collaboration = None
-            self._session_turns = None
             runtime_pool = self._runtime_pool
             self._runtime_pool = None
             terminal_service = self._terminal_service
             self._terminal_service = None
-        if automation_scheduler is not None:
-            await automation_scheduler.close()
+        if dispatch_scheduler is not None:
+            await dispatch_scheduler.close()
         if terminal_service is not None:
             terminal_service.close()
         if runtime_pool is not None:

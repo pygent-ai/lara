@@ -45,7 +45,7 @@ def create_app(
             lease = await context.acquire_runtime()
             await lease.release()
             lease = None
-            context.start_automation_scheduler()
+            context.start_dispatch_scheduler()
             yield
         finally:
             if lease is not None:
