@@ -32,7 +32,9 @@ export function AddModelForm({ connection, credentialValue, catalogs, api, defau
   // this capped, scrollable listbox instead.
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [highlight, setHighlight] = useState(-1);
-  const [expanded, setExpanded] = useState(false);
+  // The add form opens expanded: picking the 能力模板 is part of adding a
+  // model, not a follow-up edit on a saved row.
+  const [expanded, setExpanded] = useState(true);
   const controlRef = useRef(null);
   const optionsRef = useRef(null);
   const request = useMemo(() => (

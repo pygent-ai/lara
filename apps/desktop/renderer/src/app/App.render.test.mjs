@@ -2477,11 +2477,9 @@ test("add-model id field uses a scrollable combobox instead of a datalist", () =
   assert.doesNotMatch(html, /<datalist/);
   assert.match(html, /role="combobox"/);
   assert.doesNotMatch(html, /role="listbox"/);
-  // The add-model row mounts collapsed and mirrors a saved model row: one
-  // head line with 模型选择 / 本地名称 / API 协议 plus icon actions, and the
-  // capability configuration folded below.
-  assert.match(html, /class="model-route-card pool-row connection-model-new"/);
-  assert.doesNotMatch(html, /pool-row-open/);
+  // The add-model row mounts expanded: picking the 能力模板 is part of adding
+  // a model, not a follow-up edit on a saved row.
+  assert.match(html, /class="model-route-card pool-row pool-row-open connection-model-new"/);
   for (const field of ['aria-label="模型选择"', 'aria-label="本地名称"', 'aria-label="API 协议"']) assert.ok(html.includes(field));
   assert.match(html, /能力模板/);
   // 测试/保存/删除 are icon actions in the head line.
