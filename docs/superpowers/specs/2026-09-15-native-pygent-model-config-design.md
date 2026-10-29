@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved direction: replace Lara's route-based model configuration with Pygent's native model configuration. Do not migrate or execute the legacy `routes` and `fallback` format. The user's existing configuration was copied verbatim to `C:\Users\Administrator\.lora\config.pre-model-connections-20260915-190310.yaml` before this design was written.
+Approved direction: replace Lara's route-based model configuration with Pygent's native model configuration. Do not migrate or execute the legacy `routes` and `fallback` format. The user's existing configuration was copied verbatim to `C:\Users\Administrator\.lara\config.pre-model-connections-20260915-190310.yaml` before this design was written.
 
 ## Goals
 
