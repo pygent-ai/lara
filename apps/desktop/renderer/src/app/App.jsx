@@ -822,7 +822,7 @@ export function App() {
         const current = pendingSessionMessagesRef.current.get(streamSessionId) || streamMessages;
         const next = updater(current);
         streamMessages = next;
-        pendingSessionMessagesRef.current.set(streamSessionId, next);
+        rememberSessionEntry(pendingSessionMessagesRef.current, streamSessionId, next);
       };
 
       // Re-attaching to a running execution replays its journal from the
@@ -915,8 +915,8 @@ export function App() {
           },
         ];
         if (initialSessionId) {
-          pendingSessionMessagesRef.current.set(initialSessionId, nextMessages);
-          sessionLiveEventsRef.current.set(initialSessionId, streamEvents);
+          rememberSessionEntry(pendingSessionMessagesRef.current, initialSessionId, nextMessages);
+          rememberSessionEntry(sessionLiveEventsRef.current, initialSessionId, streamEvents);
         }
         streamMessages = nextMessages;
         messagesRef.current = nextMessages;
@@ -967,7 +967,7 @@ export function App() {
                   && sessionLoadTokenRef.current === initialLoadToken;
                 streamSessionId = eventSessionId;
                 setSessionRunning(eventSessionId, true);
-                pendingSessionMessagesRef.current.set(eventSessionId, streamMessages);
+                rememberSessionEntry(pendingSessionMessagesRef.current, eventSessionId, streamMessages);
                 if (followSession) {
                   activeSessionIdRef.current = eventSessionId;
                   setActiveSession((current) => current || {
@@ -1082,7 +1082,7 @@ export function App() {
           if (finalStatus === "Skipped") {
             // A cancelled turn keeps the live transcript on screen: rebuilding
             // from history would remount every activity block collapsed.
-            pendingSessionMessagesRef.current.set(streamSessionId, streamMessages);
+            rememberSessionEntry(pendingSessionMessagesRef.current, streamSessionId, streamMessages);
           } else {
             pendingSessionMessagesRef.current.delete(streamSessionId);
           }
@@ -3913,7 +3913,7 @@ export function appendSessionLiveTraceEvent(cache, sessionId, currentEvents, eve
   const next = [...events, event];
   const limited = next.length > limit ? next.slice(-limit) : next;
   if (sessionId) {
-    cache.set(sessionId, limited);
+    rememberSessionEntry(cache, sessionId, limited);
   }
   return limited;
 }
@@ -4870,24 +4870,28 @@ function sessionDetailSignature(session) {
   ].join("|");
 }
 
-export function rememberSessionView(cache, sessionId, view, limit = 5) {
-  if (!cache || !sessionId) return;
-  cache.delete(sessionId);
-  cache.set(sessionId, view);
-  while (cache.size > limit) {
-    cache.delete(cache.keys().next().value);
-  }
-}
-
-// Paged-in raw history per session, bounded like the view cache: a session
-// dropped from the cache simply reloads its tail page on the next visit.
-export function rememberSessionHistory(cache, sessionId, entry, limit = 8) {
-  if (!cache || !sessionId) return;
+// Bounded per-session map entry with LRU eviction (recency refresh on
+// re-write, so an actively streaming session can never evict itself). A
+// session dropped from such a cache simply falls back to the API fetches the
+// session-switch path already performs.
+export function rememberSessionEntry(cache, sessionId, entry, limit = 8) {
+  if (!cache || !sessionId) return entry;
   cache.delete(sessionId);
   cache.set(sessionId, entry);
   while (cache.size > limit) {
     cache.delete(cache.keys().next().value);
   }
+  return entry;
+}
+
+export function rememberSessionView(cache, sessionId, view, limit = 5) {
+  return rememberSessionEntry(cache, sessionId, view, limit);
+}
+
+// Paged-in raw history per session, bounded like the view cache: a session
+// dropped from the cache simply reloads its tail page on the next visit.
+export function rememberSessionHistory(cache, sessionId, entry, limit = 8) {
+  return rememberSessionEntry(cache, sessionId, entry, limit);
 }
 
 function logSessionSwitchPerformance({ sessionId, startedAt, historyCount, historyTotal }) {

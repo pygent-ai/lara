@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import test from "node:test";
+import test, { mock } from "node:test";
 
 import { attachProcessDiagnostics, attachWindowDiagnostics } from "./diagnostics.mjs";
 
-function createWindow() {
-  return { webContents: new EventEmitter() };
+function createWindow({ reloads } = {}) {
+  return {
+    webContents: Object.assign(new EventEmitter(), {
+      isDestroyed: () => false,
+      reload: () => reloads?.push("reload"),
+    }),
+  };
 }
 
 function createLogger() {
@@ -35,6 +40,63 @@ test("a clean renderer exit from a normal window close is not logged", () => {
   window.webContents.emit("render-process-gone", {}, { reason: "clean-exit", exitCode: 0 });
 
   assert.deepEqual(logger.errors, []);
+});
+
+test("an abnormally dead renderer is reloaded once to recover the window", () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const reloads = [];
+    const window = createWindow({ reloads });
+    const logger = createLogger();
+    attachWindowDiagnostics({ window, logger });
+
+    window.webContents.emit("render-process-gone", {}, { reason: "oom", exitCode: -1 });
+    assert.deepEqual(reloads, []);
+    mock.timers.tick(1000);
+    assert.deepEqual(reloads, ["reload"]);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("a crash loop disables auto-reload instead of reloading forever", () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const reloads = [];
+    const window = createWindow({ reloads });
+    const logger = createLogger();
+    attachWindowDiagnostics({ window, logger });
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      window.webContents.emit("render-process-gone", {}, { reason: "crashed", exitCode: -1 });
+      mock.timers.tick(1000);
+    }
+    assert.equal(reloads.length, 3);
+
+    // Two further deaths inside the window must not schedule more reloads.
+    window.webContents.emit("render-process-gone", {}, { reason: "crashed", exitCode: -1 });
+    window.webContents.emit("render-process-gone", {}, { reason: "crashed", exitCode: -1 });
+    mock.timers.tick(1000);
+    assert.equal(reloads.length, 3);
+    assert.ok(logger.errors.some((line) => line.includes("auto-reload disabled")));
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("a clean renderer exit schedules no reload", () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const reloads = [];
+    const window = createWindow({ reloads });
+    attachWindowDiagnostics({ window, logger: createLogger() });
+
+    window.webContents.emit("render-process-gone", {}, { reason: "clean-exit", exitCode: 0 });
+    mock.timers.tick(1000);
+    assert.deepEqual(reloads, []);
+  } finally {
+    mock.timers.reset();
+  }
 });
 
 test("renderer console errors are forwarded in development, other levels are not", () => {

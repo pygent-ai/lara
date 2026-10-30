@@ -1461,6 +1461,21 @@ test("session live events survive switching away while another session is runnin
   assert.equal(cache.has("session-2"), false);
 });
 
+test("session live event caches evict their oldest session beyond the cap", () => {
+  const cache = new Map();
+  const event = { id: "execution-1", type: "model.started" };
+
+  appModule.appendSessionLiveTraceEvent(cache, "session-1", [], event);
+  appModule.appendSessionLiveTraceEvent(cache, "session-2", [], event);
+  for (let index = 3; index <= 9; index += 1) {
+    appModule.appendSessionLiveTraceEvent(cache, `session-${index}`, [], event);
+  }
+
+  assert.equal(cache.has("session-1"), false);
+  assert.equal(cache.has("session-2"), true);
+  assert.deepEqual(cache.get("session-2"), [event]);
+});
+
 test("initial workbench selects the first session from the active project only", () => {
   const groups = [
     {

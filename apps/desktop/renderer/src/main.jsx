@@ -1,3 +1,6 @@
+// Must stay the first import: the guard has to shadow performance.measure
+// before any react-dom entry is evaluated (see the guard module's comment).
+import "./app/reactTracksGuard.js";
 import React from "react";
 import { createRoot } from "react-dom/client";
 
