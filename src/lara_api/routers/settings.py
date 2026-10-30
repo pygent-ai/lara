@@ -54,6 +54,15 @@ async def update_settings(
             agent_alias=agent_alias,
             context=context,
         )
+    elif request.model_key_renames:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "invalid_model_configuration",
+                "path": "model_config",
+                "message": "model_key_renames requires model_config",
+            },
+        )
     if request.approvals_enabled is not None:
         update_user_approvals(user_lara_root, enabled=request.approvals_enabled)
     config = await context.areload(overrides)
@@ -138,12 +147,13 @@ def _replace_native_model_settings(
         group_models = _validate_native_model_config(
             connections, models, groups
         )
+        renames = _validate_model_key_renames(request, context, models)
         group_name = non_empty_string(request.default_model_group)
         if groups and (group_name is None or group_name not in groups):
             raise ValueError(
                 f"default_model_group references unknown model group {group_name!r}"
             )
-        _guard_persisted_session_selections(context, group_models)
+        _guard_persisted_session_selections(context, group_models, renames)
         referenced_credentials = {
             credential["env"]
             for connection in connections.values()
@@ -175,6 +185,9 @@ def _replace_native_model_settings(
             secret = non_empty_string(value)
             if secret:
                 set_user_credential(user_lara_root, env_name, secret)
+        # Migrate before the config replacement: sessions then never reference
+        # keys that are missing from whichever configuration is on disk.
+        _migrate_model_key_renames(context, renames)
         replace_user_model_config(
             user_lara_root,
             model_config=native,
@@ -247,8 +260,89 @@ def _require_native_name(name: str, label: str) -> None:
         raise ValueError(f"{label} must be a non-empty string")
 
 
+def _validate_model_key_renames(
+    request: UpdateSettingsRequest,
+    context: ApiContext,
+    models: dict[str, Any],
+) -> dict[str, str]:
+    """Validate a submitted old-key → new-key rename mapping.
+
+    Renames let the replacement migrate session selections instead of
+    rejecting the save; every source must exist in the live configuration,
+    every target in the submitted one, and a key cannot be both kept and
+    renamed (which also rules out chains through another rename).
+    """
+
+    renames = request.model_key_renames
+    if not renames:
+        return {}
+    live = context.config.model_config
+    if live is None:
+        raise ValueError(
+            "model_key_renames requires an existing model configuration"
+        )
+    new_keys = set(models)
+    for previous, current in renames.items():
+        _require_native_name(previous, "renamed model key")
+        _require_native_name(current, "rename target model key")
+        if previous == current:
+            raise ValueError(f"model key rename {previous!r} must change the key")
+        if previous not in live.models:
+            raise ValueError(
+                f"model key rename source {previous!r} does not exist in the "
+                "current model configuration"
+            )
+        if current not in new_keys:
+            raise ValueError(
+                f"model key rename target {current!r} does not exist in the "
+                "submitted model configuration"
+            )
+        if previous in new_keys:
+            raise ValueError(
+                f"model key {previous!r} cannot be renamed and kept at the "
+                "same time"
+            )
+    return renames
+
+
+def _session_managers(context: ApiContext) -> list[Any]:
+    """Return one session manager per known conversation scope.
+
+    The active scope's manager comes from the context; other scopes get a
+    manager built for their own root, deduplicated the same way the
+    selection guard deduplicates roots.
+    """
+
+    from lara.sessions import SessionManager
+    from lara_api.project_state import build_session_scopes
+
+    managers: list[Any] = [context.manager]
+    active_root = Path(context.config.lara_root).resolve()
+    seen_roots = {active_root}
+    for scope in build_session_scopes(
+        context.project_state,
+        active_workspace_root=context.config.workspace_root,
+    ):
+        scope_root = Path(scope.lara_root).resolve()
+        if scope_root in seen_roots:
+            continue
+        seen_roots.add(scope_root)
+        managers.append(SessionManager(context.config_for_scope(scope)))
+    return managers
+
+
+def _migrate_model_key_renames(context: ApiContext, renames: dict[str, str]) -> None:
+    if not renames:
+        return
+    for previous, current in renames.items():
+        for manager in _session_managers(context):
+            manager.rename_model_key(previous, current)
+
+
 def _guard_persisted_session_selections(
-    context: ApiContext, group_models: dict[str, set[str]]
+    context: ApiContext,
+    group_models: dict[str, set[str]],
+    renames: dict[str, str] | None = None,
 ) -> None:
     from lara_api.project_state import build_session_scopes
 
@@ -278,11 +372,15 @@ def _guard_persisted_session_selections(
                     status_code=409,
                     detail=f"Model group {group_name!r} is used by an existing session",
                 )
-            if isinstance(model_key, str) and model_key not in model_keys:
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"Model {model_key!r} is used by an existing session",
-                )
+            if isinstance(model_key, str):
+                # A rename migrates the stored selection, so the guard judges
+                # the key the session will hold after the save, not the stale one.
+                effective_key = (renames or {}).get(model_key, model_key)
+                if effective_key not in model_keys:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"Model {model_key!r} is used by an existing session",
+                    )
 
 
 def _settings_overrides(request: UpdateSettingsRequest) -> dict[str, Any]:

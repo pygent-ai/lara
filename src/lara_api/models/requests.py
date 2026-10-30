@@ -108,6 +108,7 @@ class UpdateSettingsRequest(BaseModel):
     native_model_config: dict[str, Any] | None = Field(
         default=None, alias="model_config"
     )
+    model_key_renames: dict[str, str] = Field(default_factory=dict)
     default_model_group: str | None = None
     retry: ModelRetrySettingsRequest | None = None
     credential_values: dict[str, str] = Field(default_factory=dict)

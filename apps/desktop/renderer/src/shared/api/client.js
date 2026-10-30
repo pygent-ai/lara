@@ -79,11 +79,11 @@ export function createApiClient(options = {}) {
       jsonRequest("/settings/models/discover", {
         ...options, method: "POST", body: request,
       }),
-    updateSettings: (settings, options = {}) =>
+    updateSettings: (settings, { modelKeyRenames, ...options } = {}) =>
       jsonRequest("/settings", {
         ...options,
         method: "PATCH",
-        body: settingsPayload(settings),
+        body: settingsPayload(settings, modelKeyRenames),
       }),
     listProjects: (options = {}) => jsonRequest("/projects", options),
     listAutomations: (status = "", options = {}) =>
@@ -255,7 +255,7 @@ export function createApiClient(options = {}) {
   };
 }
 
-export function settingsPayload(settings) {
+export function settingsPayload(settings, modelKeyRenames) {
   const contextWindow = settingsNumber(settings.contextWindow);
   return compactObject({
     workspace_root: settingsString(settings.workspaceRoot),
@@ -264,6 +264,7 @@ export function settingsPayload(settings) {
     context_window: Object.hasOwn(settings, "contextWindow") ? contextWindow ?? null : undefined,
     approvals_enabled: typeof settings.approvalsEnabled === "boolean" ? settings.approvalsEnabled : undefined,
     model_config: nativeModelConfigPayload(settings),
+    model_key_renames: modelKeyRenamesPayload(modelKeyRenames),
     default_model_group: cleanString(settings.defaultModelGroup),
     credential_values: credentialValuesPayload(settings.credentialValues),
     retry: settings.retry ? {
@@ -274,6 +275,12 @@ export function settingsPayload(settings) {
       backoff_multiplier: settingsNumber(settings.retry.backoff_multiplier),
     } : undefined,
   });
+}
+
+function modelKeyRenamesPayload(renames) {
+  if (!renames || typeof renames !== "object") return undefined;
+  const entries = Object.entries(renames).filter(([previous, current]) => cleanString(previous) && cleanString(current));
+  return entries.length ? Object.fromEntries(entries) : undefined;
 }
 
 function nativeModelConfigPayload(settings) {
