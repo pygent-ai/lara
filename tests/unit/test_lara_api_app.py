@@ -52,6 +52,29 @@ def test_create_app_exposes_runtime_approval_and_task_contracts() -> None:
     assert {"get", "delete"} <= set(schema["paths"]["/runtime/tasks/{task_id}"])
 
 
+def test_create_app_rejects_missing_web_dist(tmp_path) -> None:
+    with pytest.raises(RuntimeError, match="web_dist"):
+        create_app(workspace_root=".", web_dist=tmp_path / "missing-dist")
+
+
+@pytest.mark.asyncio
+async def test_web_dist_serves_renderer_while_api_routes_win(tmp_path) -> None:
+    (tmp_path / "index.html").write_text(
+        "<!doctype html><html><body>lara-renderer</body></html>", encoding="utf-8"
+    )
+    app = create_app(workspace_root=".", web_dist=tmp_path)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        page = await client.get("/")
+        assert page.status_code == 200
+        assert "lara-renderer" in page.text
+
+        health = await client.get("/health")
+        assert health.status_code == 200
+        assert health.json()["status"] == "ok"
+
+
 @pytest.mark.asyncio
 async def test_session_creation_prewarms_without_constructing_runtime(tmp_path) -> None:
     context = ApiContext(

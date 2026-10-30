@@ -824,3 +824,33 @@ test("streamChat gives up on a persistently silent stream instead of spinning fo
   await assert.rejects(() => streaming, /stalled/);
   assert.ok(calls >= 2);
 });
+
+test("default base url keeps the injected window value first", () => {
+  globalThis.window = { __LARA_API_BASE_URL__: "http://desktop-host:9999" };
+  try {
+    const client = createApiClient({ fetchImpl: async () => new Response("{}", { status: 200 }) });
+    assert.equal(client.baseUrl, "http://desktop-host:9999");
+  } finally {
+    delete globalThis.window;
+  }
+});
+
+test("default base url falls back to same-origin for http(s) pages", () => {
+  globalThis.window = { location: { protocol: "https:" } };
+  try {
+    const client = createApiClient({ fetchImpl: async () => new Response("{}", { status: 200 }) });
+    assert.equal(client.baseUrl, "");
+  } finally {
+    delete globalThis.window;
+  }
+});
+
+test("default base url keeps local api for file:// pages", () => {
+  globalThis.window = { location: { protocol: "file:" } };
+  try {
+    const client = createApiClient({ fetchImpl: async () => new Response("{}", { status: 200 }) });
+    assert.equal(client.baseUrl, "http://127.0.0.1:8765");
+  } finally {
+    delete globalThis.window;
+  }
+});
