@@ -533,7 +533,19 @@ function defaultBaseUrl() {
     return windowBaseUrl;
   }
   const viteBaseUrl = import.meta.env?.VITE_LARA_API_BASE_URL;
-  return typeof viteBaseUrl === "string" && viteBaseUrl.trim() ? viteBaseUrl : DEFAULT_BASE_URL;
+  if (typeof viteBaseUrl === "string" && viteBaseUrl.trim()) {
+    return viteBaseUrl;
+  }
+  // Production build served over http(s) (e.g. the same-origin renderer hosted
+  // by lara-api for remote browser access) talks to its own origin. Vite dev
+  // server debugging and Electron file:// keep the local API default.
+  if (!import.meta.env?.DEV) {
+    const pageProtocol = globalThis.window?.location?.protocol;
+    if (pageProtocol === "http:" || pageProtocol === "https:") {
+      return "";
+    }
+  }
+  return DEFAULT_BASE_URL;
 }
 
 function normalizeBaseUrl(value) {

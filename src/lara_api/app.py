@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from importlib.metadata import version as package_version
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from lara_api.container import ApiContext
 from lara_api.routers import (
@@ -30,6 +32,7 @@ def create_app(
     workspace_root: str | None = None,
     agent_alias: str | None = None,
     max_steps: int | None = None,
+    web_dist: str | Path | None = None,
 ) -> FastAPI:
     context = ApiContext(
         workspace_root=workspace_root,
@@ -76,4 +79,11 @@ def create_app(
     app.include_router(settings.router)
     app.include_router(workspace.router)
     app.include_router(terminal.router)
+    if web_dist is not None:
+        # 注册在所有 API 路由之后，同源托管构建好的 renderer（远程浏览器访问）；
+        # API 路径优先匹配，不受静态挂载影响。
+        dist_path = Path(web_dist)
+        if not dist_path.is_dir():
+            raise RuntimeError(f"web_dist 目录不存在: {dist_path}")
+        app.mount("/", StaticFiles(directory=dist_path, html=True), name="web")
     return app
