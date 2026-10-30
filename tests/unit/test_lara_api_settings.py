@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import HTTPException
 from pygent.llm import ModelInfo
 from lara.config.yaml_subset import parse_yaml_subset
+from lara.core.io import read_json
 from lara.core.paths import project_lara_root
 from lara_api.dependencies import ApiContext
 from tests.unit.test_model_configuration import native_mapping
@@ -590,3 +592,123 @@ def test_update_settings_rejects_removing_a_session_model(tmp_path: Path) -> Non
     with pytest.raises(HTTPException) as captured:
         asyncio.run(update_settings(request, context=context))
     assert captured.value.status_code == 409
+
+
+def _rename_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
+    from tests.unit.test_session_manager import native_run_config
+
+    # Redirect the user-level Lara root so neither the selection guard, the
+    # rename migration, nor the post-save reload can touch the developer's
+    # real chats or configuration.
+    home = tmp_path / "home"
+    monkeypatch.setattr("lara.config.loader.Path.home", lambda: home)
+    monkeypatch.setattr(
+        "lara_api.services.project_state.user_lara_root",
+        lambda: home / ".lara",
+    )
+    config = native_run_config(tmp_path)
+    config.user_lara_root = str(home / ".lara")
+    return ApiContext(
+        workspace_root=str(tmp_path),
+        state_path=str(tmp_path / "state.json"),
+        _config=config,
+    )
+
+
+def test_update_settings_renames_session_model_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lara_api.models.requests import UpdateSettingsRequest
+    from lara_api.routers.settings import update_settings
+
+    context = _rename_context(tmp_path, monkeypatch)
+    manager = context.manager
+    session = manager.create("chat", mode="chat")
+    manager.set_selected_model(session.session_id, "main")
+    replacement = native_mapping(group=("primary", "backup"))
+    request = UpdateSettingsRequest(
+        model_config=replacement,
+        model_key_renames={"main": "primary"},
+        default_model_group="coding",
+    )
+
+    response = asyncio.run(update_settings(request, context=context))
+
+    assert response.default_model_group == "coding"
+    assert response.model_groups["coding"]["models"] == ["primary", "backup"]
+    # The update reloads the context config, so assert against the manager
+    # that owned the session directory at creation time.
+    session_dir = Path(manager.sessions_root) / session.session_id
+    metadata = read_json(session_dir / "metadata.json")
+    assert metadata["selected_model_key"] == "primary"
+    reloaded = manager.load(session.session_id)
+    assert reloaded.selected_model_key == "primary"
+
+
+def test_update_settings_rename_without_referencing_session_saves_cleanly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lara_api.models.requests import UpdateSettingsRequest
+    from lara_api.routers.settings import update_settings
+
+    context = _rename_context(tmp_path, monkeypatch)
+    request = UpdateSettingsRequest(
+        model_config=native_mapping(group=("primary", "backup")),
+        model_key_renames={"main": "primary"},
+        default_model_group="coding",
+    )
+
+    response = asyncio.run(update_settings(request, context=context))
+
+    assert response.model_groups["coding"]["models"] == ["primary", "backup"]
+
+
+@pytest.mark.parametrize(
+    ("renames", "replacement_group"),
+    [
+        ({"ghost": "primary"}, ("primary", "backup")),
+        ({"main": "ghost"}, ("primary", "backup")),
+        ({"main": "main"}, ("main", "backup")),
+        ({"main": "primary"}, ("main", "primary")),
+    ],
+)
+def test_update_settings_rejects_invalid_model_key_renames(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    renames: dict[str, str],
+    replacement_group: tuple[str, ...],
+) -> None:
+    from lara_api.models.requests import UpdateSettingsRequest
+    from lara_api.routers.settings import update_settings
+
+    context = _rename_context(tmp_path, monkeypatch)
+    manager = context.manager
+    session = manager.create("chat", mode="chat")
+    manager.set_selected_model(session.session_id, "backup")
+    request = UpdateSettingsRequest(
+        model_config=native_mapping(group=replacement_group),
+        model_key_renames=renames,
+        default_model_group="coding",
+    )
+
+    with pytest.raises(HTTPException) as captured:
+        asyncio.run(update_settings(request, context=context))
+    assert captured.value.status_code == 422
+    metadata = read_json(
+        Path(manager.sessions_root) / session.session_id / "metadata.json"
+    )
+    assert metadata["selected_model_key"] == "backup"
+
+
+def test_update_settings_rejects_renames_without_model_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lara_api.models.requests import UpdateSettingsRequest
+    from lara_api.routers.settings import update_settings
+
+    context = _rename_context(tmp_path, monkeypatch)
+    request = UpdateSettingsRequest(model_key_renames={"main": "primary"})
+
+    with pytest.raises(HTTPException) as captured:
+        asyncio.run(update_settings(request, context=context))
+    assert captured.value.status_code == 422

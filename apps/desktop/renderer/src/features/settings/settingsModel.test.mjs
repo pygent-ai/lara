@@ -11,11 +11,35 @@ import {
   emptyNativeConnection,
   emptyNativeModel,
   modelDiscoveryRequest,
+  modelKeyRenamesForSave,
   modelRowDirty,
   settingsToDraft,
   modelGroupValidationError,
 } from "./settingsModel.js";
 import { settingsPayload } from "../../shared/api/client.js";
+
+test("model key renames reach the backend only while the saved source exists", () => {
+  const savedDraft = settingsToDraft({
+    connections: { service: emptyNativeConnection() },
+    models: { "model-1": { connection: "service", model_id: "m", protocol: "openai_responses", capabilities: { limits: {} } } },
+    model_groups: { coding: { models: ["model-1"] } },
+    default_model_group: "coding",
+  });
+  const buffer = {
+    key: "service",
+    connection: savedDraft.connections.service,
+    models: { renamed: savedDraft.models["model-1"] },
+    renames: { "model-1": "renamed" },
+    credentialValues: {},
+  };
+
+  assert.deepEqual(modelKeyRenamesForSave(savedDraft, buffer, "renamed"), { "model-1": "renamed" });
+  assert.equal(modelKeyRenamesForSave(savedDraft, buffer, "model-1"), undefined);
+  // Once the rename is committed the saved source is gone, so later saves of
+  // the same editor never re-send the stale rename.
+  const committed = { ...savedDraft, models: { renamed: savedDraft.models["model-1"] } };
+  assert.equal(modelKeyRenamesForSave(committed, buffer, "renamed"), undefined);
+});
 
 test("connection commit adds a model without group membership and stays valid", () => {
   const draft = settingsToDraft({

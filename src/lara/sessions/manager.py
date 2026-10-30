@@ -134,6 +134,29 @@ class SessionManager:
         self.save(session)
         return session
 
+    def rename_model_key(self, previous: str, current: str) -> int:
+        """Point persisted session selections at a renamed model key.
+
+        Sessions persist only the model key, so a configuration rename must
+        migrate the stored selections; going through ``load``/``save`` keeps
+        the mirrored ``metadata.json`` fields consistent with ``session.json``.
+        """
+
+        if previous == current:
+            return 0
+        renamed = 0
+        for metadata_path in sorted(self.sessions_root.glob("*/metadata.json")):
+            if not (metadata_path.parent / "session.json").is_file():
+                continue
+            metadata = read_json(metadata_path)
+            if metadata.get("selected_model_key") != previous:
+                continue
+            session = self.load(str(metadata["session_id"]))
+            session.selected_model_key = current
+            self.save(session)
+            renamed += 1
+        return renamed
+
     def load_or_create(self, spec: SessionSpec) -> AgentSession:
         if spec.mode in {"resume", "shared"}:
             if not spec.session_id:

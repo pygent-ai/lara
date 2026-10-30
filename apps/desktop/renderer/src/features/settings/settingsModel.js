@@ -182,6 +182,15 @@ export function originalModelKey(renames, key) {
   return key;
 }
 
+// The rename a row save actually replaces: only a rename whose saved source
+// still exists reaches the backend, so already-committed renames sitting in
+// the editor buffer are not re-sent by later saves of the same editor.
+export function modelKeyRenamesForSave(savedDraft, buffer, key) {
+  const original = originalModelKey(buffer.renames, key);
+  if (original === key || !Object.hasOwn(savedDraft.models, original)) return undefined;
+  return { [original]: key };
+}
+
 // Saves are sliced inside one connection editor: connection fields (plus the
 // connection-owned protocol remaps) commit through the head save, and each
 // model commits through its own row save, so an in-progress model never

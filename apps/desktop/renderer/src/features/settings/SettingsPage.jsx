@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Settings as SettingsIcon } from "lucide-react";
 import { useSettingsDraft } from "./useSettingsDraft.js";
-import { commitConnectionBuffer, commitConnectionFields, commitModelDelete, commitModelSave, modelGroupValidationError, settingsForSave, settingsToDraft } from "./settingsModel.js";
+import { commitConnectionBuffer, commitConnectionFields, commitModelDelete, commitModelSave, modelGroupValidationError, modelKeyRenamesForSave, settingsForSave, settingsToDraft } from "./settingsModel.js";
 import "./settings.css";
 import { WorkspaceSettings } from "./WorkspaceSettings.jsx";
 import { ConnectionSettings } from "./ConnectionSettings.jsx";
@@ -124,7 +124,12 @@ export function SettingsPage({ settings, disabled, onClose, onPersist, api }) {
             : commitConnectionBuffer(base, previousKey, buffer, catalogs)
     );
     const nextSaved = merge(savedDraft);
-    await onPersist(nextSaved);
+    // A row save that renames a model tells the backend so it can migrate the
+    // sessions still pointing at the old key instead of rejecting the save.
+    const modelKeyRenames = kind === "model"
+      ? modelKeyRenamesForSave(savedDraft, buffer, modelKey)
+      : undefined;
+    await onPersist(nextSaved, { modelKeyRenames });
     setSavedDraft(nextSaved);
     setDraft(merge(draft));
   }

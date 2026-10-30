@@ -377,6 +377,29 @@ test("api client sends the exact native Pygent model subtree", async () => {
   });
 });
 
+test("api client forwards model key renames only when provided", async () => {
+  const calls = [];
+  const client = createApiClient({
+    baseUrl: "http://127.0.0.1:8765",
+    fetchImpl: async (url, init) => {
+      calls.push({ url, init });
+      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+    },
+  });
+  const settings = {
+    connections: { main: { provider: "openai", credential: { none: true }, protocols: { openai_chat_completions: { base_url: "https://main.test/v1" } } } },
+    models: { primary: { connection: "main", model_id: "gpt-main", protocol: "openai_chat_completions", provider_options: {}, capabilities: { limits: {} } } },
+    modelGroups: { coding: { models: ["primary"] } },
+    defaultModelGroup: "coding",
+  };
+
+  await client.updateSettings(settings, { modelKeyRenames: { "model-1": "primary" } });
+  assert.deepEqual(JSON.parse(calls[0].init.body).model_key_renames, { "model-1": "primary" });
+
+  await client.updateSettings(settings);
+  assert.equal(Object.hasOwn(JSON.parse(calls[1].init.body), "model_key_renames"), false);
+});
+
 test("api client creates a grouped chat and updates only its child model", async () => {
   const calls = [];
   const client = createApiClient({ fetchImpl: async (url, init) => {

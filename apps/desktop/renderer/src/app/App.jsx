@@ -1266,12 +1266,12 @@ export function App() {
   // and baseline, so this cannot wipe unsaved edits in other sections. A
   // workspace save re-selects the project exactly like the old global save did.
   const handleApplySettings = useCallback(
-    async (draft, { workspaceChanged = false } = {}) => {
+    async (draft, { workspaceChanged = false, modelKeyRenames } = {}) => {
       if (settingsSaveBusyRef.current) throw new Error("正在保存设置，请稍后再试。");
       settingsSaveBusyRef.current = true;
       setSavingSettings(true);
       try {
-        setSettings(await api.updateSettings(draft));
+        setSettings(await api.updateSettings(draft, { modelKeyRenames }));
         if (workspaceChanged) {
           await refreshWorkbench({ selectFirst: true, preserveSessionId: "" });
         }
