@@ -61,6 +61,9 @@ import {
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import { createPortal } from "react-dom";
 import remarkGfmNoAutolink from "./remarkGfmNoAutolink.js";
+import { MarkdownPre } from "./markdownCode.jsx";
+import { copyContextValue, useCopiedFeedback } from "./clipboard.js";
+import { toPngBlob } from "./imageBlob.js";
 import {
   acknowledgeStoredSessionStatus,
   loadAcknowledgedSessionStatuses,
@@ -2659,26 +2662,6 @@ async function fetchImageBlob(src) {
   return response.blob();
 }
 
-function toPngBlob(blob) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(blob);
-    const image = new window.Image();
-    image.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = image.naturalWidth;
-      canvas.height = image.naturalHeight;
-      canvas.getContext("2d").drawImage(image, 0, 0);
-      URL.revokeObjectURL(url);
-      canvas.toBlob((value) => (value ? resolve(value) : reject(new Error("canvas encode failed"))), "image/png");
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("image decode failed"));
-    };
-    image.src = url;
-  });
-}
-
 function MediaImageView({ src, alt = "", title, thumbClassName, onError }) {
   const [zoomed, setZoomed] = useState(false);
   const [notice, setNotice] = useState("");
@@ -2881,9 +2864,9 @@ export function MarkdownContent({ content }) {
 }
 
 // Visual parity with the previous hand-rolled renderer: capped heading
-// levels, the language label on fenced blocks, the table scroll wrapper,
-// and links that open in a new tab. react-markdown already escapes raw
-// HTML and strips unsafe URL schemes, so agent output stays inert.
+// levels, fenced blocks with a language label (markdownCode.jsx), the table
+// scroll wrapper, and links that open in a new tab. react-markdown already
+// escapes raw HTML and strips unsafe URL schemes, so agent output stays inert.
 const MARKDOWN_COMPONENTS = {
   a: MarkdownLink,
   h1: MarkdownHeading,
@@ -2916,64 +2899,6 @@ function MarkdownHeading({ node, children }) {
   const level = Math.min(Number(String(node?.tagName || "h1").slice(1)) || 1, 3);
   const Tag = `h${level}`;
   return <Tag>{children}</Tag>;
-}
-
-function MarkdownPre({ children }) {
-  const code = Array.isArray(children) ? children[0] : children;
-  const className = String(code?.props?.className || "");
-  const language = /(?:^|\s)language-([\w+.#-]+)/.exec(className)?.[1] || "";
-  const codeText = codeElementText(code?.props?.children).replace(/\n$/, "");
-  return (
-    <pre className="markdown-code">
-      {(language || codeText) && (
-        <span className="markdown-code-head">
-          {language && <span className="markdown-code-language">{language}</span>}
-          <MarkdownCodeCopy text={codeText} />
-        </span>
-      )}
-      {children}
-    </pre>
-  );
-}
-
-// react-markdown hands the fenced body over as nested text nodes; flatten
-// them back into the raw code string for the clipboard.
-function codeElementText(value) {
-  if (value == null || value === true || value === false) return "";
-  if (typeof value === "string" || typeof value === "number") return String(value);
-  if (Array.isArray(value)) return value.map(codeElementText).join("");
-  if (typeof value === "object" && value.props) return codeElementText(value.props.children);
-  return "";
-}
-
-function MarkdownCodeCopy({ text }) {
-  const [copied, markCopied] = useCopiedFeedback();
-  return (
-    <button
-      type="button"
-      className="markdown-code-copy"
-      aria-label={copied ? "代码已复制" : "复制代码"}
-      onClick={() => {
-        copyContextValue(text);
-        markCopied();
-      }}
-    >
-      {copied ? <Check size={12} aria-hidden="true" /> : <Copy size={12} aria-hidden="true" />}
-    </button>
-  );
-}
-
-// Shared "已复制" flash so both copy buttons revert without leaking timers.
-function useCopiedFeedback() {
-  const [copied, setCopied] = useState(false);
-  const timerRef = useRef(null);
-  useEffect(() => () => window.clearTimeout(timerRef.current), []);
-  const markCopied = useCallback(() => {
-    setCopied(true);
-    window.clearTimeout(timerRef.current);
-    timerRef.current = window.setTimeout(() => setCopied(false), 1600);
-  }, []);
-  return [copied, markCopied];
 }
 
 function MarkdownTable({ children }) {
@@ -3893,10 +3818,6 @@ function contextMessageSummary(message) {
   const results = Array.isArray(message?.results) ? message.results : [];
   if (results.length) return results.map((result) => `${result.name || "tool"}: ${result.status || "result"}`).join(", ");
   return String(message?.kind || "");
-}
-
-function copyContextValue(value) {
-  globalThis.navigator?.clipboard?.writeText?.(value).catch(() => {});
 }
 
 export function selectSessionMessages(pendingMessages, historyMessages) {

@@ -1082,8 +1082,15 @@ button:focus-visible {
   white-space: pre;
 }
 
-.markdown-code-copy {
+.markdown-code-actions {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.markdown-code-copy,
+.markdown-code-view {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1098,7 +1105,9 @@ button:focus-visible {
 }
 
 .markdown-code-copy:hover,
-.markdown-code-copy:focus-visible {
+.markdown-code-copy:focus-visible,
+.markdown-code-view:hover,
+.markdown-code-view:focus-visible {
   color: var(--text);
   background: var(--surface-3);
 }
@@ -1109,6 +1118,52 @@ button:focus-visible {
   font-size: 11px;
   font-weight: 800;
   text-transform: uppercase;
+}
+
+.markdown-mermaid {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-content);
+}
+
+.markdown-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.markdown-mermaid:hover .media-image-actions,
+.markdown-mermaid:focus-within .media-image-actions { opacity:1; }
+
+.markdown-mermaid-graphic {
+  cursor: zoom-in;
+}
+
+.media-lightbox-diagram {
+  padding: 16px;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 16px 56px rgba(0, 0, 0, 0.55);
+}
+
+.media-lightbox .media-lightbox-diagram img {
+  display: block;
+  max-width: 88vw;
+  max-height: 86vh;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* Wheel-zoomable variant: the card may exceed the viewport, so it scrolls
+   instead of being clipped; "safe" keeps the overflow reachable. */
+.media-lightbox.media-lightbox-zoomable {
+  display: grid;
+  place-items: safe center;
+  overflow: auto;
 }
 
 .message.user .bubble {
