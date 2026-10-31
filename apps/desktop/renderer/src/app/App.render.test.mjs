@@ -158,6 +158,18 @@ test("fenced code blocks offer a copy button with the raw code text", () => {
   assert.match(html, /<svg[^>]*class="lucide lucide-copy[^"]*"/);
 });
 
+test("mermaid fences stay a plain code block until the client renders the diagram", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.MarkdownContent, {
+    content: "```mermaid\ngraph TD\n  A --> B\n```",
+  }));
+
+  assert.match(html, /markdown-code-language">mermaid</);
+  assert.match(html, /graph TD/);
+  // The diagram only appears after the client-side mermaid render resolves;
+  // SSR must neither crash nor import mermaid.
+  assert.doesNotMatch(html, /markdown-mermaid/);
+});
+
 test("message footers show time, token usage, and copy; running turns wait", () => {
   const props = (messages) => ({
     activeSession: { session_id: "session-1", scope_id: "conversation" },
