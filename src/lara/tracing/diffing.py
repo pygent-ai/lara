@@ -33,6 +33,8 @@ class DiffArtifact:
     patch_path: str | None
     patch_char_count: int = 0
     patch_line_count: int = 0
+    additions: int = 0
+    deletions: int = 0
     reason: str | None = None
 
 
@@ -92,6 +94,8 @@ class DiffRecorder:
             "path": str(path),
             "relative_path": relative_path,
             "change_type": _change_type(effect.type),
+            "additions": artifact.additions,
+            "deletions": artifact.deletions,
             "before_exists": effect.before_exists,
             "after_exists": effect.after_exists,
             "before_hash": effect.before_hash,
@@ -172,12 +176,24 @@ class DiffRecorder:
         patch = _normalize_patch_newlines("\n".join(patch_lines))
         patch_path = self.diffs_dir / "patches" / f"{diff_id}.patch"
         write_text(patch_path, patch)
+        additions = sum(
+            1
+            for line in patch_lines
+            if line.startswith("+") and not line.startswith("+++")
+        )
+        deletions = sum(
+            1
+            for line in patch_lines
+            if line.startswith("-") and not line.startswith("---")
+        )
         return DiffArtifact(
             diff_id=diff_id,
             patch_available=True,
             patch_path=str(patch_path.resolve()),
             patch_char_count=len(patch),
             patch_line_count=len(patch.splitlines()),
+            additions=additions,
+            deletions=deletions,
         )
 
     def _snapshot_path(
