@@ -375,10 +375,14 @@ test("running chat allows editing and offers steering", () => {
       { inputId: "input-2", text: "use Chinese", stale: true },
     ],
     settings: {}, status: "Running", running: true, steeringReady: true, approvals: [],
+    onCancelTurn: async () => {},
   }));
   const textarea = html.match(/<textarea[^>]*>/)[0];
   assert.doesNotMatch(textarea, /disabled/);
-  assert.match(html, /aria-label="追加指令"/);
+  // The merged action button shows stop while the composer is empty; typing
+  // swaps it to the steering send (covered by the composerAction unit test).
+  assert.match(html, /aria-label="取消当前任务"/);
+  assert.doesNotMatch(html, /aria-label="追加指令"/);
   assert.match(html, /立即打断当前步骤/);
   // Steering accepts attachments too, so the attach button stays mounted.
   assert.match(html, /aria-label="添加附件"/);
@@ -394,10 +398,25 @@ test("reconnecting sessions allow drafting but cannot steer until connected", ()
     activeSession: { session_id: "old-session", scope_id: "conversation" },
     messages: [{ id: "user-1", role: "user", content: "old task" }],
     settings: {}, status: "Reconnecting", running: true, steeringReady: false, approvals: [],
+    onCancelTurn: async () => {},
   }));
   assert.doesNotMatch(html.match(/<textarea[^>]*>/)[0], /disabled/);
-  assert.match(html, /aria-label="正在连接"[^>]*disabled/);
+  // Disconnected runs keep the single action button on stop; steering send
+  // stays unavailable until the connection is back.
+  assert.match(html, /aria-label="取消当前任务"/);
   assert.doesNotMatch(html, /aria-label="追加指令"/);
+});
+
+test("the merged composer action button switches between stop and send", () => {
+  // While running, an empty composer shows stop; text or attachments swap it
+  // to the send/steer action.
+  assert.equal(appModule.composerAction(true, true, false), "stop");
+  assert.equal(appModule.composerAction(true, true, true), "send");
+  // A disconnected run keeps stop because steering cannot go through.
+  assert.equal(appModule.composerAction(true, false, true), "stop");
+  // Idle and paused sessions only ever send.
+  assert.equal(appModule.composerAction(false, false, false), "send");
+  assert.equal(appModule.composerAction(false, false, true), "send");
 });
 
 test("long transcripts mount only the latest window initially", () => {

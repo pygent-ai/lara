@@ -214,6 +214,18 @@ export function createApiClient(options = {}) {
         })}`,
         options,
       ),
+    getFileChanges: (sessionId, { turnLimit, ...options } = {}) =>
+      jsonRequest(
+        `/traces/${encodeURIComponent(sessionId)}/file-changes${queryString({
+          turn_limit: turnLimit,
+        })}`,
+        options,
+      ),
+    getTurnPatch: (sessionId, diffId, options = {}) =>
+      jsonRequest(
+        `/traces/${encodeURIComponent(sessionId)}/patches/${encodeURIComponent(diffId)}`,
+        options,
+      ),
     getToolResult: (toolCallId, options = {}) =>
       jsonRequest(`/tool-results/${encodeURIComponent(toolCallId)}`, options),
     deliverApproval: (approvalId, approved, comment = "", options = {}) =>

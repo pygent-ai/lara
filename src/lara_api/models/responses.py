@@ -151,6 +151,23 @@ class SessionActivityResponse(BaseModel):
     events_truncated: bool = False
 
 
+class SessionFileChangesResponse(BaseModel):
+    session_id: str
+    turns: list[dict[str, Any]]
+    turns_total: int = 0
+    turns_truncated: bool = False
+
+
+class TurnPatchResponse(BaseModel):
+    session_id: str
+    diff_id: str
+    relative_path: str | None = None
+    change_type: str | None = None
+    patch_available: bool = False
+    patch: str = ""
+    patch_unavailable_reason: str | None = None
+
+
 class ToolResultResponse(BaseModel):
     tool_call_id: str
     tool_name: str

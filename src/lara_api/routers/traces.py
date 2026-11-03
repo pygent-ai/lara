@@ -9,7 +9,13 @@ from lara.core.io import read_json
 from lara.runtime.model_request_journal import ModelRequestJournal
 from lara.tracing import EventStore
 from lara_api.dependencies import ApiContext, get_api_context
-from lara_api.models.responses import SessionActivityResponse, TraceEventsResponse
+from lara_api.models.responses import (
+    SessionActivityResponse,
+    SessionFileChangesResponse,
+    TraceEventsResponse,
+    TurnPatchResponse,
+)
+from lara_api.services.file_changes import session_file_changes, turn_patch
 from lara_api.services.session_activity import recent_jsonl_records, session_activity_events
 
 router = APIRouter(prefix="/traces", tags=["traces"])
@@ -38,6 +44,45 @@ def get_session_activity(
         events_total=events_total,
         events_truncated=len(shown) < events_total,
     )
+
+
+@router.get("/{session_id}/file-changes", response_model=SessionFileChangesResponse)
+def get_session_file_changes(
+    session_id: str,
+    context: ApiContext = Depends(get_api_context),
+    turn_limit: int | None = None,
+) -> SessionFileChangesResponse:
+    try:
+        session = context.manager.load(session_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    payload = session_file_changes(Path(session.session_dir), limit=turn_limit)
+    return SessionFileChangesResponse(session_id=session_id, **payload)
+
+
+# Also declared before /{session_id}/{case_run_id}: "patches" is a resource
+# collection, not a case run id.
+@router.get("/{session_id}/patches/{diff_id}", response_model=TurnPatchResponse)
+def get_turn_patch(
+    session_id: str,
+    diff_id: str,
+    context: ApiContext = Depends(get_api_context),
+) -> TurnPatchResponse:
+    try:
+        session = context.manager.load(session_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        record = turn_patch(Path(session.session_dir), diff_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"Unknown diff id: {diff_id}")
+    return TurnPatchResponse(session_id=session_id, **record)
 
 
 @router.get("/{session_id}/{case_run_id}", response_model=TraceEventsResponse)

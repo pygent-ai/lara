@@ -16,6 +16,7 @@ import {
   CalendarClock,
   Copy,
   Download,
+  FileDiff,
   Film,
   FileText,
   Image as ImageIcon,
@@ -50,6 +51,7 @@ import { loadWorkbenchPreferences, saveWorkbenchPreferences } from "./workbenchP
 import { DEFAULT_PANEL_WIDTHS, PANEL_LIMITS, normalizePanelWidths, fitPanelWidths } from "./panelWidths.js";
 import { projectPathKey } from "../features/projects/projectPaths.js";
 import { activityHeaderText, runTimingFields } from "./runTiming.js";
+import { changeTypeBadge, changeTypeLabel, summarizeRunTurns, summarizeTurns, turnChangesForMessage } from "./fileChangesState.js";
 import { dataTransferHasFiles, filesFromDataTransfer } from "./pasteFiles.js";
 import {
   adaptLayoutToCompactViewport,
@@ -109,7 +111,7 @@ const EMPTY_SETTINGS = {
 };
 
 const TRACE_TABS = ["Overview", "Tools", "Changes", "Events", "Context", "Config"];
-const INSPECTOR_LABELS = { Overview: "概览", Events: "事件", Context: "上下文", Tools: "工具", Changes: "文件活动", Config: "配置", Trace: "执行详情", Files: "文件", PowerShell: "终端" };
+const INSPECTOR_LABELS = { Overview: "概览", Events: "事件", Context: "上下文", Tools: "工具", Changes: "文件活动", Config: "配置", Trace: "执行详情", Diffs: "文件改动", Files: "文件", PowerShell: "终端" };
 const TOOL_ARGUMENT_PREVIEW_LIMIT = 4_000;
 const TOOL_RESULT_PREVIEW_LIMIT = 6_000;
 const TRACE_RENDER_LIMIT = 300;
@@ -175,6 +177,10 @@ export function App() {
   const [traceWindow, setTraceWindow] = useState(EMPTY_TRACE_WINDOW);
   const [liveEvents, setLiveEvents] = useState([]);
   const [contextSnapshots, setContextSnapshots] = useState([]);
+  // Per-turn file change summaries for the active session, plus the diff a
+  // chat overview row asked the inspector to open (token re-triggers it).
+  const [fileChanges, setFileChanges] = useState([]);
+  const [diffFocus, setDiffFocus] = useState(null);
   const [status, setStatus] = useState("Loading");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -343,6 +349,68 @@ export function App() {
     }
     void loadTrace(activeSession, traceLoadTokenRef.current);
   }, [activeSession, layout.traceCollapsed, loadTrace]);
+
+  const loadFileChanges = useCallback(
+    async (sessionId) => {
+      if (!sessionId) {
+        return;
+      }
+      try {
+        const response = await api.getFileChanges(sessionId);
+        // Ignore a response for a session the user already left.
+        if (activeSessionIdRef.current === sessionId) {
+          setFileChanges(response.turns || []);
+        }
+      } catch {
+        // Summaries are additive UI: a failed poll keeps the last state and
+        // the next tick retries, so no user-facing error is warranted.
+      }
+    },
+    [api],
+  );
+
+  // Load the summaries on session switch; while the session runs, poll so
+  // the live strip counts file changes as deferred diff batches land, and
+  // catch up once more after the turn ends (the final batches can trail the
+  // terminal event slightly).
+  useEffect(() => {
+    if (!activeSessionId) {
+      setFileChanges([]);
+      return undefined;
+    }
+    setFileChanges([]);
+    void loadFileChanges(activeSessionId);
+    if (!running) {
+      return undefined;
+    }
+    const timer = window.setInterval(() => loadFileChanges(activeSessionId), 2000);
+    return () => window.clearInterval(timer);
+  }, [activeSessionId, running, loadFileChanges]);
+
+  useEffect(() => {
+    if (running || !activeSessionId) {
+      return;
+    }
+    // The transition running -> finished lands here with the summaries the
+    // interval already refreshed; one delayed fetch absorbs late diff writes.
+    const timer = window.setTimeout(() => loadFileChanges(activeSessionId), 2500);
+    return () => window.clearTimeout(timer);
+  }, [running, activeSessionId, loadFileChanges]);
+
+  // A chat overview row asks the inspector to show one patch: focus it and
+  // make sure the right panel is visible.
+  const openFileChange = useCallback(
+    (diffId) => {
+      if (!diffId) {
+        return;
+      }
+      setDiffFocus({ diffId, token: Date.now() });
+      setLayout((current) => (current.traceCollapsed
+        ? toggleTrace(current, { compact: current.compact })
+        : current));
+    },
+    [],
+  );
 
   const loadSession = useCallback(
     async (sessionId, previewSession = null, { resumeExecution = true } = {}) => {
@@ -1402,6 +1470,8 @@ export function App() {
         approvals={approvals.filter((item) => item.session_id === activeSessionId)}
         pendingSteerings={pendingSteerings[activeSessionId] || []}
         api={api}
+        fileChanges={fileChanges}
+        onOpenFileChange={openFileChange}
         onSendMessage={handleSendMessage}
         onForkSession={handleForkSession}
         onSteering={handleSteering}
@@ -1433,6 +1503,8 @@ export function App() {
         activityMeta={sessionActivity}
         traceMeta={traceWindow}
         settings={settings}
+        fileChanges={fileChanges}
+        diffFocus={diffFocus}
         onToggle={() =>
           setLayout((current) => toggleTrace(current, { compact: current.compact }))
         }
@@ -2047,7 +2119,7 @@ export function computeEnteringMessageIds(previous, sessionId, messages) {
   return new Set(messages.slice(previous.ids.length).map((message) => message.id));
 }
 
-export function ChatPane({ activeSession, messages, historyRemaining = 0, historyLoading = false, onLoadEarlier, activityCollapseToken, settings, status, running, steeringReady = false, approvals, pendingSteerings = [], api, onSendMessage, onForkSession, onSteering, onCancelTurn, onApproval, projects = [], onSelectProject, onChooseProject, onChangePermissions, pendingNewModelGroup = "", onChangeNewModelGroup = () => {}, pendingNewSessionScope = "", onChangeModel = () => {}, composerDrafts = new Map() }) {
+export function ChatPane({ activeSession, messages, historyRemaining = 0, historyLoading = false, onLoadEarlier, activityCollapseToken, settings, status, running, steeringReady = false, approvals, pendingSteerings = [], api, onSendMessage, onForkSession, onSteering, onCancelTurn, onApproval, projects = [], onSelectProject, onChooseProject, onChangePermissions, pendingNewModelGroup = "", onChangeNewModelGroup = () => {}, pendingNewSessionScope = "", onChangeModel = () => {}, composerDrafts = new Map(), fileChanges = [], onOpenFileChange = () => {} }) {
   const empty = messages.length === 0;
   // A paused session (last run ended resumably) offers one-click continue on
   // an empty send; while it runs, the composer is in steering mode instead.
@@ -2065,6 +2137,15 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
   const [cancelling, setCancelling] = useState(false);
   const [uploadingCount, setUploadingCount] = useState(0);
   const [dragOver, setDragOver] = useState(false);
+  // The live strip counts the running task's file changes: it keys on the
+  // running bubble's case run id and folds every turn the run has produced.
+  const runningCaseRunId = running
+    ? String(messages.find((item) => item.status === "running")?.caseRunId || "")
+    : "";
+  const liveRunSummary = useMemo(
+    () => summarizeRunTurns(fileChanges, runningCaseRunId),
+    [fileChanges, runningCaseRunId],
+  );
   const sendingRef = useRef(false);
   const pendingSteeringRef = useRef(null);
   // The active session is already on its own workspace, so the fork passes
@@ -2259,6 +2340,9 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
     setConfigError("");
     if (running) {
       if (!steeringReady) return;
+      // An empty composer shows the stop action, so Enter must not send an
+      // empty steering instruction behind the user's back.
+      if (!text && !attachments.length) return;
       sendingRef.current = true;
       setSending(true);
       // The input id also keys the runtime's idempotency window, so a failed
@@ -2429,7 +2513,7 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
         )}
         {visibleMessages.map((message) => (
           <MediaSourceScopeContext.Provider key={message.id} value={mediaScope}>
-            <MessageRow message={message} entering={enteringMessageIds.has(message.id)} activityCollapseToken={activityCollapseToken} api={api} scopeId={selectedScope} onForkAtMessage={handleForkAtMessage} />
+            <MessageRow message={message} entering={enteringMessageIds.has(message.id)} activityCollapseToken={activityCollapseToken} api={api} scopeId={selectedScope} onForkAtMessage={handleForkAtMessage} fileChanges={fileChanges} onOpenFileChange={onOpenFileChange} />
           </MediaSourceScopeContext.Provider>
         ))}
         {pendingSteerings.map((item) => (
@@ -2474,6 +2558,18 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
         )}
 
         {awayFromLatest && <button className="jump-latest" type="button" onClick={() => pinTranscriptToLatest(true)}><ArrowDown size={14} />回到最新</button>}
+        {running && liveRunSummary && (
+          <div className="composer-turn-changes" role="status">
+            <FileDiff size={14} aria-hidden="true" />
+            <span>本轮已改动 {liveRunSummary.fileCount} 个文件 · {liveRunSummary.changeCount} 处</span>
+            {(liveRunSummary.additions != null || liveRunSummary.deletions != null) && (
+              <span className="turn-changes-counts">
+                {liveRunSummary.additions != null ? ` +${liveRunSummary.additions}` : ""}
+                {liveRunSummary.deletions != null ? ` −${liveRunSummary.deletions}` : ""}
+              </span>
+            )}
+          </div>
+        )}
         <div className="composer-surface">
         <div className={`composer-box${dragOver ? " drag-over" : ""}`}
           onDragOver={(event) => { if (dataTransferHasFiles(event.dataTransfer)) { event.preventDefault(); setDragOver(true); } }}
@@ -2528,16 +2624,18 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
               <Paperclip aria-hidden="true" />
             </button>
             <span className="composer-hint">{uploadingCount > 0 ? `正在上传附件…（${uploadingCount}）` : running ? (steeringReady ? "Enter 追加指令 · 立即打断当前步骤" : "正在连接执行，连接后可追加指令") : resumable ? "点击发送继续上次任务 · 输入文字则开始新指令" : "Enter 发送 · Shift + Enter 换行 · 可粘贴或拖入文件"}</span>
-            {running && onCancelTurn && <button className="stop" aria-label="取消当前任务" title="取消当前任务" disabled={cancelling} type="button" onClick={() => {
+            {/* One adaptive action button: while a run is active, an empty
+                composer shows stop (nothing to send) and text or attachments
+                swap it to the send/steer action. */}
+            {running && onCancelTurn && composerAction(running, steeringReady, Boolean(draft.trim()) || pendingAttachments.length > 0) === "stop" ? <button className="stop" aria-label="取消当前任务" title="取消当前任务（输入内容后切换为发送）" disabled={cancelling} type="button" onClick={() => {
               if (cancelling) return;
               setCancelling(true);
               Promise.resolve(onCancelTurn()).catch((err) => setConfigError(readableError(err))).finally(() => setCancelling(false));
             }}>
               <Square aria-hidden="true" />
-            </button>}
-            <button className="send" aria-label={running ? (steeringReady ? "追加指令" : "正在连接") : resumable ? "继续上次任务" : "发送"} title={running ? (steeringReady ? "追加指令" : "正在连接") : resumable ? "继续上次任务" : "发送"} disabled={(running && !steeringReady) || sending || configuring || uploadingCount > 0 || (!draft.trim() && !pendingAttachments.length && !resumable)} type="button" onClick={submit}>
+            </button> : <button className="send" aria-label={running ? (steeringReady ? "追加指令" : "正在连接") : resumable ? "继续上次任务" : "发送"} title={running ? (steeringReady ? "追加指令" : "正在连接") : resumable ? "继续上次任务" : "发送"} disabled={(running && !steeringReady) || sending || configuring || uploadingCount > 0 || (!draft.trim() && !pendingAttachments.length && !resumable)} type="button" onClick={submit}>
               <ArrowUp aria-hidden="true" />
-            </button>
+            </button>}
           </div>
         </div>
         {configError && <p className="composer-config-error" role="alert">{configError}</p>}
@@ -2801,7 +2899,7 @@ export function MediaContent({ media, api, scopeId }) {
 
 // Memoized: during streaming every applied delta re-renders the transcript
 // once per frame, and only the active assistant message actually changes.
-const MessageRow = memo(function MessageRow({ message, entering = false, activityCollapseToken, api, scopeId = "", onForkAtMessage }) {
+const MessageRow = memo(function MessageRow({ message, entering = false, activityCollapseToken, api, scopeId = "", onForkAtMessage, fileChanges = [], onOpenFileChange }) {
   if (message.role === "activity") {
     return <ActivityMessage message={message} collapseToken={activityCollapseToken} api={api} />;
   }
@@ -2828,6 +2926,9 @@ const MessageRow = memo(function MessageRow({ message, entering = false, activit
             )}
             {message.content && <MarkdownContent content={message.content} />}
             {hasAssistantMedia && <MediaContent media={message.media} api={api} scopeId={scopeId} />}
+            {!message.status || message.status !== "running" ? (
+              <FileChangesSummary message={message} fileChanges={fileChanges} onOpenFileChange={onOpenFileChange} />
+            ) : null}
           </>
         ) : (
           <div className="bubble-body">
@@ -2846,6 +2947,57 @@ const MessageRow = memo(function MessageRow({ message, entering = false, activit
     </article>
   );
 });
+
+// Per-turn file change overview under a finished assistant bubble. The turn
+// summaries come from the persisted diff journal, so the section survives
+// reloads; rows open the matching patch in the inspector's 文件改动 tab.
+function FileChangesSummary({ message, fileChanges = [], onOpenFileChange = () => {} }) {
+  const turns = useMemo(() => turnChangesForMessage(fileChanges, message), [fileChanges, message]);
+  const summary = useMemo(() => summarizeTurns(turns), [turns]);
+  const [expanded, setExpanded] = useState(false);
+  if (!summary.fileCount) {
+    return null;
+  }
+  return (
+    <details
+      className={`file-changes${expanded ? " expanded" : ""}`}
+      open={expanded}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    >
+      <summary className="file-changes-head">
+        <FileDiff size={14} aria-hidden="true" />
+        <span>文件改动概览 · {summary.fileCount} 个文件 · {summary.changeCount} 处</span>
+        <span className="file-changes-counts">
+          {summary.additions != null ? `+${summary.additions}` : ""}
+          {summary.additions != null && summary.deletions != null ? " / " : ""}
+          {summary.deletions != null ? `−${summary.deletions}` : ""}
+        </span>
+      </summary>
+      <ul className="file-changes-list">
+        {summary.files.map((file) => (
+          <li key={file.path}>
+            <button
+              type="button"
+              className="file-change-row"
+              disabled={!file.patchAvailable}
+              title={file.patchAvailable ? "在右侧查看改动内容" : "该改动没有可显示的补丁"}
+              onClick={() => onOpenFileChange(file.diffId)}
+            >
+              <span className={`file-change-badge is-${file.changeType}`}>{changeTypeBadge(file.changeType)}</span>
+              <span className="file-change-path">{file.path}</span>
+              <span className="file-change-meta">
+                {file.changes > 1 ? `${file.changes} 处` : ""}
+                {file.additions != null ? ` +${file.additions}` : ""}
+                {file.deletions != null ? ` −${file.deletions}` : ""}
+              </span>
+              <span className="file-change-kind">{changeTypeLabel(file.changeType)}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
 
 // Model answers embed generated images as markdown data: URIs; the default
 // transform strips every data: URL as unsafe, which left broken images in
@@ -3390,7 +3542,133 @@ function useSlidingTabIndicator(activeKey) {
   return attachNav;
 }
 
-export function TracePanel({ api, collapsed, contextSnapshots, events, activityEvents, activityMeta, traceMeta, settings, activeSession, onToggle }) {
+// Inspector mode for the session's per-turn file changes. Lists turns
+// newest-first; selecting a file fetches its persisted unified patch.
+function FileChangesPanel({ api, sessionId = "", fileChanges = [], diffFocus = null }) {
+  const turns = useMemo(() => [...fileChanges].reverse(), [fileChanges]);
+  const [selected, setSelected] = useState(null); // {diffId, path}
+  const [patchState, setPatchState] = useState({ loading: false, error: "", record: null });
+  const patchRequestRef = useRef(0);
+
+  const openDiff = useCallback((diffId, path = "") => {
+    if (!api || !sessionId || !diffId) {
+      return;
+    }
+    const requestToken = patchRequestRef.current + 1;
+    patchRequestRef.current = requestToken;
+    setSelected({ diffId, path });
+    setPatchState({ loading: true, error: "", record: null });
+    api.getTurnPatch(sessionId, diffId)
+      .then((record) => {
+        if (patchRequestRef.current === requestToken) {
+          setPatchState({ loading: false, error: "", record });
+        }
+      })
+      .catch((err) => {
+        if (patchRequestRef.current === requestToken) {
+          setPatchState({ loading: false, error: String(err?.message || err || "读取补丁失败"), record: null });
+        }
+      });
+  }, [api, sessionId]);
+
+  useEffect(() => {
+    // A chat overview row re-focuses the panel on its file; the token makes
+    // repeated clicks on the same diff retrigger the selection.
+    if (diffFocus?.diffId) {
+      openDiff(String(diffFocus.diffId));
+    }
+  }, [diffFocus, openDiff]);
+
+  useEffect(() => {
+    setSelected(null);
+    setPatchState({ loading: false, error: "", record: null });
+  }, [sessionId]);
+
+  if (selected) {
+    const record = patchState.record;
+    return (
+      <div className="file-changes-panel">
+        <div className="file-changes-patch-head">
+          <button type="button" className="file-changes-back" onClick={() => { setSelected(null); setPatchState({ loading: false, error: "", record: null }); }}>← 返回列表</button>
+          <span className={`file-change-badge is-${record?.change_type || ""}`}>{changeTypeBadge(record?.change_type)}</span>
+          <span className="file-changes-patch-path">{record?.relative_path || selected.path || selected.diffId}</span>
+        </div>
+        {patchState.loading ? (
+          <p className="file-changes-empty">正在读取补丁…</p>
+        ) : patchState.error ? (
+          <p className="file-changes-empty">{patchState.error}</p>
+        ) : record?.patch_available ? (
+          <pre className="file-changes-patch">{patchTextLines(record.patch).map((line, index) => (
+            <span key={index} className={patchLineClass(line)}>{line || " "}</span>
+          ))}</pre>
+        ) : (
+          <p className="file-changes-empty">{record?.patch_unavailable_reason || "该改动没有可显示的补丁"}</p>
+        )}
+      </div>
+    );
+  }
+
+  if (!turns.length) {
+    return <p className="file-changes-empty">本会话还没有文件改动记录。</p>;
+  }
+
+  return (
+    <div className="file-changes-panel">
+      {turns.map((turn, index) => (
+        <section className="file-changes-turn" key={turn.turn_id || `turn-${index}`}>
+          <header className="file-changes-turn-head">
+            <span>{formatMessageTimestamp(turn.started_at) || "本轮任务"}</span>
+            <span>{turn.file_count} 个文件 · {turn.change_count} 处</span>
+            {turn.total_additions != null || turn.total_deletions != null ? (
+              <span className="file-changes-counts">
+                {turn.total_additions != null ? `+${turn.total_additions}` : ""}
+                {turn.total_additions != null && turn.total_deletions != null ? " / " : ""}
+                {turn.total_deletions != null ? `−${turn.total_deletions}` : ""}
+              </span>
+            ) : null}
+          </header>
+          <ul className="file-changes-list">
+            {(turn.files || []).map((file) => (
+              <li key={`${turn.turn_id}-${file.path}`}>
+                <button
+                  type="button"
+                  className="file-change-row"
+                  disabled={!file.patch_available}
+                  title={file.patch_available ? "查看改动内容" : "该改动没有可显示的补丁"}
+                  onClick={() => openDiff(file.diff_id, file.path)}
+                >
+                  <span className={`file-change-badge is-${file.change_type}`}>{changeTypeBadge(file.change_type)}</span>
+                  <span className="file-change-path">{file.path}</span>
+                  <span className="file-change-meta">
+                    {file.changes > 1 ? `${file.changes} 处` : ""}
+                    {file.additions != null ? ` +${file.additions}` : ""}
+                    {file.deletions != null ? ` −${file.deletions}` : ""}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function patchTextLines(patch) {
+  return String(patch || "").split("\n");
+}
+
+function patchLineClass(line) {
+  if (line.startsWith("+")) return "patch-add";
+  if (line.startsWith("-")) return "patch-del";
+  if (line.startsWith("@@")) return "patch-hunk";
+  if (line.startsWith("diff ") || line.startsWith("index ") || line.startsWith("--- ") || line.startsWith("+++ ")) {
+    return "patch-meta";
+  }
+  return "patch-context";
+}
+
+export function TracePanel({ api, collapsed, contextSnapshots, events, activityEvents, activityMeta, traceMeta, settings, activeSession, fileChanges = [], diffFocus = null, onToggle }) {
   const sessionEvents = Array.isArray(activityEvents) ? activityEvents : [];
   const [panelMode, setPanelMode] = useState("Trace");
   const [tab, setTab] = useState("Overview");
@@ -3460,14 +3738,16 @@ export function TracePanel({ api, collapsed, contextSnapshots, events, activityE
 
       <nav className="inspector-modes" aria-label="Inspector modes" ref={attachModesNav} data-indicator="pill">
         <span className="tab-indicator" aria-hidden="true" />
-        {["Trace", "Files", "PowerShell"].map((item) => (
+        {["Trace", "Diffs", "Files", "PowerShell"].map((item) => (
           <button className={item === panelMode ? "active" : ""} key={item} type="button" onClick={() => setPanelMode(item)}>
             {INSPECTOR_LABELS[item]}
           </button>
         ))}
       </nav>
 
-      {panelMode === "Files" ? (
+      {panelMode === "Diffs" ? (
+        <FileChangesPanel api={api} sessionId={activeSession?.session_id || ""} fileChanges={fileChanges} diffFocus={diffFocus} />
+      ) : panelMode === "Files" ? (
         <FileExplorer api={api} scopeId={projectScopeId} workspaceRoot={projectScopeId ? settings.workspace_root : ""} />
       ) : panelMode === "PowerShell" ? (
         <PowerShellPanel api={api} scopeId={projectScopeId} workspaceRoot={projectScopeId ? settings.workspace_root : ""} />
@@ -4027,6 +4307,11 @@ function renderTurnSegment(segment, idPrefix, timing = segment.find((message) =>
     0,
   );
   const createdAt = segmentCreatedAt(segment, finalAssistantIndex);
+  // File change summaries match on turn ids; a run with steering boundaries
+  // can own several, so collect every distinct one the bubble covers.
+  const turnIds = [...new Set(segment
+    .map((item) => String(item?.turn_id || ""))
+    .filter(Boolean))];
   return [
     {
       id: `${idPrefix}-assistant`,
@@ -4036,6 +4321,7 @@ function renderTurnSegment(segment, idPrefix, timing = segment.find((message) =>
       ...runTimingFields(timing),
       sections: finalizeToolSections(sections),
       ...(media.length ? { media } : {}),
+      ...(turnIds.length ? { turnIds } : {}),
       ...(lastCheckpointSequence ? { checkpointSequence: lastCheckpointSequence } : {}),
       ...(createdAt ? { createdAt } : {}),
       ...(usage ? { usage } : {}),
@@ -4922,6 +5208,13 @@ function compactValueSignature(value) {
 
 export function shouldSubmitComposer(event) {
   return event.key === "Enter" && !event.shiftKey && !event.nativeEvent?.isComposing;
+}
+
+// The composer has a single adaptive action button: while a run is active it
+// shows stop whenever there is nothing to send (empty composer, or steering
+// not connected yet), and swaps to the send/steer action otherwise.
+export function composerAction(running, steeringReady, hasDraft) {
+  return running && (!steeringReady || !hasDraft) ? "stop" : "send";
 }
 
 export function syncComposerDraft(drafts, key, value) {

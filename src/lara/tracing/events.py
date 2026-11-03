@@ -382,6 +382,8 @@ def _diff_event_record(event: ContextEvent) -> dict[str, Any]:
         "patch_path": payload.get("patch_path"),
         "patch_char_count": payload.get("patch_char_count", 0),
         "patch_line_count": payload.get("patch_line_count", 0),
+        "additions": payload.get("additions"),
+        "deletions": payload.get("deletions"),
         "patch_unavailable_reason": payload.get("patch_unavailable_reason"),
         "created_at": event.timestamp,
     }
