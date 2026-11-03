@@ -5,6 +5,7 @@ description = "Local agent development and evaluation workbench"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "dynamic-memory-cli",
     "fastapi>=0.115.0",
     "pygent-ai[video]==0.3.30",
     "python-dateutil>=2.9.0",
@@ -22,6 +23,11 @@ dev = [
 credentials = [
     "keyring>=25.0.0",
 ]
+
+[tool.uv.sources]
+# Local sibling checkout of the memory ledger CLI; switch to a git source
+# when the package is published or consumed from other machines.
+dynamic-memory-cli = { path = "../memory-cli", editable = true }
 
 [project.scripts]
 lara = "lara.cli:main"
