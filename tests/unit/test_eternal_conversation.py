@@ -1,32 +1,32 @@
 import asyncio
 import json
+import subprocess
+import sys
+import uuid
 from contextvars import ContextVar
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
-from pygent import AIMessage, PygentAgent, ToolCall, ToolMessage, UserMessage
-from pygent.llm import ModelExecution, ModelProviderResponse
+from pygent import AIMessage, Context, Message, Module, UserMessage
+from pygent.tool import StandardTools
+from pygent.runtime.codec import message_to_dict
 
-from lara.config import load_run_config
 from tests.unit.test_model_configuration import native_runtime_config
-from lara.runtime.agent.common import DEFAULT_REACT_MAX_STEPS
-from lara.runtime.agent.core import LaraAgent
 from lara.runtime.eternal_conversation import (
-    EXTRACTOR_SYSTEM_PROMPT,
+    BUILDER_GUIDANCE,
+    EXTRACTOR_GUIDANCE,
     MAX_MEMORY_JOB_ATTEMPTS,
+    MEMORY_JOB_FALLBACK_FOREGROUND_PROMPT,
     DynamicMemoryCli,
     EternalConversationHarness,
-    _bound_extractor_payload,
-    _compact_working_memory,
-    _validate_extractor_payload,
+    MemoryJobContext,
+    MemoryJobRequest,
     estimate_context_tokens,
     load_projection,
     render_memory_context,
 )
-from lara.runtime.service import (
-    MAX_IDENTICAL_MEMORY_TOOL_REJECTIONS,
-    LaraRuntimeService,
-)
+from lara.runtime.service import LaraRuntimeService
 from lara.schema import EternalConversationConfig, RunConfig
 from lara.sessions import SessionManager
 
@@ -40,183 +40,178 @@ SCRIPT = (
 )
 
 
-def test_identical_memory_tool_rejection_guard_is_bounded_below_agent_budget() -> None:
-    assert MAX_IDENTICAL_MEMORY_TOOL_REJECTIONS == 8
-    assert MAX_IDENTICAL_MEMORY_TOOL_REJECTIONS < DEFAULT_REACT_MAX_STEPS
+def _memory_cli_for(request: MemoryJobRequest) -> DynamicMemoryCli:
+    return DynamicMemoryCli(SCRIPT, request.context.memory_root)
 
 
-class _MemoryReActInvoker:
+async def _publish_via_cli(
+    request: MemoryJobRequest,
+    *,
+    snapshot: dict,
+    changed_uts: list[dict],
+    semantic_statement: str = "The range is represented.",
+) -> None:
+    """Simulate the fork agent publishing its proposal through the CLI."""
+
+    cli = _memory_cli_for(request)
+    state = await cli.call("get-state")
+    jobs = request.context.memory_root / "jobs"
+    jobs.mkdir(parents=True, exist_ok=True)
+    proposal = {
+        "base_memory_revision": state["memory_revision"],
+        "base_snapshot_revision": state["snapshot_revision"],
+        "from_cursor": request.context.covered_through + 1,
+        "to_cursor": request.context.target_cursor,
+        "snapshot": snapshot,
+        "changed_uts": changed_uts,
+        "evidence_refs": [request.context.evidence_ref],
+        "semantic_statement": semantic_statement,
+    }
+    for change in changed_uts:
+        if change.get("action", "upsert") == "upsert":
+            change.setdefault("source", request.context.session_id)
+            change.setdefault("evidence_refs", [request.context.evidence_ref])
+    path = (
+        jobs
+        / f"proposal-{request.context.covered_through + 1}-{request.context.target_cursor}.json"
+    )
+    path.write_text(json.dumps(proposal, ensure_ascii=False), encoding="utf-8")
+    await cli.file_command("publish-pending", proposal, path.name)
+
+
+class _SeamScriptedState:
+    __slots__ = ("seen",)
+
     def __init__(self) -> None:
-        self.requests = []
-        self.generations = []
-        self.failed_results_seen = 0
+        self.seen: list[tuple[Message, Context]] = []
 
-    def validate_route(self, _route) -> None:
-        return None
 
-    def execute(self, *, message, context, generation, **_kwargs) -> ModelExecution:
-        self.requests.append((message, context))
-        self.generations.append(generation)
+class _SeamScriptedModel(Module[Message, AIMessage]):
+    """Scripted model for the memory-job seam test; records what it sees."""
 
-        async def invoke(_emit) -> ModelProviderResponse:
-            if isinstance(message, UserMessage):
-                answer = AIMessage(
-                    content="publishing",
-                    tool_calls=(
-                        ToolCall(
-                            call_id="publish-1",
-                            name="publish_pending",
-                            arguments={"payload": {"value": "x" * 701}},
-                        ),
-                    ),
-                )
-            elif isinstance(message, ToolMessage):
-                if message.results[0].status == "failed":
-                    self.failed_results_seen += 1
-                    error_text = str(message.results[0].error)
-                    assert "at most 700 characters" in error_text
-                    assert "split" in error_text
-                    assert (
-                        "rejected the previous call before any write" in message.content
-                    )
-                    assert "NEVER resend identical arguments" in message.content
-                    assert "multiple focused UTs" in message.content
-                    assert "within 8 UT" in message.content
-                    if self.failed_results_seen == 1:
-                        assert "IDENTICAL INVALID PAYLOAD" not in message.content
-                        assert "IDENTICAL INVALID PAYLOAD" not in error_text
-                        answer = AIMessage(
-                            content="accidentally repeating",
-                            tool_calls=(
-                                ToolCall(
-                                    call_id="publish-repeat",
-                                    name="publish_pending",
-                                    arguments={"payload": {"value": "x" * 701}},
-                                ),
-                            ),
-                        )
-                    else:
-                        assert (
-                            "IDENTICAL INVALID PAYLOAD REJECTION #2" in message.content
-                        )
-                        assert "IDENTICAL INVALID PAYLOAD REJECTION #2" in error_text
-                        answer = AIMessage(
-                            content="shortening",
-                            tool_calls=(
-                                ToolCall(
-                                    call_id="publish-2",
-                                    name="publish_pending",
-                                    arguments={"payload": {"value": "compact"}},
-                                ),
-                            ),
-                        )
-                else:
-                    assert message.results[0].status == "succeeded", message.results[0]
-                    answer = AIMessage(content="published")
-            else:  # pragma: no cover - Pygent ReAct has only these model boundaries here.
-                raise AssertionError(type(message).__name__)
-            return ModelProviderResponse(message=answer, usage={})
+    trusted_live_resource_attributes = ("state",)
 
-        return ModelExecution(invoke)
+    def __init__(self) -> None:
+        super().__init__()
+        self.state = _SeamScriptedState()
+
+    async def forward(
+        self, message: Message, context: Context
+    ) -> tuple[AIMessage, Context]:
+        self.state.seen.append((message, context))
+        return AIMessage(content="job finished"), context
+
+
+class _StubMemoryLaraAgent:
+    """Stands in for the child LaraAgent; only llm/_model_entries/aclose used."""
+
+    def __init__(self) -> None:
+        self.llm = object()
+
+    def _model_entries(self) -> tuple:
+        return ()
 
     async def aclose(self) -> None:
         return None
 
 
-def test_working_memory_compacts_tool_protocol_but_preserves_conversation() -> None:
-    history = [
-        {"role": "user", "content": "keep this exact constraint"},
-        {
-            "role": "assistant",
-            "content": "final answer stays complete",
-            "usage": {"input_tokens": 999_999},
-            "tool_calls": [{"name": "write", "arguments": {"content": "x" * 5_000}}],
-        },
-        {
-            "role": "tool",
-            "results": [
-                {"name": "write", "status": "succeeded", "output": "y" * 5_000}
-            ],
-        },
-    ]
-
-    compacted = _compact_working_memory(history)
-
-    assert compacted[0] == {"role": "user", "content": "keep this exact constraint"}
-    assert compacted[1]["content"] == "final answer stays complete"
-    assert "usage" not in compacted[1]
-    assert "truncated_json" in compacted[1]["tool_calls"][0]["arguments"]
-    assert (
-        "full evidence remains in Raw History" in compacted[2]["results"][0]["output"]
-    )
-
-
 @pytest.mark.asyncio
-async def test_background_memory_runner_uses_native_pygent_react(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+async def test_memory_job_runner_forks_extractor_and_runs_builder_as_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = native_runtime_config(tmp_path)
-    invoker = _MemoryReActInvoker()
-    real_agent = LaraAgent
-    created_react_agents: list[dict] = []
-
-    def make_pygent_agent(**kwargs):
-        created_react_agents.append(kwargs)
-        return PygentAgent(**kwargs)
-
-    def make_agent(child_config, *, managed_model, model_group_name=None):
-        agent = real_agent(
-            child_config,
-            managed_model=managed_model,
-            model_group_name=model_group_name,
-        )
-        agent.llm = invoker
-        return agent
-
-    monkeypatch.setattr("lara.runtime.service.LaraAgent", make_agent)
-    monkeypatch.setattr("lara.runtime.service.PygentAgent", make_pygent_agent)
     service = object.__new__(LaraRuntimeService)
     service.config = config
-    received = []
+    service._memory_job_tools = StandardTools(
+        workspace_root=str(tmp_path), restrict_to_workspace=False
+    )
+    runs: list[tuple[tuple, _SeamScriptedModel]] = []
 
-    from lara.runtime.eternal_conversation import MemoryAgentTool
+    def model_factory(definitions: tuple) -> _SeamScriptedModel:
+        model = _SeamScriptedModel()
+        runs.append((definitions, model))
+        return model
 
-    async def publish(payload: dict) -> dict:
-        if len(payload["value"]) > 700:
-            raise ValueError(
-                "changed_uts[0] (ut-test) content has 701 characters; split its details "
-                "across multiple focused UTs whose content is at most 700 characters each, or, "
-                "if companion UTs already hold the split details, remove at least 1 character "
-                "from this over-limit UT. NEVER resend the identical payload; "
-                "then call publish_pending again"
-            )
-        received.append(payload)
-        return {"status": "published", "build_state": "pending"}
-
-    answer = await service._run_memory_agent(
-        config.agent_alias,
-        "Call publish_pending exactly once, then finish.",
-        {"job": "extract"},
-        MemoryAgentTool(
-            name="publish_pending",
-            description="Publish a Pending memory proposal.",
-            handler=publish,
+    monkeypatch.setattr(
+        "lara.runtime.service.build_model_layer_factory",
+        lambda *_args, **_kwargs: model_factory,
+    )
+    monkeypatch.setattr(
+        "lara.runtime.service.LaraAgent",
+        lambda *_args, **_kwargs: _StubMemoryLaraAgent(),
+    )
+    monkeypatch.setattr(
+        service,
+        "_child_agent_config",
+        lambda alias: SimpleNamespace(
+            resolved_agent=SimpleNamespace(default_model_group="memory-group")
         ),
     )
 
-    assert answer == "published"
-    assert received == [{"value": "compact"}]
-    assert len(invoker.requests) == 4
-    assert all(
-        generation.max_output_tokens is None for generation in invoker.generations
+    history = [
+        message_to_dict(UserMessage(content="remember the exact constraint")),
+        message_to_dict(AIMessage(content="recorded")),
+    ]
+    extractor = MemoryJobRequest(
+        role="extractor",
+        alias="extractor",
+        label="lara-fork.extractor:1-2",
+        system_prompt="foreground prompt",
+        history_range=tuple(history),
+        directive="extract directive",
+        context=MemoryJobContext(
+            session_id="session-1",
+            memory_script=SCRIPT,
+            memory_root=tmp_path / "memory",
+            evidence_ref="raw-history:range-1-2",
+            covered_through=0,
+            target_cursor=2,
+        ),
     )
-    assert created_react_agents[0]["max_steps"] == DEFAULT_REACT_MAX_STEPS == 500
-    assert created_react_agents[0]["max_model_calls"] == DEFAULT_REACT_MAX_STEPS
-    assert created_react_agents[0]["max_tool_calls"] == DEFAULT_REACT_MAX_STEPS
-    assert isinstance(invoker.requests[0][0], UserMessage)
-    assert isinstance(invoker.requests[1][0], ToolMessage)
-    assert isinstance(invoker.requests[2][0], ToolMessage)
+
+    text = await service._run_memory_job(extractor)
+
+    assert text == "job finished"
+    definitions, model = runs[-1]
+    names = {definition.name for definition in definitions}
+    # aligned with the foreground StandardTools composition
+    assert {"bash", "read", "write", "edit", "glob", "grep"} <= names
+    assert "memory_cli" not in names
+    seen_message, seen_context = model.state.seen[0]
+    # block 1: verbatim foreground prompt + uncompacted history
+    assert seen_context.system_prompt == "foreground prompt"
+    assert [entry.content for entry in seen_context.messages] == [
+        "remember the exact constraint",
+        "recorded",
+    ]  # verbatim, uncompacted (wire dicts rebuilt into native messages)
+    assert seen_message.content == "extract directive"
+
+    builder = MemoryJobRequest(
+        role="builder",
+        alias="builder",
+        label="lara-child.builder:1",
+        system_prompt=BUILDER_GUIDANCE,
+        history_range=(),
+        directive="build directive",
+        context=MemoryJobContext(
+            session_id="session-1",
+            memory_script=SCRIPT,
+            memory_root=tmp_path / "memory",
+            evidence_ref="build-batch:x",
+            covered_through=0,
+            target_cursor=0,
+            build_batch_path=tmp_path / "batch.json",
+        ),
+    )
+
+    await service._run_memory_job(builder)
+
+    _, builder_model = runs[-1]
+    builder_message, builder_context = builder_model.state.seen[0]
+    # the builder is an independent child: own prompt, fresh context
+    assert builder_context.system_prompt == BUILDER_GUIDANCE
+    assert builder_context.messages == ()
+    assert builder_message.content == "build directive"
 
 
 @pytest.mark.asyncio
@@ -226,7 +221,7 @@ async def test_wait_idle_isolates_failed_background_job_from_foreground() -> Non
 
     harness = EternalConversationHarness(
         EternalConversationConfig(enabled=True),
-        run_agent=lambda *_args: asyncio.sleep(0, result="done"),
+        run_memory_job=lambda *_args: asyncio.sleep(0, result="done"),
     )
     harness._workers["session-1"] = asyncio.create_task(fail())
 
@@ -252,7 +247,7 @@ async def test_retry_pending_restarts_only_the_failed_memory_job(
     )
     harness = EternalConversationHarness(
         EternalConversationConfig(enabled=True),
-        run_agent=lambda *_args: asyncio.sleep(0, result="done"),
+        run_memory_job=lambda *_args: asyncio.sleep(0, result="done"),
     )
     resumed: list[str] = []
 
@@ -318,7 +313,7 @@ async def test_context_ratio_trigger_defers_extraction_below_threshold(
             extraction_trigger="context_ratio",
             extraction_trigger_ratio=0.7,
         ),
-        run_agent=lambda *_args: asyncio.sleep(0, result="done"),
+        run_memory_job=lambda *_args: asyncio.sleep(0, result="done"),
     )
 
     await harness.record_and_trigger(session, context_window_tokens=1_000_000)
@@ -355,7 +350,7 @@ async def test_context_ratio_trigger_spawns_extraction_at_threshold(
             extraction_trigger="context_ratio",
             extraction_trigger_ratio=0.7,
         ),
-        run_agent=lambda *_args: asyncio.sleep(0, result="done"),
+        run_memory_job=lambda *_args: asyncio.sleep(0, result="done"),
     )
     started: list[str] = []
 
@@ -393,7 +388,7 @@ async def test_context_ratio_trigger_falls_back_without_window_budget(
             extraction_trigger="context_ratio",
             extraction_trigger_ratio=0.7,
         ),
-        run_agent=lambda *_args: asyncio.sleep(0, result="done"),
+        run_memory_job=lambda *_args: asyncio.sleep(0, result="done"),
     )
     started: list[str] = []
 
@@ -420,7 +415,7 @@ async def test_turn_trigger_extraction_ignores_window_budget(
     manager.save(session)
     harness = EternalConversationHarness(
         EternalConversationConfig(enabled=True),
-        run_agent=lambda *_args: asyncio.sleep(0, result="done"),
+        run_memory_job=lambda *_args: asyncio.sleep(0, result="done"),
     )
     started: list[str] = []
 
@@ -445,7 +440,9 @@ async def test_turn_trigger_extraction_ignores_window_budget(
 async def test_memory_workers_do_not_inherit_foreground_execution_context(
     tmp_path: Path,
 ) -> None:
-    foreground_scope = ContextVar("test_foreground_scope", default=None)
+    foreground_scope: ContextVar[str | None] = ContextVar(
+        "test_foreground_scope", default=None
+    )
     observed = []
     config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
     manager = SessionManager(config)
@@ -454,41 +451,42 @@ async def test_memory_workers_do_not_inherit_foreground_execution_context(
     session.history = [{"role": "user", "content": "remember this"}]
     manager.save(session)
 
-    async def run_agent(_alias: str, system: str, _request: dict, memory_tool) -> str:
+    async def run_memory_job(request: MemoryJobRequest) -> str:
         observed.append(foreground_scope.get())
-        if "memory extraction Agent" in system:
-            await memory_tool.handler(
-                {
-                    "snapshot": {
-                        "resident_memory": [],
-                        "recent_context": [],
-                        "current_state": [],
-                        "completed": [],
-                        "next_actions": [],
-                        "constraints": [],
-                    },
-                    "changed_uts": [
-                        {
-                            "action": "upsert",
-                            "id": "ut-context",
-                            "memory_id": "memory-context",
-                            "priority": 50,
-                            "content": "Remember this context boundary.",
-                            "queries": ["context boundary"],
-                            "must_include": ["context boundary"],
-                            "tags": ["test"],
-                        }
-                    ],
-                    "semantic_statement": "The range is represented.",
-                }
+        cli = DynamicMemoryCli(SCRIPT, request.context.memory_root)
+        if request.role == "extractor":
+            await _publish_via_cli(
+                request,
+                snapshot={
+                    "resident_memory": [],
+                    "recent_context": [],
+                    "current_state": [],
+                    "completed": [],
+                    "next_actions": [],
+                    "constraints": [],
+                },
+                changed_uts=[
+                    {
+                        "action": "upsert",
+                        "id": "ut-context",
+                        "memory_id": "memory-context",
+                        "priority": 50,
+                        "content": "Remember this context boundary.",
+                        "queries": ["context boundary"],
+                        "must_include": ["context boundary"],
+                        "tags": ["test"],
+                    }
+                ],
             )
         else:
-            await memory_tool.handler({"diagnostics": []})
+            await cli.call(
+                "build-pending", "--file", str(request.context.build_batch_path)
+            )
         return "done"
 
     harness = EternalConversationHarness(
         EternalConversationConfig(enabled=True, dynamic_memory_cli_path=str(SCRIPT)),
-        run_agent=run_agent,
+        run_memory_job=run_memory_job,
     )
     token = foreground_scope.set("active-foreground-execution")
     try:
@@ -500,84 +498,96 @@ async def test_memory_workers_do_not_inherit_foreground_execution_context(
     assert observed == [None, None]
 
 
-def test_extractor_payload_enforces_compact_snapshot_and_ut_limits() -> None:
-    snapshot = {
-        "resident_memory": ["x"] * 5,
-        "recent_context": [],
-        "current_state": [],
-        "completed": [],
-        "next_actions": [],
-        "constraints": [],
-    }
-    with pytest.raises(ValueError, match="has 5 items; compact output limit is 4"):
-        _validate_extractor_payload({"snapshot": snapshot, "changed_uts": []})
-
-    snapshot["resident_memory"] = []
-    with pytest.raises(ValueError, match="at most 8 items"):
-        _validate_extractor_payload({"snapshot": snapshot, "changed_uts": [{}] * 9})
-
-
-def test_extractor_payload_rejects_update_action_with_upsert_guidance() -> None:
-    snapshot = {
-        "resident_memory": [],
-        "recent_context": [],
-        "current_state": [],
-        "completed": [],
-        "next_actions": [],
-        "constraints": [],
-    }
-
-    with pytest.raises(
-        ValueError,
-        match=r"unsupported action 'update'.*use action='upsert' to create or update a UT",
-    ):
-        _validate_extractor_payload(
-            {
-                "snapshot": snapshot,
-                "changed_uts": [{"action": "update", "id": "existing-ut"}],
-            }
-        )
+def _cli_publish_error(tmp_path: Path, proposal: dict) -> str:
+    root = tmp_path / f"memory-{uuid.uuid4().hex[:8]}"
+    subprocess.run(
+        [sys.executable, str(SCRIPT), "--root", str(root), "init", "--path", str(root)],
+        check=True,
+        capture_output=True,
+    )
+    path = tmp_path / "proposal.json"
+    path.write_text(json.dumps(proposal, ensure_ascii=False), encoding="utf-8")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--root",
+            str(root),
+            "publish-pending",
+            "--file",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode != 0
+    return proc.stdout + proc.stderr
 
 
-def test_extractor_payload_is_not_silently_truncated_before_validation() -> None:
-    accepted_snapshot = {
-        "resident_memory": ["x" * 500],
-        "recent_context": [],
-        "current_state": [],
-        "completed": [],
-        "next_actions": [],
-        "constraints": [],
-    }
-    _validate_extractor_payload({"snapshot": accepted_snapshot, "changed_uts": []})
-
-    payload = {
+def _valid_shape_proposal(**overrides: object) -> dict:
+    proposal: dict = {
+        "base_memory_revision": 0,
+        "base_snapshot_revision": 0,
+        "from_cursor": 1,
+        "to_cursor": 2,
         "snapshot": {
-            "resident_memory": ["x" * 501] * 4,
+            "resident_memory": [],
             "recent_context": [],
             "current_state": [],
             "completed": [],
             "next_actions": [],
             "constraints": [],
         },
-        "changed_uts": [
-            {
-                "action": "upsert",
-                "content": "c" * 900,
-                "queries": ["q"] * 6,
-                "must_include": ["c"] * 5,
-            }
-            for _ in range(6)
-        ],
+        "changed_uts": [],
+        "evidence_refs": ["raw-history:range-1-2"],
+        "semantic_statement": "represented",
     }
+    proposal.update(overrides)
+    return proposal
 
-    bounded = _bound_extractor_payload(payload)
 
-    assert bounded == payload
-    with pytest.raises(
-        ValueError,
-        match=r"snapshot\.resident_memory\[0\] has 501 characters.*split detailed facts",
-    ):
-        _validate_extractor_payload(bounded)
+def test_cli_publish_enforces_compact_snapshot_and_ut_limits(tmp_path: Path) -> None:
+    snapshot = _valid_shape_proposal()["snapshot"]
+    snapshot["resident_memory"] = ["x"] * 5
+    error = _cli_publish_error(tmp_path, _valid_shape_proposal(snapshot=snapshot))
+    assert "has 5 items; compact output limit is 4" in error
+
+    error = _cli_publish_error(tmp_path, _valid_shape_proposal(changed_uts=[{}] * 9))
+    assert "at most 8 items" in error
+
+
+def test_cli_publish_rejects_update_action_with_upsert_guidance(tmp_path: Path) -> None:
+    error = _cli_publish_error(
+        tmp_path,
+        _valid_shape_proposal(changed_uts=[{"action": "update", "id": "existing-ut"}]),
+    )
+    assert "unsupported action 'update'" in error
+    assert "use action='upsert' to create or update a UT" in error
+
+
+def test_cli_publish_is_not_silently_truncated(tmp_path: Path) -> None:
+    snapshot = _valid_shape_proposal()["snapshot"]
+    snapshot["resident_memory"] = ["x" * 501] * 4
+    error = _cli_publish_error(tmp_path, _valid_shape_proposal(snapshot=snapshot))
+    assert "snapshot.resident_memory[0] has 501 characters" in error
+    assert "split detailed facts" in error
+
+    oversized_ut = {
+        "action": "upsert",
+        "id": "too-long",
+        "memory_id": "memory-too-long",
+        "priority": 50,
+        "content": "c" * 701,
+        "queries": ["q"] * 6,
+        "must_include": ["c"] * 5,
+        "source": "session",
+        "evidence_refs": ["raw-history:range-1-2"],
+    }
+    error = _cli_publish_error(
+        tmp_path, _valid_shape_proposal(changed_uts=[oversized_ut])
+    )
+    assert "content has 701 characters" in error
+    assert "split its details" in error
 
 
 def test_memory_context_requires_clarification_for_unacknowledged_conflicts(
@@ -636,24 +646,24 @@ def test_published_memory_uses_the_explicit_command(tmp_path: Path) -> None:
 
 
 def test_extractor_retains_private_compatibility_boundaries() -> None:
-    assert "Version support windows" in EXTRACTOR_SYSTEM_PROMPT
-    assert "exact version/date boundary" in EXTRACTOR_SYSTEM_PROMPT
-    assert "own stable UT" in EXTRACTOR_SYSTEM_PROMPT
-    assert "MUST NOT share a UT" in EXTRACTOR_SYSTEM_PROMPT
-    assert "carry forward every still-effective decision" in EXTRACTOR_SYSTEM_PROMPT
-    assert "absence from the frozen Working" in EXTRACTOR_SYSTEM_PROMPT
-    assert "Memory is not evidence" in EXTRACTOR_SYSTEM_PROMPT
+    assert "Version support windows" in EXTRACTOR_GUIDANCE
+    assert "exact version/date boundary" in EXTRACTOR_GUIDANCE
+    assert "own stable UT" in EXTRACTOR_GUIDANCE
+    assert "MUST NOT share a UT" in EXTRACTOR_GUIDANCE
+    assert "carry forward every still-effective decision" in EXTRACTOR_GUIDANCE
+    assert "absence from the frozen Working" in EXTRACTOR_GUIDANCE
+    assert "Memory is not evidence" in EXTRACTOR_GUIDANCE
 
 
 def test_extractor_retains_named_entities_as_retrievable_memory() -> None:
-    assert "user-defined proper" in EXTRACTOR_SYSTEM_PROMPT
-    assert "internal codenames" in EXTRACTOR_SYSTEM_PROMPT
-    assert "environment names" in EXTRACTOR_SYSTEM_PROMPT
-    assert "exact user-authored name" in EXTRACTOR_SYSTEM_PROMPT
-    assert "at least one query, and must_include" in EXTRACTOR_SYSTEM_PROMPT
-    assert "never leave it only in the Snapshot" in EXTRACTOR_SYSTEM_PROMPT
-    assert "memory-only visibility, not" in EXTRACTOR_SYSTEM_PROMPT
-    assert "self-audit every future-relevant named entity" in EXTRACTOR_SYSTEM_PROMPT
+    assert "user-defined proper" in EXTRACTOR_GUIDANCE
+    assert "internal codenames" in EXTRACTOR_GUIDANCE
+    assert "environment names" in EXTRACTOR_GUIDANCE
+    assert "exact user-authored name" in EXTRACTOR_GUIDANCE
+    assert "at least one query, and must_include" in EXTRACTOR_GUIDANCE
+    assert "never leave it only in the Snapshot" in EXTRACTOR_GUIDANCE
+    assert "memory-only visibility, not" in EXTRACTOR_GUIDANCE
+    assert "self-audit every future-relevant named entity" in EXTRACTOR_GUIDANCE
 
 
 @pytest.mark.asyncio
@@ -673,38 +683,41 @@ async def test_harness_records_raw_history_publishes_snapshot_and_builds_memory(
     ]
     manager.save(session)
 
-    calls = []
+    requests: list[MemoryJobRequest] = []
 
-    async def run_agent(alias: str, system: str, request: dict, memory_tool) -> str:
-        calls.append((alias, system, request))
-        if "memory extraction Agent" in system:
-            await memory_tool.handler(
-                {
-                    "snapshot": {
-                        "resident_memory": ["Use blue deployments"],
-                        "recent_context": [],
-                        "current_state": [],
-                        "completed": [],
-                        "next_actions": [],
-                        "constraints": ["Use blue deployments"],
-                    },
-                    "changed_uts": [
-                        {
-                            "action": "upsert",
-                            "id": "ut-blue",
-                            "memory_id": "memory-blue",
-                            "priority": 80,
-                            "content": "The service must use blue ↔ green deployments.",
-                            "queries": ["service deployment", "deployment constraint"],
-                            "must_include": ["blue deployments"],
-                            "tags": ["constraint"],
-                        }
-                    ],
-                    "semantic_statement": "The deployment constraint is carried.",
-                }
+    async def run_memory_job(request: MemoryJobRequest) -> str:
+        requests.append(request)
+        if request.role == "extractor":
+            # the fork agent publishes through the memory CLI itself
+            await _publish_via_cli(
+                request,
+                snapshot={
+                    "resident_memory": ["Use blue deployments"],
+                    "recent_context": [],
+                    "current_state": [],
+                    "completed": [],
+                    "next_actions": [],
+                    "constraints": ["Use blue deployments"],
+                },
+                changed_uts=[
+                    {
+                        "action": "upsert",
+                        "id": "ut-blue",
+                        "memory_id": "memory-blue",
+                        "priority": 80,
+                        "content": "The service must use blue deployments.",
+                        "queries": ["service deployment", "deployment constraint"],
+                        "must_include": ["blue deployments"],
+                        "tags": ["constraint"],
+                    }
+                ],
+                semantic_statement="The deployment constraint is carried.",
             )
         else:
-            await memory_tool.handler({"diagnostics": []})
+            cli = _memory_cli_for(request)
+            await cli.call(
+                "build-pending", "--file", str(request.context.build_batch_path)
+            )
         return "done"
 
     harness = EternalConversationHarness(
@@ -714,7 +727,7 @@ async def test_harness_records_raw_history_publishes_snapshot_and_builds_memory(
             builder_agent_alias="builder",
             dynamic_memory_cli_path=str(SCRIPT),
         ),
-        run_agent=run_agent,
+        run_memory_job=run_memory_job,
     )
     await harness.record_and_trigger(manager.load(ref.session_id))
     await harness.wait_idle()
@@ -727,13 +740,31 @@ async def test_harness_records_raw_history_publishes_snapshot_and_builds_memory(
         encoding="utf-8"
     )
     assert "Use blue deployments" in raw
-    assert (
+    # fork shape: block 1 is the foreground system prompt plus the verbatim
+    # uncompacted history; block 2 is the <system-reminder> directive
+    extractor_request = requests[0]
+    assert extractor_request.role == "extractor"
+    # legacy sessions with no stored prompt get the explicit fallback
+    assert extractor_request.system_prompt == MEMORY_JOB_FALLBACK_FOREGROUND_PROMPT
+    assert [entry["content"] for entry in extractor_request.history_range] == [
+        "Use blue deployments for this service.",
+        "I will preserve blue deployments as a constraint.",
+    ]
+    assert extractor_request.directive.startswith("<system-reminder>")
+    assert "publish-pending" in extractor_request.directive
+    assert "Old Snapshot" in extractor_request.directive
+    assert requests[0].label != requests[1].label
+    extractor_history = (
         Path(ref.session_dir) / "agent-history" / "extractor" / "conversation.jsonl"
-    ).exists()
+    ).read_text(encoding="utf-8")
+    # the directive is logged content-addressed only: no snapshot/UT text
+    assert '"directive_hash"' in extractor_history
+    assert '"directive"' not in extractor_history
+    assert "Use blue deployments for this service." not in extractor_history
     assert (
         Path(ref.session_dir) / "agent-history" / "builder" / "conversation.jsonl"
     ).exists()
-    assert [item[0] for item in calls] == ["extractor", "builder"]
+    assert [request.role for request in requests] == ["extractor", "builder"]
 
     import sqlite3
 
@@ -749,71 +780,71 @@ async def test_harness_records_raw_history_publishes_snapshot_and_builds_memory(
     listed = await DynamicMemoryCli(SCRIPT, Path(ref.session_dir) / "memory").call(
         "list", "--full"
     )
-    assert "blue ↔ green" in listed["memories"][0]["content"]
+    assert any("blue deployments" in item["content"] for item in listed["memories"])
 
 
 @pytest.mark.asyncio
-async def test_harness_retries_invalid_json_and_only_freezes_uncovered_history(
+async def test_harness_retries_invalid_proposal_and_only_freezes_uncovered_history(
     tmp_path: Path,
 ) -> None:
     config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
     manager = SessionManager(config)
     ref = manager.create("chat", mode="chat")
-    calls: list[tuple[str, dict]] = []
+    requests: list[MemoryJobRequest] = []
     invalid_once = True
+    rejected_inside_fork = 0
 
-    async def run_agent(alias: str, system: str, request: dict, memory_tool) -> str:
-        nonlocal invalid_once
-        calls.append((alias, request))
-        if "memory extraction Agent" in system:
+    async def run_memory_job(request: MemoryJobRequest) -> str:
+        nonlocal invalid_once, rejected_inside_fork
+        requests.append(request)
+        if request.role == "extractor":
             if invalid_once:
                 invalid_once = False
-                with pytest.raises(
-                    ValueError,
-                    match="split its details.*at most 700 characters.*remove at least 1 character.*NEVER resend",
-                ):
-                    await memory_tool.handler(
-                        {
-                            "snapshot": {
-                                "resident_memory": [],
-                                "recent_context": [],
-                                "current_state": [],
-                                "completed": [],
-                                "next_actions": [],
-                                "constraints": [],
-                            },
-                            "changed_uts": [
-                                {
-                                    "action": "upsert",
-                                    "id": "too-long",
-                                    "content": "x" * 701,
-                                    "queries": [],
-                                    "must_include": [],
-                                }
-                            ],
-                        }
+                # the fork self-corrects inside one ReAct execution: the CLI
+                # rejects the oversized UT, the agent shortens and re-publishes
+                # CLI errors surface as RuntimeError carrying the JSON message
+                with pytest.raises(RuntimeError, match="content has 701 characters"):
+                    await _publish_via_cli(
+                        request,
+                        snapshot={
+                            "resident_memory": [],
+                            "recent_context": [],
+                            "current_state": [],
+                            "completed": [],
+                            "next_actions": [],
+                            "constraints": [],
+                        },
+                        changed_uts=[
+                            {
+                                "action": "upsert",
+                                "id": "too-long",
+                                "memory_id": "memory-too-long",
+                                "priority": 50,
+                                "content": "x" * 701,
+                                "queries": [],
+                                "must_include": [],
+                            }
+                        ],
                     )
-            await memory_tool.handler(
-                {
-                    "snapshot": {
-                        "resident_memory": [],
-                        "recent_context": [],
-                        "current_state": [],
-                        "completed": [],
-                        "next_actions": [],
-                        "constraints": [],
-                    },
-                    "changed_uts": [],
-                    "semantic_statement": "The new range is represented by the snapshot.",
-                }
+                rejected_inside_fork += 1
+            await _publish_via_cli(
+                request,
+                snapshot={
+                    "resident_memory": [],
+                    "recent_context": [],
+                    "current_state": [],
+                    "completed": [],
+                    "next_actions": [],
+                    "constraints": [],
+                },
+                changed_uts=[],
+                semantic_statement="The new range is represented by the snapshot.",
             )
-        else:
-            await memory_tool.handler({"diagnostics": []})
         return "done"
 
     harness = EternalConversationHarness(
         EternalConversationConfig(enabled=True, dynamic_memory_cli_path=str(SCRIPT)),
-        run_agent=run_agent,
+        run_memory_job=run_memory_job,
     )
     session = manager.load(ref.session_id)
     session.history = [
@@ -834,21 +865,23 @@ async def test_harness_retries_invalid_json_and_only_freezes_uncovered_history(
     await harness.record_and_trigger(session)
     await harness.wait_idle()
 
-    extractor_payloads = [
-        payload
-        for alias, payload in calls
-        if alias == "default" and "frozen_working_memory" in payload
+    extractor_requests = [
+        request for request in requests if request.role == "extractor"
     ]
-    assert len(extractor_payloads) == 2  # one native ReAct execution per frozen range
-    assert [
-        item["content"] for item in extractor_payloads[-1]["frozen_working_memory"]
-    ] == ["second", "two"]
+    assert len(extractor_requests) == 2  # one fork execution per frozen range
+    assert rejected_inside_fork == 1
+    # only the uncovered suffix is frozen into the second fork, verbatim
+    assert [entry["content"] for entry in extractor_requests[-1].history_range] == [
+        "second",
+        "two",
+    ]
     assert load_projection(ref.session_dir)["covered_through"] == 4
     extractor_history = (
         Path(ref.session_dir) / "agent-history" / "extractor" / "conversation.jsonl"
     ).read_text(encoding="utf-8")
-    assert '"status": "rejected"' in extractor_history
-    assert '"status": "accepted"' in extractor_history
+    assert (
+        "extract directive" not in extractor_history
+    )  # directives are in fork block 2
     foreground_history = (
         Path(ref.session_dir) / "agent-history" / "foreground" / "conversation.jsonl"
     ).read_text(encoding="utf-8")
@@ -874,44 +907,46 @@ async def test_failed_builder_keeps_pending_ut_and_recovers_without_rolling_back
     manager.save(session)
     builder_failures = MAX_MEMORY_JOB_ATTEMPTS
 
-    async def run_agent(alias: str, system: str, request: dict, memory_tool) -> str:
+    async def run_memory_job(request: MemoryJobRequest) -> str:
         nonlocal builder_failures
-        if "memory extraction Agent" in system:
-            await memory_tool.handler(
-                {
-                    "snapshot": {
-                        "resident_memory": ["Use canary releases"],
-                        "recent_context": [],
-                        "current_state": [],
-                        "completed": [],
-                        "next_actions": [],
-                        "constraints": ["Use canary releases"],
-                    },
-                    "changed_uts": [
-                        {
-                            "action": "upsert",
-                            "id": "ut-canary",
-                            "memory_id": "memory-canary",
-                            "priority": 80,
-                            "content": "The service must use canary releases.",
-                            "queries": ["release strategy"],
-                            "must_include": ["canary releases"],
-                            "tags": ["decision"],
-                        }
-                    ],
-                    "semantic_statement": "The release decision is carried.",
-                }
+        if request.role == "extractor":
+            await _publish_via_cli(
+                request,
+                snapshot={
+                    "resident_memory": ["Use canary releases"],
+                    "recent_context": [],
+                    "current_state": [],
+                    "completed": [],
+                    "next_actions": [],
+                    "constraints": ["Use canary releases"],
+                },
+                changed_uts=[
+                    {
+                        "action": "upsert",
+                        "id": "ut-canary",
+                        "memory_id": "memory-canary",
+                        "priority": 80,
+                        "content": "The service must use canary releases.",
+                        "queries": ["release strategy"],
+                        "must_include": ["canary releases"],
+                        "tags": ["decision"],
+                    }
+                ],
+                semantic_statement="The release decision is carried.",
             )
         elif builder_failures:
             builder_failures -= 1
             raise RuntimeError("simulated background builder outage")
         else:
-            await memory_tool.handler({"diagnostics": []})
+            cli = _memory_cli_for(request)
+            await cli.call(
+                "build-pending", "--file", str(request.context.build_batch_path)
+            )
         return "done"
 
     harness = EternalConversationHarness(
         EternalConversationConfig(enabled=True, dynamic_memory_cli_path=str(SCRIPT)),
-        run_agent=run_agent,
+        run_memory_job=run_memory_job,
     )
     await harness.record_and_trigger(manager.load(ref.session_id))
     await harness.wait_idle()  # Background failure must not fail the foreground turn.
@@ -950,3 +985,82 @@ async def test_failed_builder_keeps_pending_ut_and_recovers_without_rolling_back
     )
     assert state["memory_jobs"]["builder"]["status"] == "idle"
     assert manager.load(ref.session_id).history == session.history
+
+
+def test_memory_job_limits_match_the_validated_background_budget() -> None:
+    from lara.runtime.agent.common import DEFAULT_REACT_MAX_STEPS
+    from lara.runtime.service import MEMORY_JOB_LIMITS
+
+    assert MEMORY_JOB_LIMITS.max_steps == DEFAULT_REACT_MAX_STEPS
+    assert MEMORY_JOB_LIMITS.max_model_calls == DEFAULT_REACT_MAX_STEPS
+    assert MEMORY_JOB_LIMITS.max_tool_calls == DEFAULT_REACT_MAX_STEPS
+
+
+@pytest.mark.asyncio
+async def test_close_cancels_stuck_job_quickly_and_next_turn_reruns(
+    tmp_path: Path,
+) -> None:
+    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
+    manager = SessionManager(config)
+    ref = manager.create("chat", mode="chat")
+    session = manager.load(ref.session_id)
+    session.history = [
+        {"role": "user", "content": "first"},
+        {"role": "assistant", "content": "one"},
+    ]
+    manager.save(session)
+
+    gate = asyncio.Event()
+
+    async def stuck_memory_job(request: MemoryJobRequest) -> str:
+        await gate.wait()  # stuck until the test releases it
+        return "done"
+
+    harness = EternalConversationHarness(
+        EternalConversationConfig(enabled=True, dynamic_memory_cli_path=str(SCRIPT)),
+        run_memory_job=stuck_memory_job,
+    )
+    await harness.record_and_trigger(manager.load(ref.session_id))
+    await asyncio.sleep(0.05)
+
+    started = asyncio.get_running_loop().time()
+    await harness.close(timeout=0.2)
+    elapsed = asyncio.get_running_loop().time() - started
+    assert elapsed < 5  # bounded shutdown; not blocked by the stuck job
+    assert harness._closed is True
+    # nothing was published: the coverage cursor stays where it was
+    assert load_projection(ref.session_dir).get("covered_through", 0) == 0
+
+    # a later foreground turn re-triggers extraction from the same cursor and
+    # a healthy job completes it — no resume machinery needed
+    gate.set()
+    session = manager.load(ref.session_id)
+    session.history.extend(
+        [{"role": "user", "content": "second"}, {"role": "assistant", "content": "two"}]
+    )
+    manager.save(session)
+    async def resumed_memory_job(request: MemoryJobRequest) -> str:
+        await _publish_via_cli(
+            request,
+            snapshot={
+                "resident_memory": [],
+                "recent_context": [],
+                "current_state": [],
+                "completed": [],
+                "next_actions": [],
+                "constraints": [],
+            },
+            changed_uts=[],
+            semantic_statement="The uncovered range is represented.",
+        )
+        return "done"
+
+    resumed = EternalConversationHarness(
+        EternalConversationConfig(enabled=True, dynamic_memory_cli_path=str(SCRIPT)),
+        run_memory_job=resumed_memory_job,
+    )
+    await resumed.record_and_trigger(manager.load(ref.session_id))
+    await resumed.wait_idle()
+
+    projection = load_projection(ref.session_dir)
+    assert projection["covered_through"] == 4
