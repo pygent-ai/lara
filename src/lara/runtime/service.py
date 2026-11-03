@@ -13,23 +13,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Mapping, cast
 
 from pygent import (
-    AIMessage,
-    IdempotencyPolicy,
-    ModelCallLayer,
     ModelGroup,
-    Module,
-    PygentAgent,
-    ToolAuthorizationDecision,
-    ToolAuthorizationRequest,
     ToolKit,
-    ToolMessage,
-    ToolSideEffect,
     UserMessage,
     freeze_json_object,
-    tool,
-)
-from pygent import (
-    Context as PygentContext,
 )
 from pygent.agent import (
     REACT_PROJECTION_OPERATION_KIND,
@@ -57,13 +44,26 @@ from pygent.tool import (
     LocalToolExecutor,
     SandboxExecutorSupport,
     StandardTools,
-    ToolExecutionError,
     ToolSpec,
 )
 from pygent.tool.executors import ToolExecutionContext
 from pygent.tool.mcp import MCPClientPool
 
 from lara.config import load_run_config
+from lara.agents import (
+    AgentLimits,
+    AgentRunner,
+    ChildAgent,
+    ChildSpec,
+    ForkAgent,
+    ForkSpec,
+    StaticContextSource,
+    ToolProfile,
+    ToolRegistry,
+    ToolkitToolSurface,
+    build_model_layer_factory,
+    messages_from_history,
+)
 from lara.core.io import aclose_if_supported, plain_object, read_json, write_json
 from lara.runtime.attachments import (
     ResolvedAttachment,
@@ -102,7 +102,7 @@ from .deployment import (
 )
 from .eternal_conversation import (
     EternalConversationHarness,
-    MemoryAgentTool,
+    MemoryJobRequest,
     load_projection,
     render_memory_snapshot,
 )
@@ -123,7 +123,6 @@ MAX_TRACKED_TURN_CONTEXTS = 256
 PROJECTION_OPERATION_METADATA_KEY = "projection_replacement_operation"
 PROJECTION_INPUT_ID_METADATA_KEY = "projection_replacement_input_id"
 PROJECTION_READY_INPUT_ID_METADATA_KEY = "projection_replacement_ready_input_id"
-MAX_IDENTICAL_MEMORY_TOOL_REJECTIONS = 8
 
 
 def _config_fingerprint(config: RunConfig) -> str:
@@ -135,80 +134,6 @@ def _config_fingerprint(config: RunConfig) -> str:
         separators=(",", ":"),
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
-
-
-class _MemoryFeedbackState:
-    def __init__(self) -> None:
-        self.signature: tuple[tuple[str, str], ...] | None = None
-        self.count = 0
-
-
-class _MemoryToolFeedbackLayer(Module[AIMessage, ToolMessage]):
-    trusted_live_resource_attributes = ("_feedback_state",)
-
-    def __init__(self, tools: Module[AIMessage, ToolMessage]) -> None:
-        super().__init__()
-        self.tools = tools
-        self._feedback_state = _MemoryFeedbackState()
-
-    async def forward(
-        self, message: AIMessage, context: Any
-    ) -> tuple[ToolMessage, Any]:
-        result, next_context = await self.tools(message, context)
-        feedback = [
-            item.error
-            for item in result.results
-            if item.error_kind == "validation_error" and item.error
-        ]
-        if feedback:
-            signature = tuple(
-                (call.name, repr(call.arguments)) for call in message.tool_calls
-            )
-            if signature == self._feedback_state.signature:
-                self._feedback_state.count += 1
-            else:
-                self._feedback_state.signature = signature
-                self._feedback_state.count = 1
-            same_rejection_count = self._feedback_state.count
-            if same_rejection_count >= MAX_IDENTICAL_MEMORY_TOOL_REJECTIONS:
-                raise RuntimeError(
-                    "publish_pending received the identical invalid payload "
-                    f"{same_rejection_count} consecutive times; restart only this background "
-                    "memory job with the validation failure in previous_publish_failure"
-                )
-            repeated = (
-                f" IDENTICAL INVALID PAYLOAD REJECTION #{same_rejection_count}: "
-                "you resent the same arguments. Change the rejected field before the next tool call."
-                if same_rejection_count > 1
-                else ""
-            )
-            instruction = (
-                "STOP: publish_pending rejected the previous call before any write; "
-                "nothing was published. NEVER resend identical arguments. Preserve all "
-                "other facts. Snapshot items must be at most 500 characters; move excess "
-                "detail into focused UTs. UT content must be at most 700 characters; split "
-                "a larger UT across multiple focused UTs. Keep the whole batch within 8 UT "
-                "changes, and call "
-                "publish_pending again now."
-                + repeated
-                + " Validation error: "
-                + " | ".join(feedback)
-            )
-            enhanced_results = tuple(
-                replace(
-                    item,
-                    error=f"{instruction}\nOriginal validation error: {item.error}",
-                )
-                if item.error_kind == "validation_error" and item.error
-                else item
-                for item in result.results
-            )
-            result = replace(
-                result,
-                content="\n".join(filter(None, (result.content, instruction))),
-                results=enhanced_results,
-            )
-        return result, next_context
 
 
 def _uncovered_conversation_messages(
@@ -250,6 +175,13 @@ class _DiffExecutor:
             turn_id=execution_context.turn_id,
         )
         return await diff.forward(**plain_object(call.arguments))
+
+
+MEMORY_JOB_LIMITS = AgentLimits(
+    max_steps=DEFAULT_REACT_MAX_STEPS,
+    max_model_calls=DEFAULT_REACT_MAX_STEPS,
+    max_tool_calls=DEFAULT_REACT_MAX_STEPS,
+)
 
 
 class LaraRuntimeService:
@@ -303,6 +235,13 @@ class LaraRuntimeService:
             workspace_root=config.workspace_root, restrict_to_workspace=False
         )
         self._standard_tools = standard
+        # Memory jobs (fork extractor / child builder) share a surface with the
+        # exact same tool composition as the foreground, per the owner's decision
+        # to open them up before the production tool pipeline lands.
+        self._memory_job_tools = StandardTools(
+            workspace_root=config.workspace_root,
+            restrict_to_workspace=False,
+        )
         ToolKit(
             standard.bash.bash,
             standard.bash.tool_task_get,
@@ -337,10 +276,14 @@ class LaraRuntimeService:
         for spec in AGENT_COLLABORATION_TOOL_SPECS:
             self.runtime.register_tool(spec, collaboration_executor)
         self.bash_tasks = BashTaskObservations(
-            config, self.runtime, history_path.with_suffix(".bash-observations"),
+            config,
+            self.runtime,
+            history_path.with_suffix(".bash-observations"),
         )
         self.task_manager = DurableToolTaskManager(
-            self.history, self.executor_registry, emit=self._on_tool_task_event,
+            self.history,
+            self.executor_registry,
+            emit=self._on_tool_task_event,
         )
         self.runtime.attach_tool_task_manager(self.task_manager)
         self.model_resolver = LaraModelResourceResolver()
@@ -396,7 +339,7 @@ class LaraRuntimeService:
         self._mcp_pools: list[MCPClientPool] = []
         self.memory_harness = EternalConversationHarness(
             config.eternal_conversation,
-            run_agent=self._run_memory_agent,
+            run_memory_job=self._run_memory_job,
         )
         template = (
             LaraAgent(
@@ -683,8 +626,7 @@ class LaraRuntimeService:
                 # The pool discovers without a call timeout; the server config
                 # timeout belongs on every portable spec for Runtime dispatch.
                 specs = tuple(
-                    replace(spec, timeout=server.timeout)
-                    for spec, _executor in entries
+                    replace(spec, timeout=server.timeout) for spec, _executor in entries
                 )
                 for spec in specs:
                     name = spec.definition.name
@@ -830,16 +772,16 @@ class LaraRuntimeService:
             for index, entry in enumerate(group.models):
                 await handle.ensure_profile(
                     profile=preferred_profile_name(entry.key),
-                    models=preferred_models(
-                        native, agent.model_group_name, entry.key
-                    ),
+                    models=preferred_models(native, agent.model_group_name, entry.key),
                     invoker=agent.llm,
                     resource_ref=ModelResourceRef(
                         resolver_id=self.model_resolver.resolver_id,
                         resource_id=f"lara:{agent.model_group_name}",
                         revision=revision,
                         capacity_owner_id=f"lara:{Path(self.config.workspace_root).resolve()}",
-                        coordinator_domain=str(Path(self.config.workspace_root).resolve()),
+                        coordinator_domain=str(
+                            Path(self.config.workspace_root).resolve()
+                        ),
                     ),
                     make_default=index == 0,
                     deadline=time.monotonic() + 60,
@@ -952,8 +894,13 @@ class LaraRuntimeService:
         return handle
 
     async def send_steering(
-        self, execution_id: str, *, input_id: str, message: str | None,
-        case_run_id: str, attachments: Sequence[str] = (),
+        self,
+        execution_id: str,
+        *,
+        input_id: str,
+        message: str | None,
+        case_run_id: str,
+        attachments: Sequence[str] = (),
     ) -> Any:
         from pygent.agent import StandaloneUserMessage, SteeringMode
 
@@ -1342,13 +1289,19 @@ class LaraRuntimeService:
             value={"approved": approved, "comment": comment},
         )
 
-    async def _run_memory_agent(
-        self,
-        alias: str,
-        system_prompt: str,
-        request: dict[str, Any],
-        memory_tool: MemoryAgentTool,
-    ) -> str:
+    async def _run_memory_job(self, request: MemoryJobRequest) -> str:
+        """Run one background memory job through the LARA agent scaffold.
+
+        The extractor is a fork agent: block 1 is the foreground system
+        prompt plus the frozen working-memory history (verbatim), block 2 is
+        the directive, block 3 is a multi-turn ReAct execution whose tools
+        come from a registered surface (bash reaches the memory CLI; there
+        are no dedicated memory tools). The builder is an independent child
+        agent. Both run in pygent direct-execution mode, like the previous
+        memory agent, but through the single AgentRunner seam.
+        """
+
+        alias = request.alias
         child_config = self._child_agent_config(alias)
         if child_config.resolved_agent is None:
             raise RuntimeError(f"background memory Agent {alias!r} is unconfigured")
@@ -1358,88 +1311,48 @@ class LaraRuntimeService:
             model_group_name=child_config.resolved_agent.default_model_group,
         )
         try:
-            layer = agent.new_model_layer()
             if agent.llm is None:
                 raise RuntimeError(
                     f"background memory Agent {alias!r} has no configured model"
                 )
-
-            @tool(
-                tool_id=f"lara.memory.{memory_tool.name}",
-                version="1.0.0",
-                side_effect=ToolSideEffect.WRITE,
-                idempotency=IdempotencyPolicy.INHERENT,
-                name=memory_tool.name,
-                description=memory_tool.description,
-                timeout=300,
-                resource_key="lara-memory",
-                required_permissions=("memory:write",),
+            registry = ToolRegistry()
+            # Aligned with the foreground: the memory-job surface exposes the
+            # same StandardTools composition (bash, files, task control). The
+            # audit/EventStore/effects pipeline remains a §6.8 item; opening
+            # the tools before that is the owner's explicit decision (D15).
+            registry.register(
+                "memory-job",
+                ToolkitToolSurface(self._memory_job_tools.toolkit),
             )
-            async def memory_operation(payload: dict[str, Any]) -> dict[str, Any]:
-                try:
-                    return await memory_tool.handler(payload)
-                except ValueError as exc:
-                    # Extractor validation happens before publish-pending writes.
-                    # Tell Pygent the failed call is safe to correct and retry;
-                    # unclassified CLI failures remain conservatively unknown.
-                    raise ToolExecutionError(
-                        str(exc),
-                        kind="validation_error",
-                        code=type(exc).__name__,
-                        retryable=True,
-                        side_effect_committed=False,
-                    ) from exc
-
-            toolkit = ToolKit(memory_operation)
-
-            def authorize_memory_tool(
-                request: ToolAuthorizationRequest,
-                context: PygentContext,
-            ) -> ToolAuthorizationDecision:
-                del context
-                return ToolAuthorizationDecision(
-                    call_id=request.call.call_id,
-                    allowed=True,
-                    reason_code="lara-background-memory-job",
+            runner = AgentRunner(
+                model_factory=build_model_layer_factory(
+                    agent.llm,
+                    model_group_name=(
+                        f"lara:{child_config.resolved_agent.default_model_group}"
+                    ),
+                    models=agent._model_entries(),
+                ),
+                registry=registry,
+                default_tools=ToolProfile("memory-job"),
+                limits=MEMORY_JOB_LIMITS,
+                label=request.label,
+            )
+            if request.role == "extractor":
+                source = StaticContextSource(
+                    system_prompt=request.system_prompt,
+                    messages=messages_from_history(request.history_range),
                 )
-
-            model = ModelCallLayer(
-                model_group=layer.model_group,
-                retry_policy=layer.retry_policy,
-                generation=replace(
-                    layer.generation,
-                    tool_choice="auto",
-                ),
-                policy=layer.policy,
-                tools=toolkit.definitions,
-                invoker=agent.llm,
+                result = await ForkAgent(
+                    runner, ForkSpec(source=source), label=request.label
+                ).run(request.directive)
+                return result.text
+            child = ChildAgent(
+                runner,
+                ChildSpec(name="memory-builder", system_prompt=request.system_prompt),
+                label=request.label,
             )
-            # This is a native Pygent ReAct Agent. The background job remains
-            # independent of the foreground durable execution, while validation
-            # failures return through ToolResult and stay in this Agent's context.
-            react_agent = PygentAgent(
-                system_prompt=system_prompt,
-                compression_prompt="Compress the memory job transcript without losing tool errors.",
-                model=model,
-                compressor=model,
-                tools=_MemoryToolFeedbackLayer(
-                    toolkit.local_layer(authorization_adapter=authorize_memory_tool)
-                ),
-                context_window_tokens=1 << 60,
-                compression_context_window_tokens=1 << 60,
-                max_compressions=1,
-                max_steps=DEFAULT_REACT_MAX_STEPS,
-                max_model_calls=DEFAULT_REACT_MAX_STEPS,
-                max_tool_calls=DEFAULT_REACT_MAX_STEPS,
-            )
-            answer, _ = await react_agent.invoke(
-                UserMessage(content=json.dumps(request, ensure_ascii=False)),
-                react_agent.new_context(
-                    tools=toolkit.definitions,
-                    metadata={"memory_agent_alias": alias},
-                ),
-            )
-            return answer.content
+            child_result = await child.run(request.directive)
+            return child_result.text
         finally:
             await agent.aclose()
 
@@ -1463,6 +1376,7 @@ class LaraRuntimeService:
         await self.runtime.close(cancel=cancel)
         await self.bash_tasks.close()
         await self._standard_tools.aclose()
+        await self._memory_job_tools.aclose()
         for pool in self._mcp_pools:
             try:
                 await asyncio.wait_for(asyncio.shield(pool.aclose()), 10)

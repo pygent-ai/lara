@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import sys
@@ -10,69 +11,179 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from lara.agents.context import system_reminder
 from lara.core.io import append_jsonl, read_json, utc_now, write_json
 from lara.core.redaction import redact_secrets
 from lara.schema import AgentSession, EternalConversationConfig
 
-
-@dataclass(frozen=True, slots=True)
-class MemoryAgentTool:
-    name: str
-    description: str
-    handler: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
-
-
-AgentRunner = Callable[
-    [str, str, dict[str, Any], MemoryAgentTool],
-    Awaitable[str],
-]
-MAX_MEMORY_TOOL_ARGUMENT_CHARS = 4_000
-MAX_MEMORY_TOOL_OUTPUT_CHARS = 1_500
 MAX_MEMORY_JOB_ATTEMPTS = 3
 
-EXTRACTOR_SYSTEM_PROMPT = """You are the memory extraction Agent in an eternal-conversation Harness.
-Use the old Snapshot plus the frozen Working Memory as the continuous
-history input. Compare proposed memories with the published UTs and resolve conflicts by updating
-stable UT IDs. Preserve exact answer-bearing facts, decisions, constraints, commitments, active work,
-and likely future retrieval phrasings. Version support windows, deprecation deadlines, compatibility
-promises, and constraints the user asks not to publish in project documentation are still durable
-memory and MUST be retained with their exact version/date boundary. A durable user decision or
-constraint MUST have its own stable UT and MUST NOT share a UT with an evolving implementation
-summary; this separation prevents later code updates from overwriting it. Treat user-defined proper
-nouns, internal codenames, aliases, environment names, and their referents as durable retrieval keys
-whenever they may affect future behavior. Preserve the exact user-authored name in the UT content,
-at least one query, and must_include; never leave it only in the Snapshot. A request to keep a name
-out of source code, repository files, or project documentation means memory-only visibility, not
-permission to omit it. Before returning, self-audit every future-relevant named entity and alias in
-the continuous history and ensure an existing or changed stable UT carries both the exact name and
-its meaning. When updating an existing UT, carry forward every still-effective decision,
-constraint, commitment, and exact boundary from the published UT; absence from the frozen Working
-Memory is not evidence that an older constraint became stale. Do not decide cursor or
-publication legality. You MUST submit the result with the publish_pending tool. Do not finish until
-publish_pending succeeds. If the tool reports an over-limit field, rewrite only as needed to make
-the proposal shorter while preserving its exact durable facts, then call publish_pending again in
-this same ReAct execution.
+# Compact-output contract for the extractor's proposal; enforced by the
+# memory CLI's publish-pending gate (content-addressed hashes travel in the
+# fork snapshot, never this text).
+PROPOSAL_FIELD_LIMITS: dict[str, int] = {
+    "resident_memory": 4,
+    "recent_context": 4,
+    "current_state": 6,
+    "completed": 4,
+    "next_actions": 4,
+    "constraints": 6,
+}
 
-The publish_pending payload is: {"snapshot": {"resident_memory":[],"recent_context":[],"current_state":[],
-"completed":[],"next_actions":[],"constraints":[]}, "changed_uts": [UT changes],
-"semantic_statement":"..."}. Each upsert UT needs action,id,memory_id,priority,content,queries,
-must_include,evidence_refs,source,tags. priority MUST be an integer from 0 through 100. Every
-must_include item MUST be an exact substring of content. Use action=retire with id only when evidence makes a UT stale.
-An empty changed_uts list is valid. The Snapshot must carry everything the foreground must know
-without retrieval and must treat later Working Memory as newer than the Snapshot. Keep the result
-compact: at most 8 changed UTs; merge updates into stable component-level UTs; each UT content at
-most 700 characters, at most 4 queries, and at most 3 must_include phrases. Split larger bodies
-across multiple focused UTs instead of overloading one UT. Snapshot limits are:
-resident_memory 4 items, recent_context 4, current_state 6, completed 4, next_actions 4, constraints
-6; each item at most 500 characters. Prefer exact dense facts over narration. Never copy old
-Snapshot items unchanged when a shorter merged item preserves them."""
 
-BUILDER_SYSTEM_PROMPT = """You are the memory build Agent. Review the frozen Pending UT batch for
-internal consistency and build readiness without changing memory semantics. When it is ready, call
-build_pending with a short diagnostics list. The tool performs deterministic construction,
-Built-only tests, exact-content comparison, and atomic migration from Pending to Built. Do not
-claim the batch is Built unless build_pending succeeds. If the tool fails, use its result to decide
-whether a corrected retry is possible in this same ReAct execution."""
+@dataclass(frozen=True)
+class MemoryJobContext:
+    """Everything a memory job needs to reach the memory CLI and evidence."""
+
+    session_id: str
+    memory_script: Path
+    memory_root: Path
+    evidence_ref: str
+    covered_through: int
+    target_cursor: int
+    build_batch_path: Path | None = None
+
+
+@dataclass(frozen=True)
+class MemoryJobRequest:
+    """One background memory job, fork-shaped for the extractor.
+
+    The extractor is forked from the foreground conversation: block 1 is the
+    foreground system prompt plus the frozen working-memory history range
+    (verbatim, uncompacted); block 2 is the directive. The builder is an
+    independent agent with its own system prompt and an empty history range.
+    Tools come from the runner's registered surface, aligned with the
+    foreground StandardTools composition (bash, files, task control) per the
+    owner's decision; there are no dedicated memory tools.
+    """
+
+    role: str  # "extractor" | "builder"
+    alias: str
+    label: str
+    system_prompt: str
+    history_range: tuple[dict[str, Any], ...]
+    directive: str
+    context: MemoryJobContext
+
+    def __post_init__(self) -> None:
+        if self.role not in {"extractor", "builder"}:
+            raise ValueError(f"unsupported memory job role {self.role!r}")
+        if not self.system_prompt.strip():
+            # The harness applies the legacy-session fallback; an empty value
+            # reaching this point means the fallback itself was skipped.
+            raise ValueError("MemoryJobRequest.system_prompt must be non-empty")
+        if not self.directive.strip():
+            raise ValueError("MemoryJobRequest.directive must be non-empty")
+
+
+MemoryJobRunner = Callable[[MemoryJobRequest], Awaitable[str]]
+
+# Commands a memory job may run through the allowlisted CLI tool. Publishing,
+# building, and state reads only — the harness itself drives freeze/search.
+MEMORY_CLI_ALLOWED_COMMANDS = ("get-state", "publish-pending", "build-pending")
+
+# Old sessions created before rendered prompts were persisted back may carry
+# an empty system prompt; the extractor still needs a non-empty block-1 prompt.
+MEMORY_JOB_FALLBACK_FOREGROUND_PROMPT = (
+    "You are Lara, an interactive coding agent for software engineering work. "
+    "This session predates rendered-prompt persistence, so the original "
+    "system prompt of the frozen turns is unavailable; judge the frozen "
+    "working memory on its own content."
+)
+
+
+def memory_cli_handler(
+    context: MemoryJobContext,
+) -> Callable[[str, dict[str, Any] | None], Awaitable[dict[str, Any]]]:
+    """Build the allowlisted memory-CLI handler for one memory job.
+
+    This is the *entire* execution surface a memory job has besides read-only
+    workspace verification: no bash, no writes outside the memory root, no
+    arbitrary commands. Publishing writes the proposal into the memory jobs
+    directory; the CLI's own revision checks remain the authority.
+    """
+
+    cli = DynamicMemoryCli(context.memory_script, context.memory_root)
+
+    async def handler(
+        command: str, payload: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        if command not in MEMORY_CLI_ALLOWED_COMMANDS:
+            raise ValueError(
+                f"unsupported memory CLI command {command!r}; allowed: "
+                f"{list(MEMORY_CLI_ALLOWED_COMMANDS)}"
+            )
+        if command == "publish-pending":
+            if not isinstance(payload, dict):
+                raise ValueError("publish-pending requires the proposal payload object")
+            jobs = context.memory_root / "jobs"
+            jobs.mkdir(parents=True, exist_ok=True)
+            proposal_path = (
+                jobs
+                / f"proposal-{context.covered_through + 1}-{context.target_cursor}.json"
+            )
+            write_json(proposal_path, payload)
+            return await cli.file_command(
+                "publish-pending", payload, proposal_path.name
+            )
+        if command == "build-pending":
+            assert context.build_batch_path is not None
+            return await cli.call(
+                "build-pending", "--file", str(context.build_batch_path)
+            )
+        return await cli.call("get-state")
+
+    return handler
+
+
+EXTRACTOR_GUIDANCE = """You are the same agent, forked from the foreground conversation to
+maintain its memory. The conversation above is the frozen Working Memory; use it plus the
+old Snapshot from this reminder as the continuous history input. Compare proposed memories
+with the published UTs and resolve conflicts by updating stable UT IDs. Preserve exact
+answer-bearing facts, decisions, constraints, commitments, active work, and likely future
+retrieval phrasings. Version support windows, deprecation deadlines, compatibility
+promises, and constraints the user asks not to publish in project documentation are still
+durable memory and MUST be retained with their exact version/date boundary. A durable user
+decision or constraint MUST have its own stable UT and MUST NOT share a UT with an
+evolving implementation summary; this separation prevents later code updates from
+overwriting it. Treat user-defined proper nouns, internal codenames, aliases, environment names,
+and their referents as durable retrieval keys whenever they may affect future behavior. Preserve the exact user-authored name in the UT content, at least one query, and must_include;
+never leave it only in the Snapshot. A request to keep a name out of source
+code, repository files, or project documentation means memory-only visibility, not
+permission to omit it. Before publishing, self-audit every future-relevant named entity and
+alias in the continuous history and ensure an existing or changed stable UT carries
+both the exact name and its meaning. When updating an existing UT, carry forward every still-effective decision,
+constraint, commitment, and exact boundary from the published UT; absence from the frozen Working Memory is not evidence that an older constraint became
+stale. Do not decide cursor or publication legality. You MUST publish the proposal file
+with the memory CLI publish-pending command. Do not finish until publish-pending succeeds.
+If the command reports an over-limit field, rewrite only as needed to make the proposal
+shorter while preserving its exact durable facts, then run publish-pending again in this
+same ReAct execution.
+
+The proposal file is: {"base_memory_revision": <int>, "base_snapshot_revision": <int>,
+"from_cursor": <int>, "to_cursor": <int>, "snapshot": {"resident_memory":[],
+"recent_context":[],"current_state":[],"completed":[],"next_actions":[],"constraints":[]},
+"changed_uts": [UT changes], "evidence_refs": [...], "semantic_statement":"..."}. Each
+upsert UT needs action,id,memory_id,priority,content,queries,must_include,evidence_refs,
+source,tags. priority MUST be an integer from 0 through 100. Every must_include item MUST
+be an exact substring of content. Use action=retire with id only when evidence makes a UT
+stale. An empty changed_uts list is valid. The Snapshot must carry everything the
+foreground must know without retrieval and must treat later Working Memory as newer than
+the Snapshot. Keep the result compact: at most 8 changed UTs; merge updates into stable
+component-level UTs; each UT content at most 700 characters, at most 4 queries, and at
+most 3 must_include phrases. Split larger bodies across multiple focused UTs instead of
+overloading one UT. Snapshot limits are: resident_memory 4 items, recent_context 4,
+current_state 6, completed 4, next_actions 4, constraints 6; each item at most 500
+characters. Prefer exact dense facts over narration. Never copy old Snapshot items
+unchanged when a shorter merged item preserves them."""
+
+BUILDER_GUIDANCE = """You are the memory build Agent. Review the frozen Pending UT batch for
+internal consistency and build readiness without changing memory semantics. When it is
+ready, run the memory CLI build-pending command over the frozen batch file. The command
+performs deterministic construction, Built-only tests, exact-content comparison, and
+atomic migration from Pending to Built. Do not claim the batch is Built unless build-pending
+reports success. If the command fails, use its result to decide whether a corrected retry
+is possible in this same ReAct execution."""
 
 
 class DynamicMemoryCli:
@@ -97,7 +208,9 @@ class DynamicMemoryCli:
         try:
             result = json.loads(text)
         except json.JSONDecodeError as exc:
-            raise RuntimeError(f"dynamic memory CLI returned invalid JSON: {text or stderr.decode(errors='replace')}") from exc
+            raise RuntimeError(
+                f"dynamic memory CLI returned invalid JSON: {text or stderr.decode(errors='replace')}"
+            ) from exc
         if process.returncode != 0:
             raise RuntimeError(f"dynamic memory CLI failed: {result}")
         return result
@@ -106,14 +219,18 @@ class DynamicMemoryCli:
         self.root.mkdir(parents=True, exist_ok=True)
         return await self.call("init", "--path", str(self.root))
 
-    async def file_command(self, command: str, payload: dict[str, Any], name: str) -> dict[str, Any]:
+    async def file_command(
+        self, command: str, payload: dict[str, Any], name: str
+    ) -> dict[str, Any]:
         path = self.root / "jobs" / name
         write_json(path, payload)
         return await self.call(command, "--file", str(path))
 
 
 def load_projection(session_dir: str | Path) -> dict[str, Any]:
-    return read_json(Path(session_dir) / "state" / "eternal-conversation.json", default={})
+    return read_json(
+        Path(session_dir) / "state" / "eternal-conversation.json", default={}
+    )
 
 
 def render_memory_access_instruction(
@@ -185,9 +302,11 @@ def estimate_context_tokens(
 
 
 class EternalConversationHarness:
-    def __init__(self, config: EternalConversationConfig, *, run_agent: AgentRunner) -> None:
+    def __init__(
+        self, config: EternalConversationConfig, *, run_memory_job: MemoryJobRunner
+    ) -> None:
         self.config = config
-        self.run_agent = run_agent
+        self.run_memory_job = run_memory_job
         self._workers: dict[str, asyncio.Task[None]] = {}
         self._builders: dict[str, asyncio.Task[None]] = {}
         self._closed = False
@@ -198,14 +317,19 @@ class EternalConversationHarness:
             path = Path(self.config.dynamic_memory_cli_path)
             if path.is_file():
                 return path
-        for root in (session_dir.parents[1] / "skills", Path.home() / ".lara" / "skills"):
+        for root in (
+            session_dir.parents[1] / "skills",
+            Path.home() / ".lara" / "skills",
+        ):
             path = root / "dynamic-memory-cli" / "scripts" / "dynamic_memory_cli.py"
             if path.is_file():
                 return path
         env = os.environ.get("LARA_DYNAMIC_MEMORY_CLI")
         if env and Path(env).is_file():
             return Path(env).resolve()
-        raise FileNotFoundError("dynamic-memory-cli script is not configured or installed")
+        raise FileNotFoundError(
+            "dynamic-memory-cli script is not configured or installed"
+        )
 
     async def record_and_trigger(
         self,
@@ -222,13 +346,16 @@ class EternalConversationHarness:
         recorded = int(state.get("recorded_messages") or 0)
         raw_path = session_dir / "raw-history" / "events.jsonl"
         if model_envelope is not None:
-            append_jsonl(raw_path, {
-                "cursor": f"envelope-{len(session.history)}",
-                "type": "model-visible-envelope",
-                "session_id": session.session_id,
-                "created_at": utc_now(),
-                "payload": redact_secrets(model_envelope),
-            })
+            append_jsonl(
+                raw_path,
+                {
+                    "cursor": f"envelope-{len(session.history)}",
+                    "type": "model-visible-envelope",
+                    "session_id": session.session_id,
+                    "created_at": utc_now(),
+                    "payload": redact_secrets(model_envelope),
+                },
+            )
         for index, message in enumerate(session.history[recorded:], start=recorded + 1):
             event = {
                 "cursor": index,
@@ -321,7 +448,9 @@ class EternalConversationHarness:
         await cli.init()
         published_during_run = False
         while not self._closed:
-            harness_state = read_json(session_dir / "state" / "eternal-harness.json", default={})
+            harness_state = read_json(
+                session_dir / "state" / "eternal-harness.json", default={}
+            )
             formal = await cli.call("get-state")
             target = int(harness_state.get("requested_cursor") or 0)
             covered = int(formal.get("covered_through") or 0)
@@ -331,14 +460,18 @@ class EternalConversationHarness:
                     self._schedule_builder(session_id, session_dir, cli)
                 return
             session = read_json(session_dir / "session.json")
-            frozen = _compact_working_memory(
-                list(session.get("history") or [])[covered:target]
-            )
+            history = list(session.get("history") or [])[covered:target]
             published = await cli.call("list", "--full")
             published_memories = list(published.get("memories") or [])
-            query = _memory_query(frozen)
-            related = await cli.call("search", query) if query and published_memories else {"matches": []}
-            related_ids = [str(item.get("id")) for item in related.get("matches") or []][:32]
+            query = _memory_query(history)
+            related = (
+                await cli.call("search", query)
+                if query and published_memories
+                else {"matches": []}
+            )
+            related_ids = [
+                str(item.get("id")) for item in related.get("matches") or []
+            ][:32]
             by_id = {str(item.get("id")): item for item in published_memories}
             high_priority = sorted(
                 published_memories,
@@ -347,83 +480,53 @@ class EternalConversationHarness:
             )[:12]
             conflict_reference = []
             seen: set[str] = set()
-            for item in [*(by_id[ut_id] for ut_id in related_ids if ut_id in by_id), *high_priority]:
+            for item in [
+                *(by_id[ut_id] for ut_id in related_ids if ut_id in by_id),
+                *high_priority,
+            ]:
                 ut_id = str(item.get("id"))
                 if ut_id not in seen:
                     seen.add(ut_id)
                     conflict_reference.append(item)
             evidence_ref = f"raw-history:range-{covered + 1}-{target}"
-            request = {
-                "old_snapshot": formal.get("snapshot") or {},
-                "frozen_working_memory": frozen,
-                "published_uts": conflict_reference,
-                "source": session_id,
-                "evidence_ref": evidence_ref,
-            }
-            if previous_failure:
-                request["previous_publish_failure"] = (
-                    "The prior memory job published nothing. Correct this exact failure "
-                    f"before submitting: {previous_failure}"
-                )
-            published_result: dict[str, Any] | None = None
-
-            async def publish_pending(payload: dict[str, Any]) -> dict[str, Any]:
-                nonlocal published_result
-                try:
-                    parsed = _bound_extractor_payload(payload)
-                    _validate_extractor_payload(parsed)
-                    proposal = {
-                        "base_memory_revision": formal["memory_revision"],
-                        "base_snapshot_revision": formal["snapshot_revision"],
-                        "from_cursor": covered + 1,
-                        "to_cursor": target,
-                        "snapshot": parsed["snapshot"],
-                        "changed_uts": _normalize_changes(
-                            parsed.get("changed_uts") or [], session_id, evidence_ref
-                        ),
-                        "evidence_refs": [evidence_ref],
-                        "semantic_statement": parsed.get("semantic_statement")
-                        or "All future-relevant effects are carried.",
-                    }
-                    published_result = await cli.file_command(
-                        "publish-pending",
-                        proposal,
-                        f"proposal-{covered + 1}-{target}.json",
-                    )
-                    self._append_tool_history(
-                        session_dir, "extractor", self.config.extractor_agent_alias,
-                        "publish_pending", payload, result=published_result,
-                    )
-                    return {
-                        "status": "published",
-                        "build_state": "pending",
-                        "covered_through": published_result.get("covered_through"),
-                        "changed_ut_count": len(proposal["changed_uts"]),
-                    }
-                except Exception as exc:
-                    self._append_tool_history(
-                        session_dir, "extractor", self.config.extractor_agent_alias,
-                        "publish_pending", payload, error=exc,
-                    )
-                    raise
-
-            await self.run_agent(
-                self.config.extractor_agent_alias or "default",
-                EXTRACTOR_SYSTEM_PROMPT,
-                request,
-                MemoryAgentTool(
-                    name="publish_pending",
-                    description=(
-                        "Validate and atomically publish an extractor proposal. Upserted UTs "
-                        "are stored with build_state=pending. Validation errors are returned "
-                        "to the Agent so it can shorten and retry the proposal."
-                    ),
-                    handler=publish_pending,
-                ),
+            job_context = MemoryJobContext(
+                session_id=session_id,
+                memory_script=cli.script,
+                memory_root=cli.root,
+                evidence_ref=evidence_ref,
+                covered_through=covered,
+                target_cursor=target,
             )
-            if published_result is None:
-                raise RuntimeError("extractor ReAct Agent finished without publishing Pending UTs")
-            result = published_result
+            directive = _extractor_directive(
+                context=job_context,
+                snapshot=formal.get("snapshot") or {},
+                published_uts=conflict_reference,
+                previous_failure=previous_failure,
+            )
+            request = MemoryJobRequest(
+                role="extractor",
+                alias=self.config.extractor_agent_alias or "default",
+                label=f"lara-fork.extractor:{covered + 1}-{target}",
+                system_prompt=(
+                    str(session.get("system_prompt") or "").strip()
+                    or MEMORY_JOB_FALLBACK_FOREGROUND_PROMPT
+                ),
+                history_range=tuple(history),
+                directive=directive,
+                context=job_context,
+            )
+            self._append_job_history(session_dir, request)
+            # The fork agent publishes through the memory CLI itself (bash);
+            # the harness only verifies the formal state afterwards.
+            await self.run_memory_job(request)
+            formal_after = await cli.call("get-state")
+            if int(formal_after.get("covered_through") or 0) != target:
+                raise RuntimeError(
+                    "extractor fork finished without publishing coverage: "
+                    f"covered_through={formal_after.get('covered_through')} target={target}"
+                )
+            result = dict(formal_after)
+            result["build_state"] = "pending"
             result["memory_cli_command"] = (
                 f'"{sys.executable}" "{cli.script}" --root "{cli.root}"'
             )
@@ -431,7 +534,9 @@ class EternalConversationHarness:
             self._schedule_builder(session_id, session_dir, cli)
             published_during_run = True
 
-    def _schedule_builder(self, session_id: str, session_dir: Path, cli: DynamicMemoryCli) -> None:
+    def _schedule_builder(
+        self, session_id: str, session_dir: Path, cli: DynamicMemoryCli
+    ) -> None:
         task = self._builders.get(session_id)
         if task is None or task.done():
             self._set_job_state(session_dir, "builder", status="queued", error=None)
@@ -441,9 +546,13 @@ class EternalConversationHarness:
                 context=Context(),
             )
 
-    async def _guarded_build_loop(self, session_id: str, session_dir: Path, cli: DynamicMemoryCli) -> None:
+    async def _guarded_build_loop(
+        self, session_id: str, session_dir: Path, cli: DynamicMemoryCli
+    ) -> None:
         await self._guarded_job(
-            "builder", session_dir, lambda _: self._build_loop(session_id, session_dir, cli)
+            "builder",
+            session_dir,
+            lambda _: self._build_loop(session_id, session_dir, cli),
         )
 
     async def _guarded_job(
@@ -464,87 +573,146 @@ class EternalConversationHarness:
             except Exception as exc:
                 last_error = exc
                 failure = f"{type(exc).__name__}: {exc}"
-                append_jsonl(session_dir / "agent-history" / role / "errors.jsonl", {
-                    "created_at": utc_now(), "job_attempt": job_attempt,
-                    "error_type": type(exc).__name__, "error": str(exc)
-                })
+                append_jsonl(
+                    session_dir / "agent-history" / role / "errors.jsonl",
+                    {
+                        "created_at": utc_now(),
+                        "job_attempt": job_attempt,
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    },
+                )
                 self._set_job_state(session_dir, role, status="failed", error=failure)
                 if self._closed:
                     break
         assert last_error is not None
         raise last_error
 
-    async def _build_loop(self, session_id: str, session_dir: Path, cli: DynamicMemoryCli) -> None:
+    async def _build_loop(
+        self, session_id: str, session_dir: Path, cli: DynamicMemoryCli
+    ) -> None:
         while not self._closed:
-            batch_path = session_dir / "memory" / "jobs" / f"build-{utc_now().replace(':', '-')}.json"
+            batch_path = (
+                session_dir
+                / "memory"
+                / "jobs"
+                / f"build-{utc_now().replace(':', '-')}.json"
+            )
             frozen = await cli.call("freeze-pending", "--output", str(batch_path))
             if int(frozen.get("count") or 0) == 0:
                 self._set_job_state(session_dir, "builder", status="idle", error=None)
                 return
             batch = read_json(batch_path)
-            built = False
-
-            async def build_pending(payload: dict[str, Any]) -> dict[str, Any]:
-                nonlocal built
-                try:
-                    result = await cli.call("build-pending", "--file", str(batch_path))
-                    built = True
-                    self._append_tool_history(
-                        session_dir, "builder", self.config.builder_agent_alias,
-                        "build_pending", payload, result=result,
-                    )
-                    return {**result, "build_state": "built"}
-                except Exception as exc:
-                    self._append_tool_history(
-                        session_dir, "builder", self.config.builder_agent_alias,
-                        "build_pending", payload, error=exc,
-                    )
-                    raise
-
-            await self.run_agent(
-                self.config.builder_agent_alias or "default",
-                BUILDER_SYSTEM_PROMPT,
-                batch,
-                MemoryAgentTool(
-                    name="build_pending",
-                    description=(
-                        "Build the exact frozen Pending UT batch and atomically mark its "
-                        "unchanged UT rows build_state=built. Payload may contain diagnostics."
-                    ),
-                    handler=build_pending,
+            job_context = MemoryJobContext(
+                session_id=session_id,
+                memory_script=cli.script,
+                memory_root=cli.root,
+                evidence_ref=f"build-batch:{batch_path.name}",
+                covered_through=0,
+                target_cursor=0,
+                build_batch_path=batch_path,
+            )
+            directive = _builder_directive(context=job_context, batch=batch)
+            request = MemoryJobRequest(
+                role="builder",
+                alias=self.config.builder_agent_alias or "default",
+                label=f"lara-child.builder:{batch_path.stem}",
+                system_prompt=BUILDER_GUIDANCE,
+                history_range=(),
+                directive=directive,
+                context=job_context,
+            )
+            self._append_job_history(session_dir, request)
+            # The child agent runs build-pending through the memory CLI
+            # (bash); the harness verifies the pending queue afterwards.
+            await self.run_memory_job(request)
+            pending_check = await cli.call(
+                "freeze-pending",
+                "--output",
+                str(
+                    session_dir
+                    / "memory"
+                    / "jobs"
+                    / f"pending-check-{utc_now().replace(':', '-')}.json"
                 ),
             )
-            if not built:
-                raise RuntimeError("builder ReAct Agent finished without building Pending UTs")
+            if int(pending_check.get("count") or 0) > 0:
+                raise RuntimeError(
+                    "builder fork finished with Pending UTs still unbuilt: "
+                    f"{pending_check.get('count')}"
+                )
 
     @staticmethod
-    def _append_agent_history(session_dir: Path, role: str, value: dict[str, Any]) -> None:
-        append_jsonl(session_dir / "agent-history" / role / "conversation.jsonl", {
-            "created_at": utc_now(), **value
-        })
-
-    @classmethod
-    def _append_tool_history(
-        cls, session_dir: Path, role: str, alias: str | None, name: str,
-        payload: dict[str, Any], *, result: dict[str, Any] | None = None,
-        error: Exception | None = None,
+    def _append_agent_history(
+        session_dir: Path, role: str, value: dict[str, Any]
     ) -> None:
-        outcome = ({"status": "accepted", "result": result} if error is None else {
-            "status": "rejected", "error_type": type(error).__name__, "error": str(error)
-        })
-        cls._append_agent_history(session_dir, role, {
-            "agent_alias": alias or "default", "tool": name, "payload": payload, **outcome
-        })
+        append_jsonl(
+            session_dir / "agent-history" / role / "conversation.jsonl",
+            {"created_at": utc_now(), **value},
+        )
 
-    async def close(self) -> None:
+    def _append_job_history(self, session_dir: Path, request: MemoryJobRequest) -> None:
+        # Content-addressed logging: the directive embeds snapshots, conflict
+        # UTs, and failure text; only its hash and shape are persisted here so
+        # agent history cannot become a second copy of sensitive content.
+        self._append_agent_history(
+            session_dir,
+            "extractor" if request.role == "extractor" else "builder",
+            {
+                "agent_alias": request.alias,
+                "kind": "memory-job",
+                "role": request.role,
+                "label": request.label,
+                "directive_hash": hashlib.sha256(
+                    request.directive.encode("utf-8")
+                ).hexdigest(),
+                "directive_chars": len(request.directive),
+                "history_message_count": len(request.history_range),
+                "evidence_ref": request.context.evidence_ref,
+                "covered_through": request.context.covered_through,
+                "target_cursor": request.context.target_cursor,
+            },
+        )
+
+    async def close(self, *, timeout: float = 30.0) -> None:
+        """Stop accepting work and cancel in-flight jobs within ``timeout``.
+
+        Cancellation is state-safe: publish/coverage state lives in the
+        memory CLI's transactional store, harness files are written
+        synchronously at await boundaries, and the next foreground turn
+        re-triggers extraction from the persisted cursor — an interrupted
+        job loses only its in-flight model/bash call. Service shutdown must
+        not block for hours on a stuck background job.
+        """
+
         self._accepting = False
-        await self.wait_idle()
+        # Set before cancelling so worker loops observe the shutdown flag at
+        # their next check instead of racing the cancellation.
         self._closed = True
+        tasks = [
+            task
+            for task in (*self._workers.values(), *self._builders.values())
+            if not task.done()
+        ]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.wait(tasks, timeout=timeout)
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.wait(tasks, timeout=5)
+        for task in (*self._workers.values(), *self._builders.values()):
+            if task.done() and not task.cancelled():
+                task.exception()  # Consume isolated background failures.
+        self._workers.clear()
+        self._builders.clear()
 
     async def wait_idle(self) -> None:
         while True:
             active = [
-                task for task in (*self._workers.values(), *self._builders.values())
+                task
+                for task in (*self._workers.values(), *self._builders.values())
                 if not task.done()
             ]
             if active:
@@ -558,14 +726,18 @@ class EternalConversationHarness:
             return
 
     @staticmethod
-    def _set_job_state(session_dir: Path, role: str, *, status: str, error: str | None) -> None:
+    def _set_job_state(
+        session_dir: Path, role: str, *, status: str, error: str | None
+    ) -> None:
         path = session_dir / "state" / "eternal-harness.json"
         state = read_json(path, default={})
         _update_job_state(state, role, status=status, error=error)
         write_json(path, state)
 
 
-def _update_job_state(state: dict[str, Any], role: str, *, status: str, error: str | None) -> None:
+def _update_job_state(
+    state: dict[str, Any], role: str, *, status: str, error: str | None
+) -> None:
     jobs = dict(state.get("memory_jobs") or {})
     job = dict(jobs.get(role) or {})
     job.update({"status": status, "updated_at": utc_now()})
@@ -576,66 +748,69 @@ def _update_job_state(state: dict[str, Any], role: str, *, status: str, error: s
     state["memory_jobs"] = jobs
 
 
-def _compact_working_memory(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    compacted: list[dict[str, Any]] = []
-    for message in history:
-        tool_calls = [{
-                "name": call.get("name"),
-                "arguments": _bounded_json_value(call.get("arguments"), MAX_MEMORY_TOOL_ARGUMENT_CHARS),
-            } for call in message.get("tool_calls") or []]
-        results = [{
-                "name": result.get("name"),
-                "status": result.get("status"),
-                "error": result.get("error"),
-                "output": _bounded_text(result.get("output"), MAX_MEMORY_TOOL_OUTPUT_CHARS),
-            } for result in message.get("results") or []]
-        item: dict[str, Any] = {"role": message.get("role"), "content": message.get("content") or ""}
-        item.update({key: value for key, value in (("tool_calls", tool_calls), ("results", results)) if value})
-        compacted.append(item)
-    return compacted
+def _extractor_directive(
+    *,
+    context: MemoryJobContext,
+    snapshot: dict[str, Any],
+    published_uts: list[dict[str, Any]],
+    previous_failure: str | None,
+) -> str:
+    proposal_path = (
+        context.memory_root
+        / "jobs"
+        / f"proposal-{context.covered_through + 1}-{context.target_cursor}.json"
+    )
+    cli_command = (
+        f'"{sys.executable}" "{context.memory_script}" --root "{context.memory_root}"'
+    )
+    lines = [
+        "You are now maintaining this conversation's memory (background memory job).",
+        "The model-visible history above is the frozen Working Memory for "
+        f"{context.evidence_ref} ({context.covered_through + 1}..{context.target_cursor}).",
+        "",
+        "Old Snapshot (JSON):",
+        json.dumps(snapshot, ensure_ascii=False, indent=2),
+        "",
+        "Conflict-reference UTs from the published memory (JSON; may be empty):",
+        json.dumps(published_uts, ensure_ascii=False, indent=2),
+        "",
+        f"Session id: {context.session_id}",
+        f"Coverage: from_cursor={context.covered_through + 1}, to_cursor={context.target_cursor}.",
+        f'evidence_refs MUST be ["{context.evidence_ref}"].',
+        "",
+        "Memory CLI (run through bash):",
+        f'  "{sys.executable}" "{context.memory_script}" --root "{context.memory_root}" get-state',
+        f'  "{sys.executable}" "{context.memory_script}" --root "{context.memory_root}" publish-pending --file "{proposal_path}"',
+        "",
+        "Steps: run get-state to read base_memory_revision and base_snapshot_revision; "
+        f'write the proposal JSON to "{proposal_path}"; run publish-pending; on validation '
+        "errors, fix the proposal file and run publish-pending again.",
+        "",
+        EXTRACTOR_GUIDANCE,
+    ]
+    if previous_failure:
+        lines.append(
+            "The prior memory job published nothing. Correct this exact failure before "
+            f"submitting: {previous_failure}"
+        )
+    return system_reminder("\n".join(lines))
 
 
-def _bounded_json_value(value: Any, limit: int) -> Any:
-    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True)
-    if len(encoded) <= limit:
-        return value
-    return {"truncated_json": _bounded_text(encoded, limit)}
-
-
-def _bounded_text(value: Any, limit: int) -> str:
-    text = "" if value is None else str(value)
-    if len(text) <= limit:
-        return text
-    marker = f"\n...[truncated {len(text) - limit} characters; full evidence remains in Raw History]"
-    return text[: max(0, limit - len(marker))] + marker
-
-
-def _normalize_changes(changes: list[dict[str, Any]], session_id: str, evidence_ref: str) -> list[dict[str, Any]]:
-    normalized = []
-    for item in changes:
-        value = dict(item)
-        if value.get("action", "upsert") == "upsert":
-            priority = value.get("priority", 50)
-            if isinstance(priority, str):
-                priority = {"low": 25, "medium": 50, "high": 80, "critical": 100}.get(
-                    priority.strip().lower(), 50
-                )
-            value["priority"] = max(0, min(100, priority if isinstance(priority, int) else 50))
-            value["source"] = session_id
-            value["evidence_refs"] = [evidence_ref]
-            value.setdefault("tags", [])
-            value.setdefault("memory_id", f"memory-{value.get('id')}")
-            content = str(value.get("content") or "").strip()
-            exact_assertions = [
-                str(phrase).strip()
-                for phrase in value.get("must_include") or []
-                if str(phrase).strip().casefold() in content.casefold()
-            ]
-            # This fallback is a structural assertion copied verbatim from the
-            # Agent-authored memory. It adds no memory semantics of its own.
-            value["must_include"] = exact_assertions or [content[:160]]
-        normalized.append(value)
-    return normalized
+def _builder_directive(*, context: MemoryJobContext, batch: dict[str, Any]) -> str:
+    assert context.build_batch_path is not None
+    cli_command = (
+        f'"{sys.executable}" "{context.memory_script}" --root "{context.memory_root}"'
+    )
+    lines = [
+        "Frozen Pending UT batch (JSON):",
+        json.dumps(batch, ensure_ascii=False, indent=2),
+        "",
+        "Memory CLI (run through bash):",
+        f'  "{sys.executable}" "{context.memory_script}" --root "{context.memory_root}" build-pending --file "{context.build_batch_path}"',
+        "",
+        BUILDER_GUIDANCE,
+    ]
+    return system_reminder("\n".join(lines))
 
 
 def _memory_query(messages: list[dict[str, Any]]) -> str:
@@ -653,79 +828,10 @@ def _memory_query(messages: list[dict[str, Any]]) -> str:
     return " ".join(reversed(parts))[:2400] or "recent conversation"
 
 
-def _bound_extractor_payload(value: dict[str, Any]) -> dict[str, Any]:
-    """Copy an Agent proposal before legality validation without changing semantics."""
-    # Silent truncation can remove the exact fact at the tail of a UT while the
-    # proposal still appears valid. Oversized proposals must instead fail
-    # validation and make the extractor retry with a deliberately compact form.
-    bounded = json.loads(json.dumps(value, ensure_ascii=False))
-    return bounded
-
-
-def _validate_extractor_payload(value: dict[str, Any]) -> None:
-    snapshot = value.get("snapshot")
-    if not isinstance(snapshot, dict):
-        raise ValueError("extractor snapshot must be an object")
-    field_limits = {
-        "resident_memory": 4,
-        "recent_context": 4,
-        "current_state": 6,
-        "completed": 4,
-        "next_actions": 4,
-        "constraints": 6,
-    }
-    for field, limit in field_limits.items():
-        items = snapshot.get(field)
-        if not isinstance(items, list):
-            raise ValueError(f"snapshot.{field} must be a list")
-        if not all(isinstance(item, str) for item in items):
-            raise ValueError(f"snapshot.{field} items must be strings")
-        if len(items) > limit:
-            raise ValueError(f"snapshot.{field} has {len(items)} items; compact output limit is {limit}")
-        for index, item in enumerate(items):
-            if len(item) > 500:
-                overage = len(item) - 500
-                raise ValueError(
-                    f"snapshot.{field}[{index}] has {len(item)} characters; compact output limit is 500. "
-                    "Keep the Snapshot summary concise and split detailed facts across multiple focused UTs, "
-                    f"each with content at most 700 characters; remove or move at least {overage} characters "
-                    "from this Snapshot item, then call publish_pending again"
-                )
-    changes = value.get("changed_uts")
-    if not isinstance(changes, list) or len(changes) > 8:
-        raise ValueError("changed_uts must be a list with at most 8 items")
-    for change_index, change in enumerate(changes):
-        if not isinstance(change, dict):
-            raise ValueError("each UT change must be an object")
-        action = change.get("action")
-        if action not in {"upsert", "retire"}:
-            raise ValueError(
-                f"changed_uts[{change_index}] has unsupported action {action!r}; "
-                "use action='upsert' to create or update a UT, or action='retire' to retire one, "
-                "then call publish_pending again"
-            )
-        if action == "retire":
-            continue
-        content = change.get("content")
-        queries = change.get("queries")
-        must_include = change.get("must_include")
-        if not isinstance(content, str):
-            raise ValueError("UT content must be a string of at most 700 characters")
-        if len(content) > 700:
-            ut_id = str(change.get("id") or "<missing-id>")
-            overage = len(content) - 700
-            unit = "character" if overage == 1 else "characters"
-            raise ValueError(
-                f"changed_uts[{change_index}] ({ut_id}) content has {len(content)} characters; "
-                "split its details across multiple focused UTs whose content is at most 700 characters each, "
-                f"or, if companion UTs already hold the split details, remove at least {overage} {unit} "
-                "from this over-limit UT. NEVER resend the identical payload; "
-                "then call publish_pending again"
-            )
-        if not isinstance(queries, list) or len(queries) > 4:
-            raise ValueError("UT queries must be a list with at most 4 items")
-        if not isinstance(must_include, list) or len(must_include) > 3:
-            raise ValueError("UT must_include must be a list with at most 3 items")
-
-
-__all__ = ["EternalConversationHarness", "load_projection", "render_memory_access_instruction", "render_memory_context", "render_memory_snapshot"]
+__all__ = [
+    "EternalConversationHarness",
+    "load_projection",
+    "render_memory_access_instruction",
+    "render_memory_context",
+    "render_memory_snapshot",
+]
