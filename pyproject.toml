@@ -25,9 +25,9 @@ credentials = [
 ]
 
 [tool.uv.sources]
-# Local sibling checkout of the memory ledger CLI; switch to a git source
-# when the package is published or consumed from other machines.
-dynamic-memory-cli = { path = "../memory-cli", editable = true }
+# The packaging lives on the codex/dynamic-memory-cli branch until it merges
+# to main (or the package is published); uv.lock pins the resolved commit.
+dynamic-memory-cli = { git = "ssh://git@github.com/pygent-ai/memory-cli", branch = "codex/dynamic-memory-cli" }
 
 [project.scripts]
 lara = "lara.cli:main"
