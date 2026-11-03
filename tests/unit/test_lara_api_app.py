@@ -505,3 +505,48 @@ def test_get_tool_result_returns_404_for_missing_id(tmp_path) -> None:
 
     assert exc_info.value.status_code == 404
     assert "missing-call" in str(exc_info.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_file_change_routes_serve_turn_summaries_and_patches(tmp_path) -> None:
+    app = create_app(workspace_root=str(tmp_path))
+    ref = app.state.api_context.manager.create("chat", mode="chat")
+    session_dir = Path(ref.session_dir)
+    patch_path = session_dir / "cases" / "chat" / "runs" / "run-1" / "diffs" / "patches" / "diff_x.patch"
+    patch_path.parent.mkdir(parents=True)
+    patch_path.write_text("+added\n", encoding="utf-8")
+    logs = session_dir / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    diff_id = "diff_" + "a" * 32
+    (logs / "diff_events.jsonl").write_text(
+        json.dumps({
+            "event_id": "evt-1", "case_run_id": "run-1", "turn_id": "turn-1",
+            "diff_id": diff_id, "path": "E:/proj/src/app.py", "relative_path": "src/app.py",
+            "change_type": "modified", "patch_available": True,
+            "patch_path": str(patch_path), "additions": 1, "deletions": 0,
+            "created_at": "2026-11-03T08:00:00Z",
+        }) + "\n",
+        encoding="utf-8",
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test"
+    ) as client:
+        response = await client.get(f"/traces/{ref.session_id}/file-changes")
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["turns_total"] == 1
+        turn = payload["turns"][0]
+        assert turn["turn_id"] == "turn-1"
+        assert turn["files"][0]["additions"] == 1
+
+        patch = await client.get(f"/traces/{ref.session_id}/patches/{diff_id}")
+        assert patch.status_code == 200
+        assert patch.json()["patch"] == "+added\n"
+        assert patch.json()["patch_available"] is True
+
+        assert (await client.get(f"/traces/{ref.session_id}/patches/{'diff_' + 'b' * 32}")).status_code == 404
+        assert (await client.get(f"/traces/{ref.session_id}/patches/../escape")).status_code in {400, 404}
+
+        # The collection routes must win over the case-run route.
+        assert (await client.get(f"/traces/{ref.session_id}/activity")).status_code == 200
