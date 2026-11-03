@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import importlib.util
 import json
 import os
 import sys
@@ -317,6 +318,11 @@ class EternalConversationHarness:
             path = Path(self.config.dynamic_memory_cli_path)
             if path.is_file():
                 return path
+        # The declared dependency (single module, canonical source = the
+        # mounted skill file) resolves ahead of skill-directory guesses.
+        spec = importlib.util.find_spec("dynamic_memory_cli")
+        if spec is not None and spec.origin and Path(spec.origin).is_file():
+            return Path(spec.origin)
         for root in (
             session_dir.parents[1] / "skills",
             Path.home() / ".lara" / "skills",

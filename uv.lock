@@ -209,6 +209,11 @@ wheels = [
 ]
 
 [[package]]
+name = "dynamic-memory-cli"
+version = "0.1.0"
+source = { editable = "../memory-cli" }
+
+[[package]]
 name = "fastapi"
 version = "0.137.1"
 source = { registry = "https://pypi.org/simple" }
@@ -442,6 +447,7 @@ name = "lara"
 version = "0.3.3"
 source = { editable = "." }
 dependencies = [
+    { name = "dynamic-memory-cli" },
     { name = "fastapi" },
     { name = "pygent-ai", extra = ["video"] },
     { name = "python-dateutil" },
@@ -462,6 +468,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "dynamic-memory-cli", editable = "../memory-cli" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "pygent-ai", extras = ["video"], specifier = "==0.3.30" },
     { name = "python-dateutil", specifier = ">=2.9.0" },
