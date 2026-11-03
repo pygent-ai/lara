@@ -494,6 +494,10 @@ button:focus-visible {
   background: var(--error);
 }
 
+.session-indicator.paused {
+  background: var(--warning);
+}
+
 .session-indicator.running {
   width: 15px;
   height: 15px;
@@ -1557,7 +1561,7 @@ input:focus,
 .automation-editor label { display:grid; gap:6px; color:var(--muted); font-size:12px; }.automation-editor input,.automation-editor textarea,.automation-editor select { width:100%; padding:9px 10px; border:1px solid var(--line-strong); border-radius:8px; color:var(--text); background:var(--input-bg); }.automation-editor textarea { resize:vertical; }
 .automation-form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }.automation-editor footer { justify-content:flex-end; }.automation-editor footer button { padding:8px 14px; border:1px solid var(--line); border-radius:8px; cursor:pointer; }
 .automation-aside { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; padding:24px; text-align:center; color:var(--muted); }.automation-aside p { max-width:230px; }
-.message.automation { align-items:flex-start; }.message.automation .avatar { color:var(--accent); background:var(--accent-2); }.message.automation .bubble { border:1px solid var(--line); border-left:3px solid var(--accent); background:var(--surface-2); }.automation-message-label { display:block; margin-bottom:6px; color:var(--accent-deep); font-size:11px; font-weight:700; letter-spacing:.05em; }
+.message.automation { align-items:flex-start; }.message.automation .avatar { color:var(--accent); background:var(--accent-2); }.message.automation .bubble { border:1px solid var(--line); border-left:3px solid var(--accent); background:var(--surface-2); }.message.resume { align-items:flex-start; }.message.resume .avatar { color:var(--accent); background:var(--accent-2); }.message.resume .bubble { border:1px solid var(--line); border-left:3px solid var(--warning); background:var(--surface-2); }.automation-message-label { display:block; margin-bottom:6px; color:var(--accent-deep); font-size:11px; font-weight:700; letter-spacing:.05em; }
 
 .thinking-summary::-webkit-details-marker { display: none; }
 .thinking-label { flex: 0 0 auto; }

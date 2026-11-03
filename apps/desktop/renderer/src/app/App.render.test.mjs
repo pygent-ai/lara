@@ -1094,6 +1094,49 @@ test("new chat stays enabled while another session is running", () => {
   assert.doesNotMatch(html, /aria-label="New chat in Chat"[^>]*disabled/);
 });
 
+test("a paused session shows its resumable indicator in the sidebar", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(appModule.SessionSidebar, {
+      collapsed: false,
+      settings: { workspace_root: "", agent: "default", routes: [] },
+      projects: [],
+      sessionGroups: [
+        { scope: { scope_id: "conversation", label: "Chat", workspace_root: null },
+          sessions: [{ session_id: "paused-session", title: "Paused chat", last_case_run_status: "error" }] },
+      ],
+      activeScopeId: "conversation",
+      activeSessionId: "",
+      running: false,
+      onCreateSession() {},
+      onDeleteSession() {},
+      onSelectSession() {},
+      onOpenSettings() {},
+      onToggle() {},
+    }),
+  );
+
+  assert.match(html, /session-indicator paused" aria-label="Paused"/);
+});
+
+test("a paused session turns the empty send into the resume action", () => {
+  const props = (session) => ({
+    activeSession: { session_id: "session-1", scope_id: "conversation", ...session },
+    messages: [],
+    settings: {}, status: "Ready", running: false, approvals: [],
+  });
+  const paused = renderToStaticMarkup(
+    React.createElement(appModule.ChatPane, props({ resumable: true })),
+  );
+  assert.match(paused, /aria-label="继续上次任务"/);
+  assert.match(paused, /会话已暂停：点击发送继续上次任务，或输入新指令…/);
+  // The send button stays clickable on an empty composer: it resumes.
+  assert.doesNotMatch(paused, /aria-label="继续上次任务"[^>]*disabled/);
+
+  const idle = renderToStaticMarkup(React.createElement(appModule.ChatPane, props({})));
+  assert.doesNotMatch(idle, /aria-label="继续上次任务"/);
+  assert.match(idle, /aria-label="发送"[^>]*disabled/);
+});
+
 test("sidebar sections name recent chats and projects without agent echo", () => {
   const sidebarProps = (agent) => ({
     collapsed: false,

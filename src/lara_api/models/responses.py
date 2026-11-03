@@ -52,6 +52,10 @@ class SessionRecordResponse(BaseModel):
     title: str
     last_case_run_id: str | None = None
     last_case_run_status: str | None = None
+    # True when the last run ended without the user's outcome (error, failed,
+    # or skipped): the desktop presents the session as paused and an empty
+    # send resumes it with a continuation turn.
+    resumable: bool = False
     model_group_name: str = ""
     selected_model_key: str = ""
     pinned: bool = False

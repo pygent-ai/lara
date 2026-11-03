@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, fields, is_dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal
 
@@ -472,12 +473,46 @@ class CaseRunRef:
         return cls(**data)
 
 
+class CaseRunStatus(StrEnum):
+    """Durable verdict of one case run, shared by every layer.
+
+    Sessions materialize this value in metadata for cheap listing; the
+    resumable set drives session recovery: these runs ended before the user
+    got their outcome, so a fresh turn may continue the conversation.
+    """
+
+    RUNNING = "running"
+    PASSED = "passed"
+    FAILED = "failed"
+    ERROR = "error"
+    SKIPPED = "skipped"
+
+    @property
+    def terminal(self) -> bool:
+        return self is not CaseRunStatus.RUNNING
+
+    @property
+    def resumable(self) -> bool:
+        return self in {
+            CaseRunStatus.FAILED,
+            CaseRunStatus.ERROR,
+            CaseRunStatus.SKIPPED,
+        }
+
+    @classmethod
+    def from_value(cls, value: Any) -> "CaseRunStatus | None":
+        try:
+            return cls(str(value))
+        except ValueError:
+            return None
+
+
 @dataclass(slots=True)
 class CaseRunResult:
     session_id: str
     case_id: str
     case_run_id: str
-    status: Literal["passed", "failed", "error", "skipped"]
+    status: CaseRunStatus
     final_answer: str = ""
     error: str | None = None
     event_count: int = 0
@@ -487,8 +522,10 @@ class CaseRunResult:
         self.session_id = _require(self.session_id, "session_id")
         self.case_id = _require(self.case_id, "case_id")
         self.case_run_id = _require(self.case_run_id, "case_run_id")
-        if self.status not in {"passed", "failed", "error", "skipped"}:
+        verdict = CaseRunStatus.from_value(self.status)
+        if verdict is None or not verdict.terminal:
             raise ValueError("status must be one of passed, failed, error, skipped")
+        self.status = verdict
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

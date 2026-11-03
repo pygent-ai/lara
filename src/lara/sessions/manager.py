@@ -19,7 +19,14 @@ from lara.core.io import (
 )
 from lara.core.process import current_owner
 from lara.core.redaction import redact_secrets
-from lara.schema import AgentSession, CaseRunRef, RunConfig, SessionRef, SessionSpec
+from lara.schema import (
+    AgentSession,
+    CaseRunRef,
+    CaseRunStatus,
+    RunConfig,
+    SessionRef,
+    SessionSpec,
+)
 from lara.sessions.directory import SessionDirectory, user_lara_root_for
 
 
@@ -317,7 +324,8 @@ class SessionManager:
     def finish_case_run(
         self, case_run_ref: CaseRunRef, status: str, *, error: str | None = None
     ) -> bool:
-        if status not in {"passed", "failed", "error", "skipped"}:
+        verdict = CaseRunStatus.from_value(status)
+        if verdict is None or not verdict.terminal:
             raise ValueError("status must be one of passed, failed, error, skipped")
         run_dir = Path(case_run_ref.run_dir)
         metadata_path = run_dir / "run_metadata.json"

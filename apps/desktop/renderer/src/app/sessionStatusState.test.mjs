@@ -6,7 +6,35 @@ import {
   acknowledgeStoredSessionStatus,
   loadAcknowledgedSessionStatuses,
   sessionStatusIdentity,
+  sessionStatusKind,
 } from "./sessionStatusState.js";
+
+test("resumable terminal runs present as paused, not as an error", () => {
+  assert.equal(sessionStatusKind("running"), "running");
+  assert.equal(sessionStatusKind("error"), "paused");
+  assert.equal(sessionStatusKind("failed"), "paused");
+  assert.equal(sessionStatusKind("skipped"), "paused");
+  assert.equal(sessionStatusKind("passed"), "success");
+  assert.equal(sessionStatusKind("completed"), "success");
+  assert.equal(sessionStatusKind(undefined), "success");
+});
+
+test("paused sessions are acknowledged once visited", () => {
+  const storage = createMemoryStorage();
+  const paused = {
+    session_id: "session-1",
+    last_case_run_status: "error",
+    updated_at: "2026-08-21T10:00:00Z",
+  };
+
+  assert.deepEqual(
+    acknowledgeStoredSessionStatus({}, paused, storage),
+    { "session-1": sessionStatusIdentity(paused) },
+  );
+  assert.deepEqual(loadAcknowledgedSessionStatuses(storage), {
+    "session-1": sessionStatusIdentity(paused),
+  });
+});
 
 test("acknowledged session status survives a renderer restart", () => {
   const storage = createMemoryStorage();

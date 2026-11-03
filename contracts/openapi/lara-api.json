@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Lara Local API",
-    "version": "0.3.2"
+    "version": "0.3.3"
   },
   "paths": {
     "/health": {
@@ -444,6 +444,59 @@
         }
       }
     },
+    "/automations/{automation_id}/runs/{run_id}/cancel": {
+      "post": {
+        "tags": [
+          "automations"
+        ],
+        "summary": "Cancel Automation Run",
+        "operationId": "cancel_automation_run_automations__automation_id__runs__run_id__cancel_post",
+        "parameters": [
+          {
+            "name": "automation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Automation Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Cancel Automation Run Automations  Automation Id  Runs  Run Id  Cancel Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/projects": {
       "get": {
         "tags": [
@@ -612,7 +665,7 @@
           "sessions"
         ],
         "summary": "List Session Groups",
-        "description": "Serve the sidebar groups, or 304 when nothing behind the ETag changed.\n\nThe ETag is a stat-only fingerprint, so unchanged polls skip the full\nmetadata rebuild and the renderer skips re-rendering the sidebar.",
+        "description": "Serve the sidebar groups, or 304 when nothing behind the ETag changed.\n\nThe ETag is a stat-only fingerprint, so unchanged polls skip the full\nmetadata rebuild and the renderer skips re-rendering the sidebar. The first\ninventory pass of each server process skips the 304 shortcut once: a host\ncrash while the renderer kept its ETag would otherwise serve unchanged-304\nforever and never reconcile the runs the crash left behind.",
         "operationId": "list_session_groups_sessions_groups_get",
         "parameters": [
           {
@@ -683,6 +736,135 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SessionGroupListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/pin": {
+      "patch": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Pin Session",
+        "description": "Toggle the sidebar pin state of one chat and serve the refreshed groups.",
+        "operationId": "pin_session_sessions__session_id__pin_patch",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PinSessionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionGroupListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/fork": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Fork Session",
+        "description": "Fork one chat session; with at_sequence, fork at that checkpoint point.",
+        "operationId": "fork_session_sessions__session_id__fork_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "scope_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scope Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ForkSessionRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Request"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionRecordResponse"
                 }
               }
             }
@@ -815,6 +997,22 @@
                 }
               ],
               "title": "History Limit"
+            }
+          },
+          {
+            "name": "history_before_sequence",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "History Before Sequence"
             }
           }
         ],
@@ -1028,6 +1226,60 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Deliver Steering Chat Executions  Execution Id  Steering Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat/executions/{execution_id}/cancel": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Cancel Execution",
+        "operationId": "cancel_execution_chat_executions__execution_id__cancel_post",
+        "parameters": [
+          {
+            "name": "execution_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Execution Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatCancelRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Cancel Execution Chat Executions  Execution Id  Cancel Post"
                 }
               }
             }
@@ -1298,6 +1550,156 @@
                 "schema": {
                   "$ref": "#/components/schemas/TraceEventsResponse"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/uploads": {
+      "post": {
+        "tags": [
+          "uploads"
+        ],
+        "summary": "Upload Attachment",
+        "operationId": "upload_attachment_uploads_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_attachment_uploads_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Upload Attachment Uploads Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "uploads"
+        ],
+        "summary": "Delete Stored Upload",
+        "operationId": "delete_stored_upload_uploads_delete",
+        "parameters": [
+          {
+            "name": "scope_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scope Id"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/uploads/content": {
+      "get": {
+        "tags": [
+          "uploads"
+        ],
+        "summary": "Upload Content",
+        "operationId": "upload_content_uploads_content_get",
+        "parameters": [
+          {
+            "name": "scope_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scope Id"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -1808,6 +2210,46 @@
         "type": "object",
         "title": "AutomationUpdateRequest"
       },
+      "Body_upload_attachment_uploads_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          },
+          "scope_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_attachment_uploads_post"
+      },
+      "ChatCancelRequest": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Session Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session_id"
+        ],
+        "title": "ChatCancelRequest"
+      },
       "ChatSteeringRequest": {
         "properties": {
           "session_id": {
@@ -1822,17 +2264,30 @@
             "title": "Input Id"
           },
           "message": {
-            "type": "string",
-            "minLength": 1,
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Message"
+          },
+          "attachments": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Attachments"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
           "session_id",
-          "input_id",
-          "message"
+          "input_id"
         ],
         "title": "ChatSteeringRequest"
       },
@@ -1910,6 +2365,11 @@
             ],
             "title": "Execution Id"
           },
+          "resume": {
+            "type": "boolean",
+            "title": "Resume",
+            "default": false
+          },
           "after_sequence": {
             "anyOf": [
               {
@@ -1925,6 +2385,13 @@
             "type": "boolean",
             "title": "Log Model Text Deltas",
             "default": false
+          },
+          "attachments": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Attachments"
           }
         },
         "additionalProperties": false,
@@ -2021,6 +2488,25 @@
         ],
         "title": "DiscoverModelsRequest"
       },
+      "ForkSessionRequest": {
+        "properties": {
+          "at_sequence": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At Sequence"
+          }
+        },
+        "type": "object",
+        "title": "ForkSessionRequest",
+        "description": "Fork whole-session when omitted, or at one checkpoint boundary."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -2111,6 +2597,31 @@
           "model_id"
         ],
         "title": "ModelSummaryResponse"
+      },
+      "PinSessionRequest": {
+        "properties": {
+          "pinned": {
+            "type": "boolean",
+            "title": "Pinned"
+          },
+          "scope_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "pinned"
+        ],
+        "title": "PinSessionRequest"
       },
       "ProjectListResponse": {
         "properties": {
@@ -2380,6 +2891,11 @@
             "title": "History Truncated",
             "default": false
           },
+          "history_before_count": {
+            "type": "integer",
+            "title": "History Before Count",
+            "default": 0
+          },
           "metadata": {
             "additionalProperties": true,
             "type": "object",
@@ -2540,6 +3056,11 @@
             ],
             "title": "Last Case Run Status"
           },
+          "resumable": {
+            "type": "boolean",
+            "title": "Resumable",
+            "default": false
+          },
           "model_group_name": {
             "type": "string",
             "title": "Model Group Name",
@@ -2549,6 +3070,11 @@
             "type": "string",
             "title": "Selected Model Key",
             "default": ""
+          },
+          "pinned": {
+            "type": "boolean",
+            "title": "Pinned",
+            "default": false
           }
         },
         "type": "object",

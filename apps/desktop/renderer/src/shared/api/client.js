@@ -412,6 +412,9 @@ async function streamChatAttempt({ baseUrl, fetchImpl, request, onEvent, onActiv
       model_group_name: request.modelGroupName || null,
       turn_id: request.turnId || null,
       execution_id: request.executionId || null,
+      // Only the first attempt resumes the session's last run; a reconnect
+      // carries the captured execution_id and attaches directly instead.
+      resume: request.executionId ? undefined : request.resume || undefined,
       after_sequence: Number.isFinite(request.afterSequence) ? request.afterSequence : null,
       ...(Array.isArray(request.attachments) && request.attachments.length
         ? { attachments: request.attachments }

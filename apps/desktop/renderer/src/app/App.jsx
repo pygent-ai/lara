@@ -68,6 +68,7 @@ import {
   acknowledgeStoredSessionStatus,
   loadAcknowledgedSessionStatuses,
   sessionStatusIdentity,
+  sessionStatusKind,
 } from "./sessionStatusState.js";
 import {
   countUnacknowledgedCompletedSessions,
@@ -778,9 +779,9 @@ export function App() {
   );
 
   const handleSendMessage = useCallback(
-    async (message, recovery = null, attachments = []) => {
+    async (message, recovery = null, attachments = [], { resume = false } = {}) => {
       const initialSessionId = recovery?.session.session_id || activeSessionIdRef.current;
-      if ((!recovery && !message.trim() && !attachments.length) || (initialSessionId && runningSessionIdsRef.current[initialSessionId])) {
+      if ((!recovery && !message.trim() && !attachments.length && !resume) || (initialSessionId && runningSessionIdsRef.current[initialSessionId])) {
         return;
       }
       if (initialSessionId) {
@@ -900,13 +901,15 @@ export function App() {
         // the session is not left flagged running with an unhandled rejection.
         const nextMessages = recovery ? messagesForRecovery(recovery, assistantId) : [
           ...messagesRef.current,
-          {
+          // A resume carries no user input: the transcript continues straight
+          // into the assistant turn from the last durable checkpoint.
+          ...(resume ? [] : [{
             id: `user-${Date.now()}`,
             role: "user",
             content: message,
             createdAt: Date.now(),
             attachments: attachments.length ? attachments : undefined,
-          },
+          }]),
           {
             id: assistantId,
             role: "assistant",
@@ -941,6 +944,7 @@ export function App() {
             modelGroupName: pendingNewModelGroup || settings.default_model_group || undefined,
             scopeId: streamScopeId,
             attachments: attachments.length ? attachments : undefined,
+            resume: resume || undefined,
           },
           {
             onConnectionState: (state) => {
@@ -2045,6 +2049,9 @@ export function computeEnteringMessageIds(previous, sessionId, messages) {
 
 export function ChatPane({ activeSession, messages, historyRemaining = 0, historyLoading = false, onLoadEarlier, activityCollapseToken, settings, status, running, steeringReady = false, approvals, pendingSteerings = [], api, onSendMessage, onForkSession, onSteering, onCancelTurn, onApproval, projects = [], onSelectProject, onChooseProject, onChangePermissions, pendingNewModelGroup = "", onChangeNewModelGroup = () => {}, pendingNewSessionScope = "", onChangeModel = () => {}, composerDrafts = new Map() }) {
   const empty = messages.length === 0;
+  // A paused session (last run ended resumably) offers one-click continue on
+  // an empty send; while it runs, the composer is in steering mode instead.
+  const resumable = !running && Boolean(activeSession?.resumable);
   const selectedScope = activeSession?.scope_id || pendingNewSessionScope || scopeIdFromWorkspace(settings.workspace_root);
   const mediaScope = useMemo(() => ({ api, scopeId: selectedScope }), [api, selectedScope]);
   const composerDraftKey = activeSession ? activeSession.session_id : `new-chat:${selectedScope}`;
@@ -2246,7 +2253,7 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
   async function submit() {
     const text = draft.trim();
     const attachments = pendingAttachments;
-    if ((!text && !attachments.length) || sendingRef.current || configuring) {
+    if (sendingRef.current || configuring) {
       return;
     }
     setConfigError("");
@@ -2273,10 +2280,16 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
       }
       return;
     }
+    // A paused session resumes on an empty send; typing a message starts a
+    // new turn on top of the same conversation either way.
+    const resume = !text && !attachments.length && resumable;
+    if (!text && !attachments.length && !resume) {
+      return;
+    }
     updateDraft("");
     setPendingAttachments([]);
     followTranscriptRef.current = true;
-    onSendMessage(text, null, attachments);
+    onSendMessage(text, null, attachments, { resume });
   }
 
   async function pickFiles(event) {
@@ -2478,7 +2491,7 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
             ref={composerRef}
             aria-label="任务内容"
             disabled={sending || configuring}
-            placeholder={running ? (steeringReady ? "追加指令，调整当前任务方向…" : "正在连接执行，可以先输入指令…") : "描述任务，或继续追问…"}
+            placeholder={running ? (steeringReady ? "追加指令，调整当前任务方向…" : "正在连接执行，可以先输入指令…") : resumable ? "会话已暂停：点击发送继续上次任务，或输入新指令…" : "描述任务，或继续追问…"}
             value={draft}
             onChange={(event) => updateDraft(event.target.value)}
             onPaste={handleComposerPaste}
@@ -2514,7 +2527,7 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
             <button className="attach" aria-label="添加附件" title="添加工作区文件作为附件（图片/视频原生识别，其他文件转 XML）" disabled={sending || configuring || pendingAttachments.length >= 10} type="button" onClick={() => fileInputRef.current?.click()}>
               <Paperclip aria-hidden="true" />
             </button>
-            <span className="composer-hint">{uploadingCount > 0 ? `正在上传附件…（${uploadingCount}）` : running ? (steeringReady ? "Enter 追加指令 · 立即打断当前步骤" : "正在连接执行，连接后可追加指令") : "Enter 发送 · Shift + Enter 换行 · 可粘贴或拖入文件"}</span>
+            <span className="composer-hint">{uploadingCount > 0 ? `正在上传附件…（${uploadingCount}）` : running ? (steeringReady ? "Enter 追加指令 · 立即打断当前步骤" : "正在连接执行，连接后可追加指令") : resumable ? "点击发送继续上次任务 · 输入文字则开始新指令" : "Enter 发送 · Shift + Enter 换行 · 可粘贴或拖入文件"}</span>
             {running && onCancelTurn && <button className="stop" aria-label="取消当前任务" title="取消当前任务" disabled={cancelling} type="button" onClick={() => {
               if (cancelling) return;
               setCancelling(true);
@@ -2522,7 +2535,7 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
             }}>
               <Square aria-hidden="true" />
             </button>}
-            <button className="send" aria-label={running ? (steeringReady ? "追加指令" : "正在连接") : "发送"} title={running ? (steeringReady ? "追加指令" : "正在连接") : "发送"} disabled={(running && !steeringReady) || sending || configuring || uploadingCount > 0 || (!draft.trim() && !pendingAttachments.length)} type="button" onClick={submit}>
+            <button className="send" aria-label={running ? (steeringReady ? "追加指令" : "正在连接") : resumable ? "继续上次任务" : "发送"} title={running ? (steeringReady ? "追加指令" : "正在连接") : resumable ? "继续上次任务" : "发送"} disabled={(running && !steeringReady) || sending || configuring || uploadingCount > 0 || (!draft.trim() && !pendingAttachments.length && !resumable)} type="button" onClick={submit}>
               <ArrowUp aria-hidden="true" />
             </button>
           </div>
@@ -2807,6 +2820,7 @@ const MessageRow = memo(function MessageRow({ message, entering = false, activit
       {message.role !== "user" && <div className="avatar">{message.role === "automation" ? <CalendarClock size={15} /> : "L"}</div>}
       <div className="bubble">
         {message.role === "automation" && <span className="automation-message-label">定时任务触发</span>}
+        {message.role === "resume" && <span className="automation-message-label">继续上次任务</span>}
         {message.role === "assistant" ? (
           <>
             {hasAssistantActivity && (
@@ -4993,7 +5007,13 @@ function cleanContent(content) {
 }
 
 function messageDisplayRole(message) {
-  return message?.kind === "lara.automation.trigger" || message?.data?.origin === "automation" ? "automation" : "user";
+  if (message?.kind === "lara.automation.trigger" || message?.data?.origin === "automation") {
+    return "automation";
+  }
+  if (message?.kind === "lara.user.resume" || message?.data?.origin === "resume") {
+    return "resume";
+  }
+  return "user";
 }
 
 function displayMessageContent(message) {
@@ -5456,19 +5476,14 @@ function statusLabel(status) {
 }
 
 function sessionStatusLabel(status) {
-  const kind = sessionStatusKind(status);
-  if (kind === "running") {
+  // Callers pass the sessionStatusKind, not the raw run status.
+  if (status === "running") {
     return "Running";
   }
-  if (kind === "error") {
-    return "Error";
+  if (status === "paused") {
+    return "Paused";
   }
   return "Done";
-}
-
-function sessionStatusKind(status) {
-  const kind = statusKind(status);
-  return kind === "running" || kind === "error" ? kind : "success";
 }
 
 function statusKind(status) {

@@ -53,6 +53,7 @@ class _Lease:
         self.runtime = SimpleNamespace(
             manager=manager,
             runtime_service=runtime_service,
+            reminders=SimpleNamespace(prewarm_session=lambda _session_id: None),
         )
         self.releases = 0
 
@@ -516,12 +517,14 @@ async def test_resume_miss_keeps_terminal_runs_unchanged(
     )
     registry = ChatRunRegistry()
 
-    run = await registry.resolve(
-        _Context(),
-        ChatTurnRequest(execution_id="execution-1", session_id="session-1"),
-    )
+    # A terminal run must not be finalized again by a stale attach attempt;
+    # the failed lookup surfaces as the regular transport error.
+    with pytest.raises(LookupError, match="execution not found"):
+        await registry.resolve(
+            _Context(),
+            ChatTurnRequest(execution_id="execution-1", session_id="session-1"),
+        )
 
-    assert run is None
     assert manager.finished == []
 
 
@@ -681,3 +684,271 @@ def test_resume_miss_finalize_decision_respects_the_run_owner(tmp_path) -> None:
 
     manager.finish_case_run(ref, "passed")
     assert chat_runner._should_finalize_on_resume_miss(manager, ref) is False
+
+
+@pytest.mark.asyncio
+async def test_resume_continues_a_resumable_terminal_run_with_a_fresh_turn(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started: list[dict[str, object]] = []
+
+    class _Handle:
+        execution_id = "execution-2"
+
+        async def result(self):
+            return AIMessage(
+                content="continued",
+                kind="lara.chat.result",
+                data={"result": {"status": "passed"}},
+            ), Context()
+
+    class _RuntimeService:
+        async def start_turn(self, **kwargs):
+            started.append(kwargs)
+            return _Handle()
+
+    class _Manager:
+        def __init__(self) -> None:
+            self.sessions_root = tmp_path / "sessions"
+            self.config = SimpleNamespace(workspace_root=str(tmp_path))
+            self.finished: list[tuple[str, str]] = []
+
+        def show(self, session_id: str):
+            del session_id
+            return {
+                "metadata": {
+                    "last_case_run_id": "run-1",
+                    "last_case_run_status": "error",
+                }
+            }
+
+        def start_case_run(self, session_id, case_id, *, run_config):
+            del run_config
+            return CaseRunRef(
+                session_id=session_id,
+                case_id=case_id,
+                case_run_id="run-2",
+                run_dir=str(tmp_path / "run-2"),
+            )
+
+        def finish_case_run(self, ref, status, *, error=None):
+            del error
+            self.finished.append((ref.case_run_id, str(status)))
+
+    manager = _Manager()
+    monkeypatch.setattr(
+        chat_runner,
+        "session_service_for_scope",
+        lambda _context, _scope_id: SimpleNamespace(manager=manager),
+    )
+
+    class _Context:
+        async def acquire_runtime(self, **_kwargs):
+            return _Lease(manager, _RuntimeService())
+
+    run = await ChatRunRegistry().resolve(
+        _Context(),
+        ChatTurnRequest(resume=True, session_id="session-1"),
+    )
+    assert run is not None
+    await run.task
+
+    # The continuation turn carries the resume signal instead of user input.
+    assert started[0]["message"] == chat_runner.RESUME_TURN_MESSAGE
+    assert started[0]["message_kind"] == chat_runner.RESUME_TURN_KIND
+    assert started[0]["message_data"] == {"origin": "resume"}
+    assert manager.finished == [("run-2", "passed")]
+
+
+@pytest.mark.asyncio
+async def test_resume_reattaches_a_running_run_by_its_published_execution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    write_json(
+        run_dir / "run_metadata.json",
+        {"case_run_id": "run-1", "runtime_execution_id": "execution-1"},
+    )
+    run_ref = CaseRunRef(
+        session_id="session-1",
+        case_id="chat",
+        case_run_id="run-1",
+        run_dir=str(run_dir),
+    )
+
+    class _Manager:
+        sessions_root = tmp_path / "sessions"
+
+        def show(self, session_id: str):
+            del session_id
+            return {
+                "metadata": {
+                    "last_case_run_id": "run-1",
+                    "last_case_run_status": "running",
+                }
+            }
+
+        def find_case_run(self, session_id: str, case_run_id: str) -> CaseRunRef:
+            assert (session_id, case_run_id) == ("session-1", "run-1")
+            return run_ref
+
+    turn = ManagedSessionTurn(
+        lease=_Lease(SimpleNamespace(), SimpleNamespace()),
+        command=TurnCommand(session_id="session-1", message="hello"),
+        run_ref=run_ref,
+    )
+    turn.state = TurnState.RUNNING
+    turn.ready.set()
+
+    class _Context:
+        async def acquire_runtime(self, **_kwargs):
+            raise AssertionError("a published execution must attach, not probe")
+
+    monkeypatch.setattr(
+        chat_runner,
+        "session_service_for_scope",
+        lambda _context, _scope_id: SimpleNamespace(manager=_Manager()),
+    )
+    registry = ChatRunRegistry()
+    registry.coordinator._runs["execution-1"] = turn
+
+    run = await registry.resolve(
+        _Context(),
+        ChatTurnRequest(resume=True, session_id="session-1"),
+    )
+
+    assert run is not None
+    assert run.turn is turn
+
+
+@pytest.mark.asyncio
+async def test_resume_finalizes_a_dead_start_and_continues(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A run that died before publishing its execution id still resumes.
+
+    Nothing can reattach to it, so the resume reconciles it as an error and
+    immediately continues the session with the fresh resume turn.
+    """
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    write_json(run_dir / "run_metadata.json", {"case_run_id": "run-1"})
+    run_ref = CaseRunRef(
+        session_id="session-1",
+        case_id="chat",
+        case_run_id="run-1",
+        run_dir=str(run_dir),
+    )
+    finished: list[tuple[str, str]] = []
+
+    class _Handle:
+        execution_id = "execution-2"
+
+        async def result(self):
+            return AIMessage(
+                content="continued",
+                kind="lara.chat.result",
+                data={"result": {"status": "passed"}},
+            ), Context()
+
+    class _RuntimeService:
+        async def start_turn(self, **_kwargs):
+            return _Handle()
+
+    class _Manager:
+        def __init__(self) -> None:
+            self.sessions_root = tmp_path / "sessions"
+            self.config = SimpleNamespace(workspace_root=str(tmp_path))
+            self.started: list[str] = []
+
+        def show(self, session_id: str):
+            del session_id
+            return {
+                "metadata": {
+                    "last_case_run_id": "run-1",
+                    "last_case_run_status": "running",
+                }
+            }
+
+        def find_case_run(self, session_id: str, case_run_id: str) -> CaseRunRef:
+            del session_id
+            return run_ref
+
+        def run_timing(self, ref: CaseRunRef) -> dict[str, str]:
+            return {"status": "running"}
+
+        def run_owner(self, _ref: CaseRunRef):
+            return None
+
+        def finish_case_run(self, ref, status, *, error=None):
+            finished.append((ref.case_run_id, str(status)))
+
+        def start_case_run(self, session_id, case_id, *, run_config):
+            del run_config
+            self.started.append(case_id)
+            return CaseRunRef(
+                session_id=session_id,
+                case_id=case_id,
+                case_run_id="run-2",
+                run_dir=str(tmp_path / "run-2"),
+            )
+
+    manager = _Manager()
+    monkeypatch.setattr(
+        chat_runner,
+        "session_service_for_scope",
+        lambda _context, _scope_id: SimpleNamespace(manager=manager),
+    )
+
+    class _Context:
+        async def acquire_runtime(self, **_kwargs):
+            return _Lease(manager, _RuntimeService())
+
+    run = await ChatRunRegistry().resolve(
+        _Context(),
+        ChatTurnRequest(resume=True, session_id="session-1"),
+    )
+    assert run is not None
+    await run.task
+
+    assert finished == [("run-1", "error"), ("run-2", "passed")]
+
+
+@pytest.mark.asyncio
+async def test_resume_rejects_a_passed_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Manager:
+        def show(self, session_id: str):
+            del session_id
+            return {
+                "metadata": {
+                    "last_case_run_id": "run-1",
+                    "last_case_run_status": "passed",
+                }
+            }
+
+    monkeypatch.setattr(
+        chat_runner,
+        "session_service_for_scope",
+        lambda _context, _scope_id: SimpleNamespace(manager=_Manager()),
+    )
+
+    with pytest.raises(LookupError, match="无需恢复"):
+        await ChatRunRegistry().resolve(
+            SimpleNamespace(),
+            ChatTurnRequest(resume=True, session_id="session-1"),
+        )
+
+
+def test_resume_request_accepts_only_pure_resume() -> None:
+    assert ChatTurnRequest(resume=True, session_id="session-1").resume is True
+    # A reconnect re-sends the original resume body with the execution id it
+    # captured from the first event: it attaches directly instead.
+    assert ChatTurnRequest(resume=True, execution_id="execution-1").resume is True
+    with pytest.raises(ValueError):
+        ChatTurnRequest(resume=True, session_id="session-1", message="hello")
+    with pytest.raises(ValueError):
+        ChatTurnRequest(resume=True, session_id="session-1", attachments=["a.txt"])
