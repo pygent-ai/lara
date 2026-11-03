@@ -49,6 +49,10 @@ class ChatTurnRequest(BaseModel):
     model_group_name: str | None = None
     turn_id: str | None = None
     execution_id: str | None = None
+    # Resume the session's last run: reattach while it is recoverable, or
+    # continue it with a fresh turn when it ended resumably (error, failed,
+    # skipped). A reconnect carries execution_id and attaches directly.
+    resume: bool = False
     after_sequence: int | None = None
     log_model_text_deltas: bool = False
     attachments: list[str] = Field(default_factory=list)
@@ -57,10 +61,12 @@ class ChatTurnRequest(BaseModel):
     def validate_start_or_resume(self) -> "ChatTurnRequest":
         if self.after_sequence is not None and self.execution_id is None:
             raise ValueError("after_sequence requires execution_id")
+        if self.resume and (self.message is not None or self.attachments):
+            raise ValueError("resume accepts neither message nor attachments")
         if self.execution_id is not None:
             if self.message is not None or self.attachments:
                 raise ValueError("resume accepts neither message nor attachments")
-        elif self.message is None and not self.attachments:
+        elif self.message is None and not self.attachments and not self.resume:
             raise ValueError("provide message or attachments when not resuming")
         return self
 

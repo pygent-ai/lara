@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from lara.schema import CaseRunStatus
+
 
 @dataclass(frozen=True, slots=True)
 class TurnCommand:
@@ -38,12 +40,10 @@ class TurnState(StrEnum):
 
     @property
     def terminal(self) -> bool:
-        return self in {
-            TurnState.PASSED,
-            TurnState.FAILED,
-            TurnState.ERROR,
-            TurnState.SKIPPED,
-        }
+        # Terminal turn states are exactly the durable case-run verdicts; the
+        # lifecycle-only states must never read as terminal.
+        verdict = CaseRunStatus.from_value(self.value)
+        return verdict.terminal if verdict is not None else False
 
 
 __all__ = ["TurnCommand", "TurnState"]

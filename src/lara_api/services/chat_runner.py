@@ -18,13 +18,19 @@ from lara.orchestration import (
     SessionTurnService,
 )
 from lara.runtime.attachments import resolve_attachments
-from lara.schema import CaseRunRef
+from lara.schema import CaseRunRef, CaseRunStatus
 from lara_api.container import ApiContext
 from lara_api.models.events import ExecutionEvent
 from lara_api.models.requests import ChatTurnRequest
-from lara_api.services.session_service import session_service_for_scope
+from lara_api.services.session_service import finalize_dead_run, session_service_for_scope
 
 CHAT_KEEPALIVE_SECONDS = 10.0
+
+# A resume of a resumable terminal run submits a fresh turn with this input:
+# the durable history already carries the task and its partial progress, so
+# the model only needs the signal to pick the work back up.
+RESUME_TURN_MESSAGE = "继续"
+RESUME_TURN_KIND = "lara.user.resume"
 
 
 def _should_finalize_on_resume_miss(manager: Any, run_ref: CaseRunRef) -> bool:
@@ -282,97 +288,37 @@ class ChatRunRegistry:
         self, context: ApiContext, request: ChatTurnRequest
     ) -> ActiveChatRun | AttachedExecutionRun | None:
         if request.execution_id:
-            active = await self.coordinator.find_execution(request.execution_id)
-            if active is not None:
-                await active.wait_ready()
-                return ActiveChatRun(active)
-            service = session_service_for_scope(context, request.scope_id)
-            manager = service.manager
-            run_ref = _request_case_run(manager, request)
-            if run_ref is not None:
-                driving = await self.coordinator.find_case_run(run_ref.case_run_id)
-                if driving is not None:
-                    # A turn this process is already driving is registered by
-                    # case run before its execution starts, so this also covers
-                    # the start window where the execution id is not in the
-                    # coordinator index yet. Recovering here instead would
-                    # stack a second turn on the live one.
-                    await driving.wait_ready()
-                    return ActiveChatRun(driving)
-            probe_lease = None
-            if run_ref is None:
-                probe_lease = await context.acquire_runtime(
-                    config=manager.config,
-                    manager=manager,
-                )
-                probe_runtime = probe_lease.runtime.runtime_service
-                try:
-                    run_ref = await probe_runtime.recovery_case_run(
-                        request.execution_id
-                    )
-                finally:
-                    await probe_lease.release()
-            run_config = manager.load_run_config(
-                run_ref,
-                credential_source=manager.config,
+            return await self._resolve_attached_run(context, request)
+        if request.resume:
+            run = await self._resolve_session_resume(context, request)
+            if run is not None:
+                return run
+            # The last run is a resumable terminal (or was just reconciled as
+            # dead): continuing the session with a fresh turn is the only
+            # remaining way to resume it.
+            return await self._submit_turn(
+                context,
+                request,
+                message=RESUME_TURN_MESSAGE,
+                message_kind=RESUME_TURN_KIND,
+                message_data={"origin": "resume"},
             )
-            lease = await context.acquire_runtime(config=run_config)
-            runtime_service = lease.runtime.runtime_service
-            try:
-                handle = await runtime_service.runtime.get_execution_handle(
-                    request.execution_id
-                )
-            except KeyError:
-                # A resume miss is only a death certificate for a run this
-                # process could own. Hosts share one project's sessions root,
-                # so the execution can also live in another live process (a
-                # CLI turn the UI attached to); finalizing that run here wrote
-                # a false error terminal over the owner's later real verdict.
-                if not _should_finalize_on_resume_miss(manager, run_ref):
-                    await lease.release()
-                    return None
-                try:
-                    manager.finish_case_run(
-                        run_ref,
-                        "error",
-                        error=(
-                            "resume miss: this process holds no execution "
-                            f"handle for {request.execution_id}"
-                        ),
-                    )
-                except OSError:
-                    # Metadata repair must not mask the resume miss; the
-                    # next resume attempt reconciles again.
-                    pass
-                await lease.release()
-                return None
-            try:
-                snapshot = await handle.snapshot()
-            except BaseException:
-                await lease.release()
-                raise
-            if snapshot.status.terminal:
-                return AttachedExecutionRun(
-                    handle, run_ref, lease.runtime.manager, lease,
-                    snapshot=snapshot,
-                )
-            try:
-                recovered = await self.coordinator.recover_turn(
-                    lease=lease,
-                    run_ref=run_ref,
-                    execution_id=request.execution_id,
-                )
-            except BaseException:
-                await lease.release()
-                raise
-            await recovered.wait_ready()
-            return ActiveChatRun(recovered)
         if not request.message and not request.attachments:
             raise ValueError("message or attachments is required when execution_id is not provided")
-        service = session_service_for_scope(
-            context,
-            request.scope_id,
+        return await self._submit_turn(
+            context, request, message=request.message or ""
         )
+
+    async def _submit_turn(
+        self,
+        context: ApiContext,
+        request: ChatTurnRequest,
+        *,
+        message: str,
+        message_kind: str = "lara.chat.turn",
+        message_data: dict[str, object] | None = None,
+    ) -> ActiveChatRun:
+        service = session_service_for_scope(context, request.scope_id)
         manager = service.manager
         if request.attachments:
             resolve_attachments(
@@ -386,14 +332,168 @@ class ChatRunRegistry:
             config=manager.config,
             manager=manager,
             session_id=request.session_id,
-            message=request.message or "",
+            message=message,
             case_id=request.case_id,
             turn_id=request.turn_id,
             model_group_name=request.model_group_name,
+            message_kind=message_kind,
+            message_data=message_data,
             attachments=request.attachments,
         )
         await turn.wait_ready()
         return ActiveChatRun(turn)
+
+    async def _resolve_session_resume(
+        self, context: ApiContext, request: ChatTurnRequest
+    ) -> ActiveChatRun | AttachedExecutionRun | None:
+        """Resolve `resume` against the session's last case run.
+
+        Returns the run to reattach while the last run is recoverable, and
+        None when the last run ended resumably (error, failed, skipped) or
+        was just reconciled as dead; the caller then continues the session
+        with a fresh turn.
+        """
+
+        if not request.session_id:
+            raise LookupError("恢复会话需要指定 session_id。")
+        service = session_service_for_scope(context, request.scope_id)
+        manager = service.manager
+        metadata = manager.show(request.session_id)["metadata"]
+        status = CaseRunStatus.from_value(metadata.get("last_case_run_status"))
+        run_id = metadata.get("last_case_run_id")
+        if status is None or not isinstance(run_id, str) or not run_id:
+            raise LookupError("会话没有可恢复的运行。")
+        if status is CaseRunStatus.RUNNING:
+            return await self._reattach_running_run(
+                context, request, manager, run_id
+            )
+        if not status.resumable:
+            raise LookupError("上次运行已正常完成，无需恢复。")
+        return None
+
+    async def _reattach_running_run(
+        self,
+        context: ApiContext,
+        request: ChatTurnRequest,
+        manager: Any,
+        run_id: str,
+    ) -> ActiveChatRun | AttachedExecutionRun | None:
+        run_ref = manager.find_case_run(request.session_id, run_id)
+        run_metadata = read_json(Path(run_ref.run_dir) / "run_metadata.json")
+        execution_id = run_metadata.get("runtime_execution_id")
+        if isinstance(execution_id, str) and execution_id:
+            run = await self._resolve_attached_run(
+                context,
+                request.model_copy(update={"execution_id": execution_id}),
+            )
+            if run is not None:
+                return run
+            # The attach attempt reconciled the dead run as an error; the
+            # continuation turn submitted by the caller resumes from there.
+            return None
+        driving = await self.coordinator.find_case_run(run_ref.case_run_id)
+        if driving is not None:
+            # A turn this process is driving is registered by case run before
+            # its execution starts, so this covers the start window where the
+            # execution id is not published yet.
+            await driving.wait_ready()
+            return ActiveChatRun(driving)
+        if not _should_finalize_on_resume_miss(manager, run_ref):
+            # A live foreign host is still starting this run and owns its
+            # terminal verdict; continuing here would stack a second turn.
+            raise LookupError("运行由其他进程持有，暂时无法恢复。")
+        finalize_dead_run(manager, run_ref)
+        return None
+
+    async def _resolve_attached_run(
+        self, context: ApiContext, request: ChatTurnRequest
+    ) -> ActiveChatRun | AttachedExecutionRun | None:
+        execution_id = request.execution_id
+        if execution_id is None:
+            raise ValueError("attached run resolution requires execution_id")
+        active = await self.coordinator.find_execution(execution_id)
+        if active is not None:
+            await active.wait_ready()
+            return ActiveChatRun(active)
+        service = session_service_for_scope(context, request.scope_id)
+        manager = service.manager
+        run_ref = _request_case_run(manager, request)
+        if run_ref is not None:
+            driving = await self.coordinator.find_case_run(run_ref.case_run_id)
+            if driving is not None:
+                # A turn this process is already driving is registered by
+                # case run before its execution starts, so this also covers
+                # the start window where the execution id is not in the
+                # coordinator index yet. Recovering here instead would
+                # stack a second turn on the live one.
+                await driving.wait_ready()
+                return ActiveChatRun(driving)
+        probe_lease = None
+        if run_ref is None:
+            probe_lease = await context.acquire_runtime(
+                config=manager.config,
+                manager=manager,
+            )
+            probe_runtime = probe_lease.runtime.runtime_service
+            try:
+                run_ref = await probe_runtime.recovery_case_run(execution_id)
+            finally:
+                await probe_lease.release()
+        run_config = manager.load_run_config(
+            run_ref,
+            credential_source=manager.config,
+        )
+        lease = await context.acquire_runtime(config=run_config)
+        runtime_service = lease.runtime.runtime_service
+        try:
+            handle = await runtime_service.runtime.get_execution_handle(
+                execution_id
+            )
+        except KeyError:
+            # A resume miss is only a death certificate for a run this
+            # process could own. Hosts share one project's sessions root,
+            # so the execution can also live in another live process (a
+            # CLI turn the UI attached to); finalizing that run here wrote
+            # a false error terminal over the owner's later real verdict.
+            if not _should_finalize_on_resume_miss(manager, run_ref):
+                await lease.release()
+                raise LookupError("execution not found") from None
+            try:
+                manager.finish_case_run(
+                    run_ref,
+                    CaseRunStatus.ERROR,
+                    error=(
+                        "resume miss: this process holds no execution "
+                        f"handle for {execution_id}"
+                    ),
+                )
+            except OSError:
+                # Metadata repair must not mask the resume miss; the
+                # next resume attempt reconciles again.
+                pass
+            await lease.release()
+            return None
+        try:
+            snapshot = await handle.snapshot()
+        except BaseException:
+            await lease.release()
+            raise
+        if snapshot.status.terminal:
+            return AttachedExecutionRun(
+                handle, run_ref, lease.runtime.manager, lease,
+                snapshot=snapshot,
+            )
+        try:
+            recovered = await self.coordinator.recover_turn(
+                lease=lease,
+                run_ref=run_ref,
+                execution_id=execution_id,
+            )
+        except BaseException:
+            await lease.release()
+            raise
+        await recovered.wait_ready()
+        return ActiveChatRun(recovered)
 
     async def deliver_approval(
         self,

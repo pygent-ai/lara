@@ -10,7 +10,7 @@ from typing import Any
 from lara.core.io import read_json, validate_path_id
 from lara.core.process import owner_is_foreign_and_alive
 from lara.runtime.reminders import ReminderService
-from lara.schema import CaseRunRef, RunConfig
+from lara.schema import CaseRunRef, CaseRunStatus, RunConfig
 from lara.sessions import SessionManager
 from lara.tracing.events import EventStore
 from lara_api.container import ApiContext
@@ -259,17 +259,27 @@ async def reconcile_stale_running_sessions(
             # error here would overwrite its later real outcome.
             continue
         try:
-            manager.finish_case_run(
-                run_ref,
-                "error",
-                error="reconciled as error: no live execution handle exists for the run",
-            )
+            finalize_dead_run(manager, run_ref)
         except OSError:
             # Metadata repair must not fail the list; the next rebuild retries.
             continue
         latest = manager.show(record.session_id)["metadata"].get("last_case_run_id")
         if latest == record.last_case_run_id:
-            record.last_case_run_status = "error"
+            record.last_case_run_status = CaseRunStatus.ERROR
+
+
+def finalize_dead_run(manager: SessionManager, run_ref: CaseRunRef) -> None:
+    """Stamp a run whose owning execution no longer exists as an error.
+
+    Both the sidebar listing and a resume attempt reconcile such runs; the
+    shared verdict string keeps the two repair paths indistinguishable.
+    """
+
+    manager.finish_case_run(
+        run_ref,
+        CaseRunStatus.ERROR,
+        error="reconciled as error: no live execution handle exists for the run",
+    )
 
 async def _execution_is_live(
     context: ApiContext, manager: SessionManager, run_ref: CaseRunRef
@@ -435,6 +445,7 @@ def _record_from_metadata(
         or _first_user_message_title(session_dir)
         or _display_title(session_id)
     )
+    status = CaseRunStatus.from_value(metadata.get("last_case_run_status"))
     return SessionRecordResponse(
         session_id=session_id,
         session_dir=str(session_dir),
@@ -446,6 +457,7 @@ def _record_from_metadata(
         title=title,
         last_case_run_id=_optional_str(metadata.get("last_case_run_id")),
         last_case_run_status=_optional_str(metadata.get("last_case_run_status")),
+        resumable=status.resumable if status is not None else False,
         model_group_name=str(metadata.get("model_group_name") or ""),
         selected_model_key=str(metadata.get("selected_model_key") or ""),
     )

@@ -81,11 +81,14 @@ function browserStorage() {
 
 export function sessionStatusKind(status) {
   const value = String(status || "").toLowerCase();
-  if (value.includes("run")) {
+  if (value === "running") {
     return "running";
   }
-  if (value.includes("error") || value.includes("fail")) {
-    return "error";
+  // A run that ended without the user's outcome (error, failed, or a
+  // cancelled turn) leaves the session paused: it can be resumed with one
+  // send, so it presents as paused rather than as a hard error.
+  if (value === "error" || value === "failed" || value === "skipped") {
+    return "paused";
   }
   return "success";
 }

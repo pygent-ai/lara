@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from lara.core.io import plain_data, plain_object
-from lara.schema import RunConfig
+from lara.schema import CaseRunStatus, RunConfig
 from lara.sessions import SessionCollaborationStore, SessionManager
 
 from .messages import automation_trigger_message
@@ -30,15 +30,14 @@ if TYPE_CHECKING:
 ConfigFactory = Callable[[str, str | None], RunConfig]
 RuntimeAcquirer = Callable[..., Awaitable[Any]]
 
-_RESULT_TERMINAL_STATES = {"passed", "failed", "error", "skipped"}
-
 
 def _terminal_state(status: str) -> DispatchItemState:
-    try:
-        state = DispatchItemState(status)
-    except ValueError:
+    # Turn results carry the shared case-run verdict; anything that is not a
+    # terminal verdict is an error, matching session execution finalization.
+    verdict = CaseRunStatus.from_value(status)
+    if verdict is None or not verdict.terminal:
         return DispatchItemState.ERROR
-    return state if state.terminal else DispatchItemState.ERROR
+    return DispatchItemState(verdict.value)
 
 
 class DispatchScheduler:
@@ -308,9 +307,9 @@ class DispatchScheduler:
                 # cancellation finalizer so it is recorded exactly once.
                 raise asyncio.CancelledError
             result = plain_object(plain_object(output.data).get("result"))
-            status = str(result.get("status") or DispatchItemState.PASSED.value)
-            if status not in _RESULT_TERMINAL_STATES:
-                status = DispatchItemState.ERROR.value
+            status = _terminal_state(
+                str(result.get("status") or CaseRunStatus.PASSED.value)
+            ).value
             await asyncio.to_thread(
                 self.store.finish_item,
                 item.item_id,
