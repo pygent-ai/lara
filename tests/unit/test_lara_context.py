@@ -112,6 +112,70 @@ def test_native_context_restore_uses_the_checkpoint_projection() -> None:
     assert restored.projection_revision == 9
 
 
+def test_context_restore_replays_history_recorded_after_the_checkpoint() -> None:
+    from pygent import ToolCall, ToolMessage, ToolResult
+
+    covered = (
+        UserMessage(content="turn1 user"),
+        AIMessage(content="turn1 answer"),
+    )
+    failed_round = (
+        UserMessage(content="turn2 user"),
+        AIMessage(
+            content="",
+            tool_calls=(ToolCall(call_id="c1", name="bash", arguments={}),),
+        ),
+        ToolMessage(
+            results=(
+                ToolResult(
+                    call_id="c1", name="bash", output="boom", status="failed"
+                ),
+            )
+        ),
+    )
+    history = [message_to_dict(message) for message in (*covered, *failed_round)]
+    checkpoint = context_to_dict(
+        LaraContext(session_id="session-1", messages=covered, compression_count=2),
+        registry=LARA_CONTEXT_CODECS,
+    )
+
+    restored, compacted = _initial_lara_context(
+        context=LaraContext(session_id="session-1"),
+        history=history,
+        checkpoint=checkpoint,
+        checkpoint_history_count=len(covered),
+    )
+
+    assert compacted is True
+    assert [message.role for message in restored.messages] == [
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "tool",
+    ]
+    assert restored.messages[3].tool_calls[0].call_id == "c1"
+    assert restored.compression_count == 2
+
+
+def test_context_restore_does_not_duplicate_covered_history() -> None:
+    messages = (UserMessage(content="u1"), AIMessage(content="a1"))
+    history = [message_to_dict(message) for message in messages]
+    checkpoint = context_to_dict(
+        LaraContext(session_id="session-1", messages=messages),
+        registry=LARA_CONTEXT_CODECS,
+    )
+
+    restored, _ = _initial_lara_context(
+        context=LaraContext(session_id="session-1"),
+        history=history,
+        checkpoint=checkpoint,
+        checkpoint_history_count=len(history),
+    )
+
+    assert [message.content for message in restored.messages] == ["u1", "a1"]
+
+
 def test_eternal_bootstrap_restores_history_instead_of_empty_checkpoint() -> None:
     context = LaraContext(eternal_memory_enabled=True)
     checkpoint = context_to_dict(context, registry=LARA_CONTEXT_CODECS)

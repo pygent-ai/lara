@@ -7,6 +7,8 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from pygent import AIMessage, ToolCall, ToolMessage
+from pygent.llm import ModelCallError, ModelErrorKind, ModelExecution, ModelProviderResponse
 from pygent.runtime.codec import context_from_dict
 
 from lara.runtime.context import LARA_CONTEXT_CODECS, LaraContext
@@ -99,3 +101,130 @@ async def test_pygent_recovers_lara_turn_from_durable_message_boundary(
             assert not (session_dir / "transcript.jsonl").exists()
             assert not (session_dir / "compactions.jsonl").exists()
             assert "pygent_agent_state" not in restored.metadata
+
+
+class _FailSecondRoundInvoker:
+    """Scripted model: turn 1 passes, turn 2 dies after one tool round."""
+
+    def __init__(self) -> None:
+        self.contexts: list[object] = []
+
+    def validate_model(self, _model: object) -> None:
+        return None
+
+    async def aclose(self) -> None:
+        return None
+
+    def execute(self, *, message: object, context: object = None, **_kwargs: object):
+        self.contexts.append(context)
+
+        async def invoke(_emit: object) -> ModelProviderResponse:
+            if isinstance(message, ToolMessage):
+                raise ModelCallError(
+                    "injected mid-round failure",
+                    kind=ModelErrorKind.AUTHENTICATION,
+                )
+            if "<user-message>second</user-message>" in str(message.content):
+                return ModelProviderResponse(
+                    message=AIMessage(
+                        content="failing round",
+                        tool_calls=(
+                            ToolCall(
+                                call_id="probe-1",
+                                name="bash",
+                                arguments={"command": "echo probe"},
+                            ),
+                        ),
+                    ),
+                    usage={},
+                )
+            return ModelProviderResponse(
+                message=AIMessage(content="final answer"), usage={}
+            )
+
+        return ModelExecution(invoke)
+
+
+@pytest.mark.asyncio
+async def test_next_turn_replays_the_conversation_of_a_failed_mid_round_turn() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp)
+        config, service = recovery_service(workspace)
+        manager = SessionManager(config)
+        session_ref = manager.create(case_id="replay", mode="chat")
+        invoker = _FailSecondRoundInvoker()
+        assert config.resolved_agent is not None
+        service._model_invokers[config.resolved_agent.alias] = invoker
+        for agent in service._agent_definitions.values():
+            agent.llm = invoker
+
+        async def run_turn(turn_id: str, message: str):
+            run_ref = manager.start_case_run(
+                session_ref.session_id, "replay", run_config=config
+            )
+            handle = await service.start_turn(
+                manager=manager,
+                message=message,
+                run_ref=run_ref,
+                turn_id=turn_id,
+                interactive_approvals=False,
+                deadline=asyncio.get_running_loop().time() + 60,
+            )
+            return await handle.result()
+
+        try:
+            await run_turn("turn-1", "first")
+            with pytest.raises(Exception):
+                await run_turn("turn-2", "second")
+
+            # The failed round is durable, while the checkpoint predates it.
+            stale = manager.load(session_ref.session_id)
+            assert [item["role"] for item in stale.history] == [
+                "user",
+                "assistant",
+                "user",
+                "assistant",
+                "tool",
+            ]
+            stale_context = context_from_dict(
+                stale.metadata["agent_context"], registry=LARA_CONTEXT_CODECS
+            )
+            assert isinstance(stale_context, LaraContext)
+            assert len(stale_context.messages) == 2
+            assert stale.metadata["agent_context_history_count"] == 2
+
+            output, _ = await run_turn("turn-3", "third")
+            assert output.content == "final answer"
+
+            # The model of turn 3 sees the failed round after the checkpoint.
+            third_context = invoker.contexts[-1]
+            assert [message.role for message in third_context.messages] == [
+                "user",
+                "assistant",
+                "user",
+                "assistant",
+                "tool",
+            ]
+            assert "<user-message>second</user-message>" in (
+                third_context.messages[2].content
+            )
+
+            healed = manager.load(session_ref.session_id)
+            agent_context = context_from_dict(
+                healed.metadata["agent_context"], registry=LARA_CONTEXT_CODECS
+            )
+            assert isinstance(agent_context, LaraContext)
+            assert [message.role for message in agent_context.messages] == [
+                "user",
+                "assistant",
+                "user",
+                "assistant",
+                "tool",
+                "user",
+                "assistant",
+            ]
+            assert healed.metadata["agent_context_history_count"] == len(
+                healed.history
+            )
+        finally:
+            await service.close()
