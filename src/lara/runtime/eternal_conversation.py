@@ -15,9 +15,21 @@ from typing import Any
 from lara.agents.context import system_reminder
 from lara.core.io import append_jsonl, read_json, utc_now, write_json
 from lara.core.redaction import redact_secrets
-from lara.schema import AgentSession, EternalConversationConfig
+from lara.schema import AgentSession, EternalConversationConfig, RunConfig
 
 MAX_MEMORY_JOB_ATTEMPTS = 3
+
+
+def eternal_enabled_for(session: AgentSession, config: RunConfig) -> bool:
+    """The deployment master switch gates the feature; a session opts in.
+
+    Normal sessions stay off the eternal conversation unless their metadata
+    carries ``eternal_memory``; forks inherit the flag with the copied
+    ``session.json``, so a fork of the memory session stays a memory session.
+    """
+    return bool(config.eternal_conversation.enabled) and bool(
+        session.metadata.get("eternal_memory")
+    )
 
 # Compact-output contract for the extractor's proposal; enforced by the
 # memory CLI's publish-pending gate (content-addressed hashes travel in the

@@ -31,7 +31,10 @@ from lara.core.redaction import redact_secrets
 from lara.runtime.context import LARA_CONTEXT_CODECS, LaraContext
 from lara.runtime.bash_tasks import BashTaskObservations
 from lara.runtime.context_compression import COMPRESSION_REQUEST_PROMPT
-from lara.runtime.eternal_conversation import EternalConversationHarness
+from lara.runtime.eternal_conversation import (
+    EternalConversationHarness,
+    eternal_enabled_for,
+)
 from lara.runtime.file_effects import FILE_EFFECT_TOOL_SPEC
 from lara.runtime.reminders import ReminderService
 from lara.runtime.model_configuration import (
@@ -177,6 +180,7 @@ class LaraAgent(Agent[UserMessage, AIMessage]):
         reminders: ReminderService | None = None,
         bash_tasks: BashTaskObservations | None = None,
         selected_model_key: str | None = None,
+        eternal_memory_enabled: bool | None = None,
     ) -> None:
         super().__init__()
         self.config = config
@@ -196,6 +200,13 @@ class LaraAgent(Agent[UserMessage, AIMessage]):
         self.prompt_registry = prompt_registry
         self.managed_model = managed_model
         self.interactive_approvals = interactive_approvals
+        # Eternal sessions must not compress: the memory projection replaces
+        # the compressed tail, so both layers never manage one session.
+        self.eternal_memory_enabled = (
+            config.eternal_conversation.enabled
+            if eternal_memory_enabled is None
+            else eternal_memory_enabled
+        )
         self.workspace_root = Path(config.workspace_root)
         if model_invoker is not None:
             self.llm = model_invoker
@@ -334,7 +345,7 @@ class LaraAgent(Agent[UserMessage, AIMessage]):
             context_window = self.config.context_window
             compression_enabled = (
                 self.config.context_compression_enabled
-                and not self.config.eternal_conversation.enabled
+                and not self.eternal_memory_enabled
                 and isinstance(context_window, int)
             )
             context_window_tokens = (
@@ -514,7 +525,11 @@ class LaraAgent(Agent[UserMessage, AIMessage]):
                     registry=LARA_CONTEXT_CODECS,
                 )
             manager.save(session)
-            if self.memory_harness is not None and status == "passed":
+            if (
+                self.memory_harness is not None
+                and status == "passed"
+                and eternal_enabled_for(session, self.config)
+            ):
                 await self.memory_harness.record_and_trigger(
                     session,
                     model_envelope={

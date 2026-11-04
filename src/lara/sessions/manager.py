@@ -44,6 +44,7 @@ class SessionManager:
         mode: str = "e2e",
         *,
         model_group_name: str | None = None,
+        eternal_memory: bool = False,
     ) -> SessionRef:
         validate_path_id(case_id, "case_id")
         selected_group, selected_model = self._selection_for_group(model_group_name)
@@ -62,7 +63,11 @@ class SessionManager:
             updated_at=now,
             model_group_name=selected_group,
             selected_model_key=selected_model,
-            metadata={"active_case_id": case_id, "mode": mode},
+            metadata={
+                "active_case_id": case_id,
+                "mode": mode,
+                "eternal_memory": eternal_memory,
+            },
         )
         write_json_atomic(session_dir / "session.json", session.to_dict())
         write_json(
@@ -138,6 +143,13 @@ class SessionManager:
                 f"{session.model_group_name!r}"
             )
         session.selected_model_key = model_key
+        self.save(session)
+        return session
+
+    def set_eternal_memory(self, session_id: str, *, enabled: bool) -> AgentSession:
+        """Opt one session into (or out of) the eternal conversation."""
+        session = self.load(session_id)
+        session.metadata["eternal_memory"] = enabled
         self.save(session)
         return session
 

@@ -403,7 +403,7 @@ async def test_eternal_memory_replaces_projection_before_first_model_call(
     assert config.resolved_agent is not None
 
     manager = SessionManager(config)
-    session_ref = manager.create(case_id="native-projection", mode="chat")
+    session_ref = manager.create(case_id="native-projection", mode="chat", eternal_memory=True)
     seed_run = manager.start_case_run(
         session_ref.session_id,
         "native-projection-seed",

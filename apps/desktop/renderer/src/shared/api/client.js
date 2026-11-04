@@ -255,6 +255,11 @@ export function createApiClient(options = {}) {
         method: "PATCH",
         body: { selected_model_key: selectedModelKey },
       }),
+    compressSession: (sessionId, { scopeId, ...options } = {}) =>
+      jsonRequest(`/sessions/${encodeURIComponent(sessionId)}/compress${scopeQuery(scopeId)}`, {
+        ...options, method: "POST",
+        body: {},
+      }),
     streamChat: (request, handlers = {}) =>
       streamChatTurn({
         baseUrl,

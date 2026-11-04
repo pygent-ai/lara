@@ -9,10 +9,11 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Response
 
 from lara.core.io import validate_path_id
 from lara_api.dependencies import ApiContext, get_api_context
-from lara_api.models.requests import CreateSessionRequest, ForkSessionRequest, PinSessionRequest, ReorderSessionsRequest, UpdateSessionModelRequest
+from lara_api.models.requests import CreateSessionRequest, ForkSessionRequest, PinSessionRequest, ReorderSessionsRequest, SetEternalMemoryRequest, UpdateSessionModelRequest
 from lara_api.models.responses import (
     DeleteResponse,
     SessionDetailResponse,
+    SessionEternalMemoryResponse,
     SessionGroupListResponse,
     SessionListResponse,
     SessionRecordResponse,
@@ -111,6 +112,7 @@ async def create_session(
             case_id=request.case_id,
             mode=request.mode,
             model_group_name=request.model_group_name,
+            eternal_memory=request.eternal_memory,
         )
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -140,6 +142,32 @@ async def fork_session(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.patch(
+    "/{session_id}/eternal-memory",
+    response_model=SessionEternalMemoryResponse,
+)
+async def update_session_eternal_memory(
+    session_id: str,
+    request: SetEternalMemoryRequest,
+    scope_id: str | None = None,
+    context: ApiContext = Depends(get_api_context),
+) -> SessionEternalMemoryResponse:
+    service = session_service_for_scope(context, scope_id)
+    if await context.session_coordinator.session_busy(service.manager, session_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Session eternal memory cannot change while an execution is active",
+        )
+    try:
+        session = service.set_eternal_memory(session_id, enabled=request.enabled)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return SessionEternalMemoryResponse(
+        session_id=session.session_id,
+        eternal_memory=bool(session.metadata.get("eternal_memory")),
+    )
 
 
 @router.patch("/{session_id}/model", response_model=SessionRecordResponse)

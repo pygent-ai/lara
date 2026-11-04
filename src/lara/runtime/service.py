@@ -103,6 +103,7 @@ from .deployment import (
 from .eternal_conversation import (
     EternalConversationHarness,
     MemoryJobRequest,
+    eternal_enabled_for,
     load_projection,
     render_memory_snapshot,
 )
@@ -354,13 +355,16 @@ class LaraRuntimeService:
             if config.resolved_agent is not None and config.model_config is not None
             else None
         )
-        self._agent_definitions: dict[tuple[int, bool, str, str | None], LaraAgent] = (
+        self._agent_definitions: dict[
+            tuple[int, bool, str, str | None, bool], LaraAgent
+        ] = (
             {
                 (
                     id(config),
                     False,
                     config.resolved_agent.default_model_group,
                     None,
+                    config.eternal_conversation.enabled,
                 ): template
             }
             if template is not None and config.resolved_agent is not None
@@ -681,12 +685,20 @@ class LaraRuntimeService:
         model_group_name: str | None = None,
         config: RunConfig | None = None,
         selected_model_key: str | None = None,
+        eternal_memory_enabled: bool | None = None,
     ) -> LaraAgent:
         effective_config = config or self.config
         resolved = effective_config.resolved_agent
         if resolved is None:
             raise ValueError("resolved agent configuration is required")
         selected_group = model_group_name or resolved.default_model_group
+        # Eternal sessions disable context compression at agent construction,
+        # so the flag must split the shared agent templates per session opt-in.
+        eternal_memory = (
+            effective_config.eternal_conversation.enabled
+            if eternal_memory_enabled is None
+            else eternal_memory_enabled
+        )
         # The selected model decides the layer's media output modalities, so
         # agents must not be shared across different session selections.
         key = (
@@ -694,6 +706,7 @@ class LaraRuntimeService:
             interactive_approvals,
             selected_group,
             selected_model_key,
+            eternal_memory,
         )
         existing = self._agent_definitions.get(key)
         if existing is not None:
@@ -713,6 +726,7 @@ class LaraRuntimeService:
             reminders=self.reminders,
             bash_tasks=self.bash_tasks,
             selected_model_key=selected_model_key,
+            eternal_memory_enabled=eternal_memory,
         )
         if resolved is not None and agent.llm is not None:
             self._model_invokers.setdefault(resolved.alias, agent.llm)
@@ -848,6 +862,9 @@ class LaraRuntimeService:
             interactive_approvals=interactive_approvals,
             model_group_name=group_name,
             selected_model_key=selected_model_key,
+            eternal_memory_enabled=eternal_enabled_for(
+                manager.load(run_ref.session_id), self.config
+            ),
         )
         turn_message, turn_context = await self._prepare_turn(
             manager=manager,
@@ -972,13 +989,17 @@ class LaraRuntimeService:
         )
         if not isinstance(recovered_context, LaraContext):
             raise TypeError("durable execution context is not a LaraContext")
-        group_name, selected_model_key = SessionManager(self.config).model_selection(
+        session_manager = SessionManager(self.config)
+        group_name, selected_model_key = session_manager.model_selection(
             recovered_context.session_id
         )
         agent = self.new_agent(
             interactive_approvals=True,
             model_group_name=group_name,
             selected_model_key=selected_model_key,
+            eternal_memory_enabled=eternal_enabled_for(
+                session_manager.load(recovered_context.session_id), self.config
+            ),
         )
         bound = await self.bind(agent, agent)
         await self.runtime.recover_tool_jobs(bound)
@@ -1086,6 +1107,9 @@ class LaraRuntimeService:
             interactive_approvals=False,
             model_group_name=group_name,
             selected_model_key=selected_model_key,
+            eternal_memory_enabled=eternal_enabled_for(
+                manager.load(run_ref.session_id), self.config
+            ),
         )
         turn_message, turn_context = await self._prepare_turn(
             manager=manager,
@@ -1167,7 +1191,7 @@ class LaraRuntimeService:
             run_dir=run_ref.run_dir,
             turn_id=turn_id,
             system_prompt=session.system_prompt,
-            eternal_memory_enabled=config.eternal_conversation.enabled,
+            eternal_memory_enabled=eternal_enabled_for(session, config),
             memory_covered_through=covered_through,
             memory_projection=freeze_json_object(memory_projection),
             raw_history_location=str(
@@ -1232,7 +1256,7 @@ class LaraRuntimeService:
             "selected_model_key": session.selected_model_key,
         }
         if (
-            config.eternal_conversation.enabled
+            eternal_enabled_for(session, config)
             and carry_context
             and covered_through > 0
         ):
