@@ -16,6 +16,17 @@ runtime:
 
 mcp:
   servers: []
+  # DeepSeek Harness plugin bridge: loads DSH tool plugins (Cordis `apply` +
+  # `ctx.tools.register`) and serves them as MCP tools. One-time setup:
+  #   npm --prefix scripts/dsh-bridge install
+  # Then list plugin specs (npm names or paths) as bridge arguments:
+  # servers:
+  #   - name: dsh-bridge
+  #     command: node
+  #     args:
+  #       - scripts/dsh-bridge/bridge.mjs
+  #       - scripts/dsh-bridge/demo-plugin/demo-dsh-tools-plugin.mjs
+  #     timeout: 60
 
 delegation:
   allowed_agents: []
