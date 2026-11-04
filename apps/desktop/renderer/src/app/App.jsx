@@ -186,6 +186,11 @@ export function App() {
   const [error, setError] = useState("");
   const [runningSessionIds, setRunningSessionIds] = useState({});
   const [steeringSessionIds, setSteeringSessionIds] = useState({});
+  // Live context size per session, keyed by session id: one stream event per
+  // completed model call keeps the composer gauge moving during a run. A new
+  // turn's started event drops the previous entry so the gauge falls back to
+  // the persisted session record until the first call reports.
+  const [liveContextUsage, setLiveContextUsage] = useState({});
   const [approvals, setApprovals] = useState([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
@@ -1042,6 +1047,7 @@ export function App() {
                   && sessionLoadTokenRef.current === initialLoadToken;
                 streamSessionId = eventSessionId;
                 setSessionRunning(eventSessionId, true);
+                setLiveContextUsage((current) => omitKey(current, eventSessionId));
                 rememberSessionEntry(pendingSessionMessagesRef.current, eventSessionId, streamMessages);
                 if (followSession) {
                   activeSessionIdRef.current = eventSessionId;
@@ -1061,6 +1067,19 @@ export function App() {
                   }).catch(() => {});
                 }
               }
+              if (eventKind === "lara.context.usage") {
+                const usedTokens = Number(eventData.last_input_tokens);
+                const usageSessionId = String(eventData.session_id || eventSessionId || streamSessionId || "");
+                if (usageSessionId && Number.isFinite(usedTokens) && usedTokens > 0) {
+                  setLiveContextUsage((current) => ({
+                    ...current,
+                    [usageSessionId]: {
+                      lastInputTokens: usedTokens,
+                      compressionCount: Math.max(0, Number(eventData.compression_count) || 0),
+                    },
+                  }));
+                }
+              }
               const terminalEvent = ["execution.completed", "execution.failed", "execution.deadline_exceeded", "execution.cancelled", "lara.transport.error"].includes(eventKind);
               if (streamSessionId && data.execution_id && !terminalEvent) {
                 activeExecutionsRef.current.set(streamSessionId, { executionId: data.execution_id });
@@ -1075,12 +1094,16 @@ export function App() {
                 // with a stop button that has nothing left to cancel.
                 setSessionRunning(streamSessionId, false);
               }
-              streamEvents = appendSessionLiveTraceEvent(
-                sessionLiveEventsRef.current,
-                streamSessionId,
-                streamEvents,
-                apiEventToTraceEvent(data),
-              );
+              // Usage events are gauge signals, not transcript history: keep
+              // them out of the trace list entirely.
+              if (eventKind !== "lara.context.usage") {
+                streamEvents = appendSessionLiveTraceEvent(
+                  sessionLiveEventsRef.current,
+                  streamSessionId,
+                  streamEvents,
+                  apiEventToTraceEvent(data),
+                );
+              }
               if (isStreamSessionVisible()) {
                 if (replayCatchup) {
                   scheduleReplayViewFlush();
@@ -1492,6 +1515,7 @@ export function App() {
         onCancelTurn={handleCancelTurn}
         onApproval={handleApproval}
         onCompressContext={handleCompressContext}
+        liveContextUsage={liveContextUsage[activeSessionId] || null}
         projects={projects}
         onSelectProject={handleCreateSession}
         onChooseProject={() => handleChooseProject(true)}
@@ -2134,7 +2158,7 @@ export function computeEnteringMessageIds(previous, sessionId, messages) {
   return new Set(messages.slice(previous.ids.length).map((message) => message.id));
 }
 
-export function ChatPane({ activeSession, messages, historyRemaining = 0, historyLoading = false, onLoadEarlier, activityCollapseToken, settings, status, running, steeringReady = false, approvals, pendingSteerings = [], api, onSendMessage, onForkSession, onSteering, onCancelTurn, onApproval, onCompressContext = () => {}, projects = [], onSelectProject, onChooseProject, onChangePermissions, pendingNewModelGroup = "", onChangeNewModelGroup = () => {}, pendingNewSessionScope = "", onChangeModel = () => {}, composerDrafts = new Map(), fileChanges = [], onOpenFileChange = () => {} }) {
+export function ChatPane({ activeSession, messages, historyRemaining = 0, historyLoading = false, onLoadEarlier, activityCollapseToken, settings, status, running, steeringReady = false, approvals, pendingSteerings = [], api, onSendMessage, onForkSession, onSteering, onCancelTurn, onApproval, onCompressContext = () => {}, liveContextUsage = null, projects = [], onSelectProject, onChooseProject, onChangePermissions, pendingNewModelGroup = "", onChangeNewModelGroup = () => {}, pendingNewSessionScope = "", onChangeModel = () => {}, composerDrafts = new Map(), fileChanges = [], onOpenFileChange = () => {} }) {
   const empty = messages.length === 0;
   // A paused session (last run ended resumably) offers one-click continue on
   // an empty send; while it runs, the composer is in steering mode instead.
@@ -2160,6 +2184,18 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
       .catch((err) => setConfigError(readableError(err)))
       .finally(() => setCompressingContext(false));
   }, [activeSession?.session_id, running, compressingContext, onCompressContext]);
+  // The live stream value wins while present: it is the newest model call's
+  // input count and drops the moment a turn starts refreshing it. Between the
+  // run's end and the session refresh it still holds the final value, so the
+  // gauge never falls back to the pre-turn size mid-transition.
+  const liveUsedTokens = Number(liveContextUsage?.lastInputTokens);
+  const sessionUsedTokens = Number(activeSession?.context_last_input_tokens);
+  const contextUsedTokens = Number.isFinite(liveUsedTokens) && liveUsedTokens > 0
+    ? liveUsedTokens
+    : (Number.isFinite(sessionUsedTokens) && sessionUsedTokens > 0 ? sessionUsedTokens : null);
+  const contextCompressions = liveContextUsage
+    ? liveContextUsage.compressionCount
+    : (activeSession?.context_compression_count || 0);
   const [sending, setSending] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [uploadingCount, setUploadingCount] = useState(0);
@@ -2652,10 +2688,10 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
             </button>
             {(uploadingCount > 0 || running || resumable) && <span className="composer-hint">{uploadingCount > 0 ? `正在上传附件…（${uploadingCount}）` : running ? (steeringReady ? "Enter 追加指令 · 立即打断当前步骤" : "正在连接执行，连接后可追加指令") : "点击发送继续上次任务 · 输入文字则开始新指令"}</span>}
             <ContextGauge
-              usedTokens={activeSession?.context_last_input_tokens}
+              usedTokens={contextUsedTokens}
               totalTokens={settings.context_window}
               triggerRatio={settings.context_compression_trigger_ratio}
-              compressionCount={activeSession?.context_compression_count || 0}
+              compressionCount={contextCompressions}
               eternalMemory={activeSession?.eternal_memory_enabled === true}
               running={running}
               compressing={compressingContext}

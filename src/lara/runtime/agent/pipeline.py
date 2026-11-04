@@ -487,6 +487,22 @@ class ConversationCheckpointModelModule(Module[PygentMessage, AIMessage]):
                 output=answer,
             ),
         )
+        # The composer's context gauge reads the live context size from the
+        # stream while the turn runs. The provider input count is the same
+        # number pygent records as the context's last_input_tokens, so the
+        # live ring and the persisted post-run value agree.
+        input_tokens = answer.usage.get("input_tokens")
+        if isinstance(input_tokens, int) and not isinstance(input_tokens, bool) and input_tokens > 0:
+            await self.emit(
+                kind="lara.context.usage",
+                data={
+                    "session_id": next_context.session_id,
+                    "case_run_id": next_context.case_run_id,
+                    "turn_id": next_context.turn_id,
+                    "last_input_tokens": input_tokens,
+                    "compression_count": next_context.compression_count,
+                },
+            )
         return answer, next_context
 
 

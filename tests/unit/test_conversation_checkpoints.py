@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import sqlite3
 import tempfile
+import time
 from contextlib import closing
 from pathlib import Path
+from typing import Any
 
 import pytest
-from pygent import AIMessage, ToolCall, ToolMessage, ToolResult, UserMessage
+from pygent import AIMessage, ToolCall, ToolMessage, ToolResult, UserMessage, thaw_json
 from pygent.llm import ModelExecution, ModelProviderResponse
 from pygent.runtime.codec import message_to_dict
 
@@ -305,3 +308,84 @@ async def test_execute_case_handles_multi_message_context_policy(
             assert restored.history == [
                 message_to_dict(UserMessage(content="existing"))
             ]
+
+
+@pytest.mark.asyncio
+async def test_model_calls_stream_live_context_usage() -> None:
+    """Every completed model call announces the run's live context size.
+
+    The composer gauge consumes ``lara.context.usage`` to move during a turn;
+    the emitted ``input_tokens`` is the same provider count pygent records as
+    the context's ``last_input_tokens``, so live and post-run values agree.
+    """
+    requests = []
+
+    class Invoker:
+        def validate_model(self, model):
+            pass
+
+        def execute(self, *, message, context, **kwargs):
+            requests.append((message, context))
+
+            async def invoke(emit):
+                if len(requests) == 1:
+                    return ModelProviderResponse(
+                        message=AIMessage(tool_calls=(
+                            ToolCall(
+                                call_id="call-1",
+                                name="bash",
+                                arguments={"command": "echo gauge"},
+                            ),
+                        )),
+                        usage={"input_tokens": 85045},
+                    )
+                return ModelProviderResponse(
+                    message=AIMessage(content="done"),
+                    usage={"input_tokens": 86000},
+                )
+
+            return ModelExecution(invoke)
+
+        async def aclose(self):
+            pass
+
+    with tempfile.TemporaryDirectory() as tmp:
+        config = native_runtime_config(Path(tmp))
+        config.eternal_conversation.enabled = False
+        manager = SessionManager(config)
+        session = manager.create("chat", mode="chat")
+        run = manager.start_case_run(session.session_id, "chat", run_config=config)
+        service = LaraRuntimeService(config)
+        invoker = Invoker()
+        assert config.resolved_agent is not None
+        service._model_invokers[config.resolved_agent.alias] = invoker
+        for agent in service._agent_definitions.values():
+            agent.llm = invoker
+        streamed: list[tuple[str, Any]] = []
+
+        async def collect(execution_handle: Any) -> None:
+            async with execution_handle.subscribe(after=0) as events:
+                async for raw in events:
+                    streamed.append((str(raw.kind), thaw_json(raw.data)))
+
+        collector: asyncio.Task[None] | None = None
+        try:
+            handle = await service.start_turn(
+                manager=manager, message="watch the gauge", run_ref=run,
+                turn_id="usage-live",
+                interactive_approvals=False, deadline=time.monotonic() + 30,
+            )
+            collector = asyncio.create_task(collect(handle))
+            await asyncio.wait_for(handle.result(), 30)
+            await asyncio.wait_for(collector, 10)
+            usage_events = [data for kind, data in streamed if kind == "lara.context.usage"]
+            assert [(item["last_input_tokens"], item["compression_count"]) for item in usage_events] == [
+                (85045, 0),
+                (86000, 0),
+            ]
+            assert all(item["session_id"] == session.session_id for item in usage_events)
+        finally:
+            if collector is not None:
+                collector.cancel()
+                await asyncio.gather(collector, return_exceptions=True)
+            await service.close()
