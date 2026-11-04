@@ -969,9 +969,9 @@ export function App() {
         // the session is not left flagged running with an unhandled rejection.
         const nextMessages = recovery ? messagesForRecovery(recovery, assistantId) : [
           ...messagesRef.current,
-          // A resume carries no user input: the transcript continues straight
-          // into the assistant turn from the last durable checkpoint.
-          ...(resume ? [] : [{
+          // A resume carries no user input: the transcript shows only the
+          // system reminder line before the assistant turn continues.
+          ...(resume ? [{ id: `resume-${Date.now()}`, role: "resume" }] : [{
             id: `user-${Date.now()}`,
             role: "user",
             content: message,
@@ -3017,6 +3017,15 @@ const MessageRow = memo(function MessageRow({ message, entering = false, activit
   if (message.role === "activity") {
     return <ActivityMessage message={message} collapseToken={activityCollapseToken} api={api} />;
   }
+  if (message.role === "resume") {
+    // The resume signal is a real user message the model receives, but it is
+    // not a conversational turn: show it only as a system reminder line.
+    return (
+      <div className={`message system-line${entering ? " message-enter" : ""}`} data-message-id={message.id}>
+        已恢复上次会话
+      </div>
+    );
+  }
 
   const hasAssistantActivity =
     message.role === "assistant" &&
@@ -3032,7 +3041,6 @@ const MessageRow = memo(function MessageRow({ message, entering = false, activit
       {message.role !== "user" && <div className="avatar">{message.role === "automation" ? <CalendarClock size={15} /> : "L"}</div>}
       <div className="bubble">
         {message.role === "automation" && <span className="automation-message-label">定时任务触发</span>}
-        {message.role === "resume" && <span className="automation-message-label">继续上次任务</span>}
         {message.role === "assistant" ? (
           <>
             {hasAssistantActivity && (
