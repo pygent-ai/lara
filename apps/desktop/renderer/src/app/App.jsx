@@ -2954,7 +2954,7 @@ const MessageRow = memo(function MessageRow({ message, entering = false, activit
 function FileChangesSummary({ message, fileChanges = [], onOpenFileChange = () => {} }) {
   const turns = useMemo(() => turnChangesForMessage(fileChanges, message), [fileChanges, message]);
   const summary = useMemo(() => summarizeTurns(turns), [turns]);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   if (!summary.fileCount) {
     return null;
   }
