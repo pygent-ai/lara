@@ -12,6 +12,7 @@ from lara_api.dependencies import ApiContext, get_api_context
 from lara_api.models.requests import CreateSessionRequest, ForkSessionRequest, PinSessionRequest, ReorderSessionsRequest, SetEternalMemoryRequest, UpdateSessionModelRequest
 from lara_api.models.responses import (
     DeleteResponse,
+    SessionCompressResponse,
     SessionDetailResponse,
     SessionEternalMemoryResponse,
     SessionGroupListResponse,
@@ -19,7 +20,13 @@ from lara_api.models.responses import (
     SessionRecordResponse,
 )
 from lara_api.project_state import active_project_scope_id
-from lara_api.services.session_service import SessionService, session_groups_etag, session_groups_response, session_service_for_scope
+from lara_api.services.session_service import (
+    SessionService,
+    run_session_compression,
+    session_groups_etag,
+    session_groups_response,
+    session_service_for_scope,
+)
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -187,6 +194,27 @@ async def update_session_model(
         return service.update_selected_model(
             session_id, request.selected_model_key
         )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/{session_id}/compress", response_model=SessionCompressResponse)
+async def compress_session(
+    session_id: str,
+    scope_id: str | None = None,
+    context: ApiContext = Depends(get_api_context),
+) -> SessionCompressResponse:
+    """Run one on-demand context compression round for the session."""
+    service = session_service_for_scope(context, scope_id)
+    if await context.session_coordinator.session_busy(service.manager, session_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Session context cannot compress while an execution is active",
+        )
+    try:
+        return await run_session_compression(context, service, session_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except (RuntimeError, ValueError) as exc:

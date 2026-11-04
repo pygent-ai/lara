@@ -106,6 +106,26 @@ def test_health_exposes_backend_instance_header(
 
 
 @pytest.mark.asyncio
+async def test_session_compress_endpoint_maps_guard_failures(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    app = create_app(workspace_root=str(tmp_path))
+    context = app.state.api_context
+    ref = context.manager.create("chat", mode="chat")
+    async with AsyncClient(
+        transport=ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(f"/sessions/{ref.session_id}/compress")
+
+    # No model configuration in this workspace, so the guard fails before any
+    # compression round; the endpoint must surface that as a 422, not a 500.
+    assert response.status_code == 422
+    assert response.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_missing_session_returns_readable_404_after_listing(
     tmp_path, monkeypatch
 ) -> None:

@@ -6,6 +6,7 @@ import json
 from html import unescape
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from lara.core.io import read_json, validate_path_id
 from lara.core.process import owner_is_foreign_and_alive
@@ -16,6 +17,7 @@ from lara.tracing.events import EventStore
 from lara_api.container import ApiContext
 from lara_api.models.responses import (
     ModelSummaryResponse,
+    SessionCompressResponse,
     SessionDetailResponse,
     SessionGroupListResponse,
     SessionGroupResponse,
@@ -321,6 +323,27 @@ async def _execution_is_live(
         return True
     finally:
         await lease.release()
+
+async def run_session_compression(
+    context: ApiContext, service: SessionService, session_id: str
+) -> SessionCompressResponse:
+    """Run one on-demand compression round on the session's restored projection."""
+
+    validate_path_id(session_id, "session_id")
+    session = service.manager.load(session_id)
+    lease = await context.acquire_runtime(
+        config=service.manager.config, manager=service.manager
+    )
+    try:
+        result = await lease.runtime.runtime_service.compress_session(
+            manager=service.manager,
+            session_id=session_id,
+            request_id=f"compress-{uuid4().hex[:12]}",
+        )
+    finally:
+        await lease.release()
+    return SessionCompressResponse(session_id=session.session_id, **result)
+
 
 def session_groups_etag(context: ApiContext) -> str:
     """Stat-only fingerprint of every input `session_groups_response` reads.
