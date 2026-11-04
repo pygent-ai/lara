@@ -37,7 +37,11 @@ from pygent.runtime import (
     SQLiteHistoryStore,
     SQLiteModelDeploymentStore,
 )
-from pygent.runtime.codec import invocation_from_dict, message_to_dict
+from pygent.runtime.codec import (
+    context_to_dict,
+    invocation_from_dict,
+    message_to_dict,
+)
 from pygent.tool import (
     AgentToolExecutor,
     ExecutorRegistry,
@@ -89,13 +93,17 @@ from .agent.common import (
     _initial_lara_context,
     _to_pygent_message,
 )
-from .agent.core import LARA_PROJECTION_READY_KIND, LaraAgent
+from .agent.core import (
+    LARA_PROJECTION_READY_KIND,
+    LaraAgent,
+    SessionCompressionModule,
+)
 from .agent.pipeline import checkpoint_conversation_message
 from .agent_collaboration import (
     AGENT_COLLABORATION_TOOL_SPECS,
     visible_agent_collaboration_specs,
 )
-from .context import LARA_CONTEXT_CODEC, LaraContext
+from .context import LARA_CONTEXT_CODEC, LARA_CONTEXT_CODECS, LaraContext
 from .deployment import (
     LaraModelResourceResolver,
     WorkspaceToolExecutor,
@@ -117,6 +125,10 @@ RECOVERY_CLAIM_WAIT_SECONDS = 31.0
 # Pygent agent graphs declare requires_finite_deadline=True, so an unlimited
 # deadline is rejected at admission; this ceiling is the practical maximum.
 TURN_DEADLINE_SECONDS = 24 * 60 * 60
+
+
+class SessionCompressionUnavailable(RuntimeError):
+    """Raised when a session cannot run an on-demand compression round."""
 
 # Non-durable (interruptible) turns resolve their context from this registry;
 # durable turns keep reading the SQLite history record.
@@ -910,6 +922,99 @@ class LaraRuntimeService:
         self._track_turn_context(handle.execution_id, turn_context)
         return handle
 
+    async def compress_session(
+        self,
+        *,
+        manager: SessionManager,
+        session_id: str,
+        request_id: str,
+        deadline: float | None = None,
+    ) -> dict[str, Any]:
+        """Run one on-demand compression round against a session's projection.
+
+        The compressed projection replaces the persisted checkpoint, so the
+        next turn restores it through the same checkpoint path as chat turns.
+        """
+        await self.initialize()
+        session = manager.load(session_id)
+        if eternal_enabled_for(session, self.config):
+            raise SessionCompressionUnavailable(
+                "eternal conversation sessions manage context with memory "
+                "snapshots and do not compress"
+            )
+        if (
+            not self.config.context_compression_enabled
+            or not isinstance(self.config.context_window, int)
+        ):
+            raise SessionCompressionUnavailable(
+                "context compression is disabled in the runtime configuration"
+            )
+        group_name, selected_model_key = manager.model_selection(session_id)
+        agent = self.new_agent(
+            interactive_approvals=False,
+            model_group_name=group_name,
+            selected_model_key=selected_model_key,
+            eternal_memory_enabled=False,
+        )
+        if agent.llm is None:
+            raise SessionCompressionUnavailable(
+                f"agent alias {self.config.agent_alias!r} has no configured model"
+            )
+        context = self._restored_session_context(
+            session=session,
+            run_ref=CaseRunRef(
+                session_id=session_id,
+                case_id=str(session.metadata.get("active_case_id") or "compress"),
+                case_run_id=request_id,
+                run_dir=str(Path(manager.sessions_root) / session_id),
+            ),
+            turn_id=request_id,
+            config=self.config,
+        )
+        if not context.messages:
+            raise SessionCompressionUnavailable(
+                "session context has no projected history to compress"
+            )
+        bound = await self.bind(SessionCompressionModule(agent), agent)
+        from pygent.runtime import ExecutionOptions
+
+        handle = await bound.start(
+            UserMessage(content="compress context", kind="lara.session.compress"),
+            context,
+            execution=ExecutionOptions(
+                request_id=request_id,
+                idempotency_key=request_id,
+                identity=session_id,
+                model_calls=(
+                    {
+                        f"lara:{group_name}": {
+                            "profile": preferred_profile_name(selected_model_key)
+                        }
+                    }
+                ),
+                deadline=(
+                    deadline
+                    if deadline is not None
+                    else time.monotonic() + TURN_DEADLINE_SECONDS
+                ),
+            ),
+        )
+        _, compressed = await handle.result()
+
+        # The compressed projection has not been measured by a foreground call
+        # yet; the next turn recalibrates the gauge through its real usage.
+        session = manager.load(session_id)
+        session.metadata["agent_context"] = context_to_dict(
+            replace(compressed, last_input_tokens=0),
+            registry=LARA_CONTEXT_CODECS,
+        )
+        session.metadata["agent_context_history_count"] = len(session.history)
+        manager.save(session)
+        return {
+            "compression_count": compressed.compression_count,
+            "message_count": len(compressed.messages),
+        }
+
     async def send_steering(
         self,
         execution_id: str,
@@ -1164,6 +1269,55 @@ class LaraRuntimeService:
         self._record_execution_id(run_ref, handle.execution_id)
         return result
 
+    def _restored_session_context(
+        self,
+        *,
+        session: AgentSession,
+        run_ref: CaseRunRef,
+        turn_id: str,
+        config: RunConfig,
+        carry_context: bool = True,
+    ) -> LaraContext:
+        """Rebuild one session projection from its durable checkpoint and tail."""
+
+        memory_projection = (
+            load_projection(session.session_dir) if carry_context else {}
+        )
+        lara_context = LaraContext(
+            session_id=session.session_id,
+            case_id=run_ref.case_id,
+            case_run_id=run_ref.case_run_id,
+            run_dir=run_ref.run_dir,
+            turn_id=turn_id,
+            system_prompt=session.system_prompt,
+            eternal_memory_enabled=eternal_enabled_for(session, config),
+            memory_covered_through=int(
+                memory_projection.get("covered_through") or 0
+            ),
+            memory_projection=freeze_json_object(memory_projection),
+            raw_history_location=str(
+                Path(session.session_dir) / "raw-history" / "events.jsonl"
+            ),
+        )
+        history, _ = _initial_lara_context(
+            context=lara_context,
+            history=session.history,
+            checkpoint=session.metadata.get("agent_context"),
+            checkpoint_history_count=session.metadata.get(
+                "agent_context_history_count"
+            ),
+        )
+        return replace(
+            history,
+            metadata={
+                "session_id": run_ref.session_id,
+                "case_run_id": run_ref.case_run_id,
+                "persist_conversation_history": carry_context,
+                "model_group_name": session.model_group_name,
+                "selected_model_key": session.selected_model_key,
+            },
+        )
+
     async def _prepare_turn(
         self,
         *,
@@ -1180,24 +1334,14 @@ class LaraRuntimeService:
     ) -> tuple[UserMessage, LaraContext]:
         if session is None:
             session = manager.load(run_ref.session_id)
-        memory_projection = (
-            load_projection(session.session_dir) if carry_context else {}
-        )
-        covered_through = int(memory_projection.get("covered_through") or 0)
-        lara_context = LaraContext(
-            session_id=session.session_id,
-            case_id=run_ref.case_id,
-            case_run_id=run_ref.case_run_id,
-            run_dir=run_ref.run_dir,
+        execution_context = self._restored_session_context(
+            session=session,
+            run_ref=run_ref,
             turn_id=turn_id,
-            system_prompt=session.system_prompt,
-            eternal_memory_enabled=eternal_enabled_for(session, config),
-            memory_covered_through=covered_through,
-            memory_projection=freeze_json_object(memory_projection),
-            raw_history_location=str(
-                Path(session.session_dir) / "raw-history" / "events.jsonl"
-            ),
+            config=config,
+            carry_context=carry_context,
         )
+        covered_through = execution_context.memory_covered_through
         resolved_attachments: tuple[ResolvedAttachment, ...] = ()
         if message_kind != "lara.automation.trigger" and attachments:
             resolved_attachments = resolve_attachments(
@@ -1223,14 +1367,6 @@ class LaraRuntimeService:
             )
         if reminder:
             wrapped = f"{wrapped}\n\n{reminder}"
-        history, _ = _initial_lara_context(
-            context=lara_context,
-            history=session.history,
-            checkpoint=session.metadata.get("agent_context"),
-            checkpoint_history_count=session.metadata.get(
-                "agent_context_history_count"
-            ),
-        )
         current = UserMessage(
             content=wrapped,
             kind=message_kind,
@@ -1251,18 +1387,13 @@ class LaraRuntimeService:
             ),
             media=build_media_blocks(resolved_attachments),
         )
-        metadata: dict[str, Any] = {
-            "session_id": run_ref.session_id,
-            "case_run_id": run_ref.case_run_id,
-            "persist_conversation_history": carry_context,
-            "model_group_name": session.model_group_name,
-            "selected_model_key": session.selected_model_key,
-        }
+        metadata = dict(execution_context.metadata)
         if (
             eternal_enabled_for(session, config)
             and carry_context
             and covered_through > 0
         ):
+            memory_projection = load_projection(session.session_dir)
             snapshot = UserMessage(
                 content=render_memory_snapshot(memory_projection),
                 kind="lara.memory.snapshot",
@@ -1274,7 +1405,7 @@ class LaraRuntimeService:
                     *_uncovered_conversation_messages(session.history, covered_through),
                     current,
                 ),
-                expected_revision=history.projection_revision + 1,
+                expected_revision=execution_context.projection_revision + 1,
             )
             identity = (
                 f"{run_ref.case_run_id}:memory-projection:"
@@ -1291,10 +1422,7 @@ class LaraRuntimeService:
                     PROJECTION_READY_INPUT_ID_METADATA_KEY: f"{identity}:ready",
                 }
             )
-        execution_context = replace(
-            history,
-            metadata=metadata,
-        )
+        execution_context = replace(execution_context, metadata=metadata)
         return (
             current,
             execution_context,

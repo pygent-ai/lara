@@ -66,6 +66,12 @@ class SessionEternalMemoryResponse(BaseModel):
     eternal_memory: bool
 
 
+class SessionCompressResponse(BaseModel):
+    session_id: str
+    compression_count: int
+    message_count: int
+
+
 class SessionListResponse(BaseModel):
     sessions: list[SessionRecordResponse]
 
