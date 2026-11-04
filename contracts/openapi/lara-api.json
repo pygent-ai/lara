@@ -882,6 +882,74 @@
         }
       }
     },
+    "/sessions/{session_id}/eternal-memory": {
+      "patch": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Update Session Eternal Memory",
+        "operationId": "update_session_eternal_memory_sessions__session_id__eternal_memory_patch",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "scope_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scope Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetEternalMemoryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionEternalMemoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/sessions/{session_id}/model": {
       "patch": {
         "tags": [
@@ -1466,6 +1534,115 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SessionActivityResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/traces/{session_id}/file-changes": {
+      "get": {
+        "tags": [
+          "traces"
+        ],
+        "summary": "Get Session File Changes",
+        "operationId": "get_session_file_changes_traces__session_id__file_changes_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "turn_limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Turn Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionFileChangesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/traces/{session_id}/patches/{diff_id}": {
+      "get": {
+        "tags": [
+          "traces"
+        ],
+        "summary": "Get Turn Patch",
+        "operationId": "get_turn_patch_traces__session_id__patches__diff_id__get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "diff_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Diff Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TurnPatchResponse"
                 }
               }
             }
@@ -2431,6 +2608,11 @@
               }
             ],
             "title": "Model Group Name"
+          },
+          "eternal_memory": {
+            "type": "boolean",
+            "title": "Eternal Memory",
+            "default": false
           }
         },
         "type": "object",
@@ -2931,6 +3113,56 @@
         ],
         "title": "SessionDetailResponse"
       },
+      "SessionEternalMemoryResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "eternal_memory": {
+            "type": "boolean",
+            "title": "Eternal Memory"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "eternal_memory"
+        ],
+        "title": "SessionEternalMemoryResponse"
+      },
+      "SessionFileChangesResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "turns": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Turns"
+          },
+          "turns_total": {
+            "type": "integer",
+            "title": "Turns Total",
+            "default": 0
+          },
+          "turns_truncated": {
+            "type": "boolean",
+            "title": "Turns Truncated",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "turns"
+        ],
+        "title": "SessionFileChangesResponse"
+      },
       "SessionGroupListResponse": {
         "properties": {
           "active_scope_id": {
@@ -3134,6 +3366,20 @@
         ],
         "title": "SessionScopeResponse"
       },
+      "SetEternalMemoryRequest": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "SetEternalMemoryRequest"
+      },
       "TerminalCommandRequest": {
         "properties": {
           "scope_id": {
@@ -3319,6 +3565,67 @@
           "events"
         ],
         "title": "TraceEventsResponse"
+      },
+      "TurnPatchResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "diff_id": {
+            "type": "string",
+            "title": "Diff Id"
+          },
+          "relative_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relative Path"
+          },
+          "change_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Type"
+          },
+          "patch_available": {
+            "type": "boolean",
+            "title": "Patch Available",
+            "default": false
+          },
+          "patch": {
+            "type": "string",
+            "title": "Patch",
+            "default": ""
+          },
+          "patch_unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Patch Unavailable Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "diff_id"
+        ],
+        "title": "TurnPatchResponse"
       },
       "UpdateSessionModelRequest": {
         "properties": {

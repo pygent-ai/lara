@@ -10,7 +10,7 @@ from typing import Any
 from lara.core.io import read_json, validate_path_id
 from lara.core.process import owner_is_foreign_and_alive
 from lara.runtime.reminders import ReminderService
-from lara.schema import CaseRunRef, CaseRunStatus, RunConfig
+from lara.schema import AgentSession, CaseRunRef, CaseRunStatus, RunConfig
 from lara.sessions import SessionManager
 from lara.tracing.events import EventStore
 from lara_api.container import ApiContext
@@ -61,9 +61,13 @@ class SessionService:
         case_id: str = "chat",
         mode: str = "chat",
         model_group_name: str | None = None,
+        eternal_memory: bool = False,
     ) -> SessionRecordResponse:
         ref = self.manager.create(
-            case_id, mode=mode, model_group_name=model_group_name
+            case_id,
+            mode=mode,
+            model_group_name=model_group_name,
+            eternal_memory=eternal_memory,
         )
         if self.reminders is not None:
             self.reminders.prewarm_session(ref.session_id)
@@ -145,6 +149,11 @@ class SessionService:
         return _record_from_metadata(
             Path(session.session_dir), metadata, scope_id=self.scope_id
         )
+
+    def set_eternal_memory(
+        self, session_id: str, *, enabled: bool
+    ) -> AgentSession:
+        return self.manager.set_eternal_memory(session_id, enabled=enabled)
 
     @staticmethod
     def _run_boundary_in_window(

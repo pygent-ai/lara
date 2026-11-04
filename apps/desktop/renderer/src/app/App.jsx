@@ -1335,6 +1335,20 @@ export function App() {
     await api.cancelChatTurn(execution.executionId, { sessionId });
   }, [api]);
 
+  // Manual context compression for the composer gauge: trigger the backend,
+  // then refresh the session record so the ring drops immediately instead of
+  // waiting for the next poll or session switch.
+  const handleCompressContext = useCallback(
+    async (sessionId) => {
+      await api.compressSession(sessionId, { scopeId: activeSession?.scope_id });
+      const detail = await api.getSession(sessionId, { scopeId: activeSession?.scope_id });
+      if (activeSessionIdRef.current === sessionId) {
+        setActiveSession((current) => (current?.session_id === sessionId ? sessionFromDetail(detail) : current));
+      }
+    },
+    [api, activeSession?.scope_id],
+  );
+
   // Per-section saves from the settings page: the payload already carries its
   // own saved-state baseline, so it is sent as-is. The response patches the
   // app-wide settings cache directly — the settings page owns its snapshot
@@ -1477,6 +1491,7 @@ export function App() {
         onSteering={handleSteering}
         onCancelTurn={handleCancelTurn}
         onApproval={handleApproval}
+        onCompressContext={handleCompressContext}
         projects={projects}
         onSelectProject={handleCreateSession}
         onChooseProject={() => handleChooseProject(true)}
@@ -2119,7 +2134,7 @@ export function computeEnteringMessageIds(previous, sessionId, messages) {
   return new Set(messages.slice(previous.ids.length).map((message) => message.id));
 }
 
-export function ChatPane({ activeSession, messages, historyRemaining = 0, historyLoading = false, onLoadEarlier, activityCollapseToken, settings, status, running, steeringReady = false, approvals, pendingSteerings = [], api, onSendMessage, onForkSession, onSteering, onCancelTurn, onApproval, projects = [], onSelectProject, onChooseProject, onChangePermissions, pendingNewModelGroup = "", onChangeNewModelGroup = () => {}, pendingNewSessionScope = "", onChangeModel = () => {}, composerDrafts = new Map(), fileChanges = [], onOpenFileChange = () => {} }) {
+export function ChatPane({ activeSession, messages, historyRemaining = 0, historyLoading = false, onLoadEarlier, activityCollapseToken, settings, status, running, steeringReady = false, approvals, pendingSteerings = [], api, onSendMessage, onForkSession, onSteering, onCancelTurn, onApproval, onCompressContext = () => {}, projects = [], onSelectProject, onChooseProject, onChangePermissions, pendingNewModelGroup = "", onChangeNewModelGroup = () => {}, pendingNewSessionScope = "", onChangeModel = () => {}, composerDrafts = new Map(), fileChanges = [], onOpenFileChange = () => {} }) {
   const empty = messages.length === 0;
   // A paused session (last run ended resumably) offers one-click continue on
   // an empty send; while it runs, the composer is in steering mode instead.
@@ -2133,6 +2148,18 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
   const [pendingAttachments, setPendingAttachments] = useState([]);
   const [configuring, setConfiguring] = useState(false);
   const [configError, setConfigError] = useState("");
+  // Manual compression is an idle-session action: a running turn compresses
+  // on its own trigger points, so the gauge only accepts long presses between
+  // runs. Errors land on the composer error line like the other actions.
+  const [compressingContext, setCompressingContext] = useState(false);
+  const compressContext = useCallback(() => {
+    const sessionId = activeSession?.session_id;
+    if (!sessionId || running || compressingContext) return;
+    setCompressingContext(true);
+    Promise.resolve(onCompressContext(sessionId))
+      .catch((err) => setConfigError(readableError(err)))
+      .finally(() => setCompressingContext(false));
+  }, [activeSession?.session_id, running, compressingContext, onCompressContext]);
   const [sending, setSending] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [uploadingCount, setUploadingCount] = useState(0);
@@ -2623,7 +2650,17 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
             <button className="attach" aria-label="添加附件" title="添加工作区文件作为附件（图片/视频原生识别，其他文件转 XML）" disabled={sending || configuring || pendingAttachments.length >= 10} type="button" onClick={() => fileInputRef.current?.click()}>
               <Paperclip aria-hidden="true" />
             </button>
-            <span className="composer-hint">{uploadingCount > 0 ? `正在上传附件…（${uploadingCount}）` : running ? (steeringReady ? "Enter 追加指令 · 立即打断当前步骤" : "正在连接执行，连接后可追加指令") : resumable ? "点击发送继续上次任务 · 输入文字则开始新指令" : "Enter 发送 · Shift + Enter 换行 · 可粘贴或拖入文件"}</span>
+            {(uploadingCount > 0 || running || resumable) && <span className="composer-hint">{uploadingCount > 0 ? `正在上传附件…（${uploadingCount}）` : running ? (steeringReady ? "Enter 追加指令 · 立即打断当前步骤" : "正在连接执行，连接后可追加指令") : "点击发送继续上次任务 · 输入文字则开始新指令"}</span>}
+            <ContextGauge
+              usedTokens={activeSession?.context_last_input_tokens}
+              totalTokens={settings.context_window}
+              triggerRatio={settings.context_compression_trigger_ratio}
+              compressionCount={activeSession?.context_compression_count || 0}
+              eternalMemory={activeSession?.eternal_memory_enabled === true}
+              running={running}
+              compressing={compressingContext}
+              onCompress={compressContext}
+            />
             {/* One adaptive action button: while a run is active, an empty
                 composer shows stop (nothing to send) and text or attachments
                 swap it to the send/steer action. */}
@@ -2642,6 +2679,83 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
         </div>
       </footer>
     </section>
+  );
+}
+
+const CONTEXT_GAUGE_PRESS_MS = 600;
+const CONTEXT_GAUGE_RADIUS = 8;
+const CONTEXT_GAUGE_CIRCUMFERENCE = 2 * Math.PI * CONTEXT_GAUGE_RADIUS;
+
+// Battery-style context window ring at the composer's send actions. The fill
+// tracks the run's last input estimate against the configured window; hover
+// shows the raw numbers, and a long press (600ms) asks the backend to
+// compress the session now. A quick click is deliberately a no-op so an
+// accidental tap cannot trigger a model round trip.
+function ContextGauge({ usedTokens, totalTokens, triggerRatio, compressionCount = 0, eternalMemory = false, running = false, compressing = false, onCompress = () => {} }) {
+  const state = contextGaugeState({ usedTokens, totalTokens, triggerRatio });
+  const pressTimerRef = useRef(null);
+  const [pressing, setPressing] = useState(false);
+  const clearPress = useCallback(() => {
+    if (pressTimerRef.current) {
+      clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+    setPressing(false);
+  }, []);
+  useEffect(() => clearPress, [clearPress]);
+  if (!state.visible) return null;
+  // Keyboard users cannot hold a pointer down: Enter/Space compress directly,
+  // mirroring the deliberate-action bar of the long press.
+  const actionable = !running && !eternalMemory && !compressing;
+  const detailLines = [
+    `总上下文窗口 ${formatCount(totalTokens)} tokens`,
+    state.hasUsage
+      ? `已使用 ${formatCount(usedTokens)} tokens（${state.percent}%）`
+      : "尚无模型调用，暂无上下文使用",
+    ...(compressionCount > 0 ? [`已自动压缩 ${compressionCount} 次`] : []),
+  ];
+  if (eternalMemory) detailLines.push("记忆投影会话：上下文由快照管理，不支持手动压缩");
+  else if (running) detailLines.push("任务运行中，结束后可长按立即压缩");
+  else if (actionable) detailLines.push("长按立即压缩上下文");
+  const dash = state.ratio * CONTEXT_GAUGE_CIRCUMFERENCE;
+  return (
+    <button
+      type="button"
+      className={`context-gauge${pressing ? " pressing" : ""}${compressing ? " compressing" : ""}`}
+      aria-label="上下文窗口占用"
+      title={detailLines.join("\n")}
+      disabled={compressing}
+      onPointerDown={(event) => {
+        if (!actionable || event.button !== 0) return;
+        setPressing(true);
+        pressTimerRef.current = setTimeout(() => {
+          pressTimerRef.current = null;
+          setPressing(false);
+          onCompress();
+        }, CONTEXT_GAUGE_PRESS_MS);
+      }}
+      onPointerUp={clearPress}
+      onPointerLeave={clearPress}
+      onPointerCancel={clearPress}
+      onKeyDown={(event) => {
+        if ((event.key === "Enter" || event.key === " ") && actionable) {
+          event.preventDefault();
+          onCompress();
+        }
+      }}
+      onContextMenu={(event) => event.preventDefault()}
+    >
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <circle className="context-gauge-track" cx="10" cy="10" r={CONTEXT_GAUGE_RADIUS} />
+        <circle
+          className={`context-gauge-fill tier-${state.tier}`}
+          cx="10"
+          cy="10"
+          r={CONTEXT_GAUGE_RADIUS}
+          strokeDasharray={`${dash} ${CONTEXT_GAUGE_CIRCUMFERENCE - dash}`}
+        />
+      </svg>
+    </button>
   );
 }
 
@@ -5079,11 +5193,43 @@ function compactLayoutMatches() {
   return Boolean(globalThis.window?.matchMedia?.(COMPACT_LAYOUT_QUERY).matches);
 }
 
-function sessionFromDetail(detail) {
+export function sessionFromDetail(detail) {
+  // The run's final agent context (session metadata) carries pygent's own
+  // calibrated last-input estimate: the same number the compression trigger
+  // compares against the window, so the composer gauge matches runtime
+  // decisions instead of re-deriving size from per-message usage sums.
+  const context = detail?.metadata?.agent_context?.data || {};
+  const lastInputTokens = Number(context.last_input_tokens);
+  const compressionCount = Number(context.compression_count);
   return {
     ...(detail?.session || {}),
     selectable_models: detail?.selectable_models || [],
+    ...(Number.isFinite(lastInputTokens) && lastInputTokens >= 0
+      ? { context_last_input_tokens: lastInputTokens }
+      : {}),
+    ...(Number.isFinite(compressionCount) && compressionCount >= 0
+      ? { context_compression_count: compressionCount }
+      : {}),
+    ...(typeof context.eternal_memory_enabled === "boolean"
+      ? { eternal_memory_enabled: context.eternal_memory_enabled }
+      : {}),
   };
+}
+
+// Gauge thresholds mirror the runtime: the ring turns warning at 70% and
+// danger at the compression trigger ratio, so the color previews when an
+// automatic compression would fire. Overshooting the window clamps at 100%.
+export function contextGaugeState({ usedTokens, totalTokens, triggerRatio = 0.9 }) {
+  const total = Number(totalTokens);
+  if (!Number.isFinite(total) || total <= 0) {
+    return { visible: false, hasUsage: false, ratio: 0, percent: 0, tier: "ok" };
+  }
+  const used = Number(usedTokens);
+  const hasUsage = Number.isFinite(used) && used > 0;
+  const ratio = hasUsage ? Math.min(used / total, 1) : 0;
+  const dangerRatio = Math.min(Math.max(Number(triggerRatio) || 0.9, 0.01), 1);
+  const tier = ratio >= dangerRatio ? "danger" : ratio >= 0.7 ? "warning" : "ok";
+  return { visible: true, hasUsage, ratio, percent: Math.round(ratio * 100), tier };
 }
 
 function sessionDetailSignature(session) {

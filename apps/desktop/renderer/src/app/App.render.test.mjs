@@ -419,6 +419,97 @@ test("the merged composer action button switches between stop and send", () => {
   assert.equal(appModule.composerAction(false, false, true), "send");
 });
 
+test("context gauge state maps usage against the window and compression trigger", () => {
+  // No window configured (or no session): the gauge hides entirely.
+  assert.equal(appModule.contextGaugeState({ usedTokens: 85045, totalTokens: null }).visible, false);
+  assert.equal(appModule.contextGaugeState({ usedTokens: 85045, totalTokens: 0 }).visible, false);
+  // A window with no usage yet renders an empty ring.
+  const empty = appModule.contextGaugeState({ usedTokens: null, totalTokens: 128000 });
+  assert.equal(empty.visible, true);
+  assert.equal(empty.hasUsage, false);
+  assert.equal(empty.percent, 0);
+  assert.equal(empty.tier, "ok");
+  // Tier boundaries: ok below 70%, warning from 70%, danger at the trigger.
+  assert.equal(appModule.contextGaugeState({ usedTokens: 85045, totalTokens: 128000 }).tier, "ok");
+  assert.equal(appModule.contextGaugeState({ usedTokens: 96000, totalTokens: 128000 }).tier, "warning");
+  assert.equal(appModule.contextGaugeState({ usedTokens: 115200, totalTokens: 128000 }).tier, "danger");
+  assert.equal(
+    appModule.contextGaugeState({ usedTokens: 115200, totalTokens: 128000, triggerRatio: 0.95 }).tier,
+    "warning",
+  );
+  // Overshooting the window clamps the ring at 100%.
+  assert.equal(appModule.contextGaugeState({ usedTokens: 300000, totalTokens: 128000 }).percent, 100);
+});
+
+test("sessionFromDetail carries the runtime's context token estimate", () => {
+  const session = appModule.sessionFromDetail({
+    session: { session_id: "s1" },
+    metadata: {
+      agent_context: {
+        data: { last_input_tokens: 85045, compression_count: 1, eternal_memory_enabled: false },
+      },
+    },
+  });
+  assert.equal(session.context_last_input_tokens, 85045);
+  assert.equal(session.context_compression_count, 1);
+  assert.equal(session.eternal_memory_enabled, false);
+  // Sessions without a recorded run stay without gauge data.
+  const bare = appModule.sessionFromDetail({ session: { session_id: "s2" } });
+  assert.equal(bare.context_last_input_tokens, undefined);
+  assert.equal(bare.context_compression_count, undefined);
+});
+
+test("composer shows the context gauge in place of the idle hint", () => {
+  const props = (session, settings = { context_window: 128000, context_compression_trigger_ratio: 0.9 }) => ({
+    activeSession: { session_id: "session-1", scope_id: "conversation", ...session },
+    messages: [],
+    settings,
+    status: "Ready",
+    running: false,
+    approvals: [],
+  });
+  const gauge = renderToStaticMarkup(React.createElement(appModule.ChatPane, props({
+    context_last_input_tokens: 120000,
+    context_compression_count: 2,
+  })));
+  assert.match(gauge, /context-gauge/);
+  assert.match(gauge, /tier-danger/);
+  assert.match(gauge, /总上下文窗口 128,000 tokens/);
+  assert.match(gauge, /已使用 120,000 tokens（94%）/);
+  assert.match(gauge, /已自动压缩 2 次/);
+  assert.match(gauge, /长按立即压缩上下文/);
+  // The idle keyboard hint is gone — the gauge replaced it.
+  assert.doesNotMatch(gauge, /Enter 发送/);
+
+  // No window configured: no gauge, and the idle state stays quiet.
+  const noWindow = renderToStaticMarkup(React.createElement(appModule.ChatPane, props({}, {})));
+  assert.doesNotMatch(noWindow, /context-gauge/);
+  assert.doesNotMatch(noWindow, /Enter 发送/);
+
+  // Status hints survive: paused sessions keep their resume text beside the gauge.
+  const paused = renderToStaticMarkup(React.createElement(appModule.ChatPane, props({ resumable: true })));
+  assert.match(paused, /点击发送继续上次任务/);
+  assert.match(paused, /context-gauge/);
+
+  // Eternal sessions manage context through the memory projection, so the
+  // tooltip says manual compression is unavailable.
+  const eternal = renderToStaticMarkup(React.createElement(appModule.ChatPane, props({
+    eternal_memory_enabled: true,
+    context_last_input_tokens: 1000,
+  })));
+  assert.match(eternal, /记忆投影会话/);
+  assert.doesNotMatch(eternal, /长按立即压缩上下文/);
+
+  // A running turn keeps its steering hint and the gauge stays visible.
+  const running = renderToStaticMarkup(React.createElement(appModule.ChatPane, {
+    ...props({ context_last_input_tokens: 1000 }),
+    running: true,
+    steeringReady: true,
+  }));
+  assert.match(running, /Enter 追加指令/);
+  assert.match(running, /任务运行中，结束后可长按立即压缩/);
+});
+
 test("long transcripts mount only the latest window initially", () => {
   const messages = Array.from({ length: 70 }, (_, index) => ({
     id: `message-${index}`,

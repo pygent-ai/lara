@@ -10,6 +10,12 @@ class CreateSessionRequest(BaseModel):
     mode: str = "chat"
     scope_id: str | None = None
     model_group_name: str | None = None
+    eternal_memory: bool = False
+
+
+class SetEternalMemoryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool
 
 
 class UpdateSessionModelRequest(BaseModel):

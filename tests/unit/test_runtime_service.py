@@ -426,7 +426,7 @@ async def test_eternal_turn_uses_native_projection_replacement() -> None:
         config = load_run_config(workspace_root=Path(tmp))
         config.eternal_conversation.enabled = True
         manager = SessionManager(config)
-        session_ref = manager.create(case_id="chat", mode="agent")
+        session_ref = manager.create(case_id="chat", mode="agent", eternal_memory=True)
         session = manager.load(session_ref.session_id)
         session.history = [
             {"role": "user", "content": "covered user"},
@@ -485,7 +485,7 @@ async def test_eternal_turn_keeps_unbounded_session_history_out_of_pygent_invoca
         config.runtime_steering.mode = "wait"
         config.eternal_conversation.enabled = True
         manager = SessionManager(config)
-        session_ref = manager.create(case_id="large-native", mode="chat")
+        session_ref = manager.create(case_id="large-native", mode="chat", eternal_memory=True)
         session = manager.load(session_ref.session_id)
         session.history = [
             {

@@ -3353,6 +3353,22 @@ input:focus,
 .composer-surface .composer-context > .composer-option { flex:0 1 auto; min-width:0; }
 .composer-send-actions .composer-hint { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .composer-send-actions .send { flex-shrink:0; }
+.context-gauge { position:relative; display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; padding:0; border:0; border-radius:50%; background:transparent; cursor:pointer; flex-shrink:0; }
+.context-gauge:disabled { cursor:progress; }
+.context-gauge:focus-visible { outline:2px solid #96a9c1; outline-offset:2px; }
+.context-gauge svg { width:20px; height:20px; transform:rotate(-90deg); transition:transform .15s ease; }
+.context-gauge circle { fill:none; stroke-width:3; }
+.context-gauge-track { stroke:var(--surface-3); }
+.context-gauge-fill { stroke:var(--muted); stroke-linecap:round; transition:stroke-dasharray .4s ease, stroke .2s ease; }
+.context-gauge-fill.tier-warning { stroke:var(--warning); }
+.context-gauge-fill.tier-danger { stroke:var(--error); }
+.context-gauge.pressing svg { transform:rotate(-90deg) scale(.88); }
+.context-gauge.compressing svg { animation:context-gauge-spin 1s linear infinite; }
+@keyframes context-gauge-spin { from { transform:rotate(-90deg); } to { transform:rotate(270deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .context-gauge svg, .context-gauge-fill { transition:none; }
+  .context-gauge.compressing svg { animation:none; }
+}
 .composer-menu { position:relative; min-width:0; }
 .composer-menu-trigger { display:flex; align-items:center; gap:7px; max-width:240px; min-height:30px; padding:4px 7px; border:0; border-radius:6px; background:transparent; color:var(--muted); font-size:12px; cursor:pointer; }
 .composer-menu-trigger > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

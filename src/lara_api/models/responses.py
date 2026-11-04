@@ -61,6 +61,11 @@ class SessionRecordResponse(BaseModel):
     pinned: bool = False
 
 
+class SessionEternalMemoryResponse(BaseModel):
+    session_id: str
+    eternal_memory: bool
+
+
 class SessionListResponse(BaseModel):
     sessions: list[SessionRecordResponse]
 
