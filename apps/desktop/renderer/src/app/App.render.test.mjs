@@ -508,6 +508,16 @@ test("composer shows the context gauge in place of the idle hint", () => {
   }));
   assert.match(running, /Enter 追加指令/);
   assert.match(running, /任务运行中，结束后可长按立即压缩/);
+
+  // Live stream events win over the persisted session record while present,
+  // so the ring tracks the run's latest model call.
+  const live = renderToStaticMarkup(React.createElement(appModule.ChatPane, {
+    ...props({ context_last_input_tokens: 1000 }),
+    liveContextUsage: { lastInputTokens: 64000, compressionCount: 0 },
+  }));
+  assert.match(live, /已使用 64,000 tokens（50%）/);
+  assert.doesNotMatch(live, /已使用 1,000 tokens/);
+  assert.doesNotMatch(live, /已自动压缩/);
 });
 
 test("long transcripts mount only the latest window initially", () => {
