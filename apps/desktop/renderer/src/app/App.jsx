@@ -3678,6 +3678,13 @@ export function TracePanel({ api, collapsed, contextSnapshots, events, activityE
   const traceListRef = useRef(null);
   const attachModesNav = useSlidingTabIndicator(panelMode);
   const attachTabsNav = useSlidingTabIndicator(tab);
+  // A chat overview row asks for a patch: switch to the Diffs mode here; the
+  // FileChangesPanel below picks up the same focus and opens the diff.
+  useEffect(() => {
+    if (diffFocus?.diffId) {
+      setPanelMode("Diffs");
+    }
+  }, [diffFocus]);
   // Tools and Changes read the session-wide activity feed; the raw event list
   // stays scoped to the current run.
   const tabSource = tab === "Tools" || tab === "Changes" ? sessionEvents : events;
