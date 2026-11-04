@@ -1228,6 +1228,33 @@ test("a paused session shows its resumable indicator in the sidebar", () => {
   assert.match(html, /session-indicator paused" aria-label="Paused"/);
 });
 
+test("a resume signal renders as a system reminder line, not a message bubble", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.ChatPane, {
+    activeSession: { session_id: "session-1", scope_id: "conversation" },
+    messages: [
+      { id: "resume-1", role: "resume" },
+      { id: "a1", role: "assistant", content: "Continued.", status: "success", sections: [] },
+    ],
+    settings: {}, status: "Ready", running: false, approvals: [],
+  }));
+
+  assert.match(html, /message system-line[^>]*>已恢复上次会话</);
+  assert.doesNotMatch(html, /继续上次任务/);
+});
+
+test("durable resume rows map to the system reminder role", () => {
+  const [line] = appModule.historyToMessages([
+    {
+      role: "user",
+      content: "<user-context>\n  <user-identity>default</user-identity>\n  <user-message>继续</user-message>\n</user-context>",
+      kind: "lara.user.resume",
+    },
+    { role: "assistant", content: "Continued." },
+  ]);
+
+  assert.equal(line.role, "resume");
+});
+
 test("a paused session turns the empty send into the resume action", () => {
   const props = (session) => ({
     activeSession: { session_id: "session-1", scope_id: "conversation", ...session },
