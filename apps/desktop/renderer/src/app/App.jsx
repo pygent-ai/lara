@@ -4697,6 +4697,35 @@ export function projectLiveAssistantEvent(message, event, now = Date.now()) {
     message = { ...message, ...runTimingFields(payload.run_timing) };
   }
 
+  if (kind === "model.attempt.started") {
+    // A retried attempt regenerates the whole answer, so remember the
+    // committed state that predates this attempt; model.output.reset restores
+    // it so the dead attempt's partial stream does not stay on screen.
+    return {
+      ...message,
+      attemptBoundary: {
+        content: message.content || "",
+        sections: Array.isArray(message.sections) ? message.sections : [],
+      },
+    };
+  }
+
+  if (kind === "model.output.reset") {
+    const boundary = message.attemptBoundary;
+    if (boundary && Array.isArray(boundary.sections)) {
+      return { ...message, content: boundary.content || "", sections: boundary.sections };
+    }
+    // Streams without attempt boundaries: thinking and streamed text are
+    // always live-only, while tool rows may carry committed results.
+    return {
+      ...message,
+      content: "",
+      sections: (Array.isArray(message.sections) ? message.sections : []).filter(
+        (section) => !(section?.type === "text" && section.title === "Thinking"),
+      ),
+    };
+  }
+
   if (kind === "model.reasoning.delta") {
     const delta = String(payload.text || "");
     return delta ? { ...message, sections: appendDeltaSection(message.sections, "Thinking", delta) } : message;

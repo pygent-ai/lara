@@ -1411,6 +1411,68 @@ test("a cancelled turn keeps the streamed answer instead of a cancel notice", ()
   assert.equal(silent.content, "对话已取消。");
 });
 
+test("a retried attempt restores the committed transcript instead of replaying partial output", () => {
+  const initial = { role: "assistant", content: "", status: "running", sections: [] };
+  const committed = appModule.projectLiveAssistantEvent(initial, {
+    kind: "model.tool_call.completed",
+    data: { call_id: "call-1", name: "bash", arguments: { command: "ls" } },
+  });
+  const withResult = appModule.projectLiveAssistantEvent(committed, {
+    kind: "tool.result", data: { tool_call_id: "call-1", status: "success", result: "file list" },
+  });
+
+  let message = appModule.projectLiveAssistantEvent(
+    withResult, { kind: "model.attempt.started", data: { attempt: 1 } },
+  );
+  for (const event of [
+    { kind: "model.reasoning.delta", data: { text: "stale reasoning" } },
+    { kind: "model.text.delta", data: { text: "stale partial" } },
+    { kind: "model.tool_call.completed", data: { call_id: "call-2", name: "read", arguments: { file_path: "x" } } },
+  ]) {
+    message = appModule.projectLiveAssistantEvent(message, event);
+  }
+  assert.notDeepEqual(message.sections, withResult.sections);
+
+  const reset = appModule.projectLiveAssistantEvent(
+    message, { kind: "model.output.reset", data: { attempt: 1 } },
+  );
+  assert.equal(reset.content, "");
+  assert.deepEqual(reset.sections, withResult.sections);
+  const calls = reset.sections.flatMap((section) => section.calls || []);
+  assert.deepEqual(calls.map((call) => call.id), ["call-1"]);
+
+  const retried = appModule.projectLiveAssistantEvent(
+    reset, { kind: "model.text.delta", data: { text: "fresh answer" } },
+  );
+  assert.equal(retried.content, "fresh answer");
+});
+
+test("output reset without attempt boundaries still clears live thinking and text", () => {
+  const initial = { role: "assistant", content: "", status: "running", sections: [] };
+  const committed = appModule.projectLiveAssistantEvent(initial, {
+    kind: "model.tool_call.completed",
+    data: { call_id: "call-1", name: "bash", arguments: {} },
+  });
+  const withResult = appModule.projectLiveAssistantEvent(committed, {
+    kind: "tool.result", data: { tool_call_id: "call-1", status: "success", result: "ok" },
+  });
+  let message = appModule.projectLiveAssistantEvent(
+    withResult, { kind: "model.reasoning.delta", data: { text: "stale" } },
+  );
+  message = appModule.projectLiveAssistantEvent(
+    message, { kind: "model.text.delta", data: { text: "stale" } },
+  );
+  const reset = appModule.projectLiveAssistantEvent(
+    message, { kind: "model.output.reset", data: {} },
+  );
+  assert.equal(reset.content, "");
+  assert.equal(reset.sections.some((section) => section.type === "text"), false);
+  assert.deepEqual(
+    reset.sections.flatMap((section) => (section.calls || []).map((call) => call.id)),
+    ["call-1"],
+  );
+});
+
 test("live tools report failure and cancellation while parallel calls remain running", () => {
   for (const type of ["tool.failed", "tool.cancelled"]) {
     const tools = appModule.traceToolEvents([
