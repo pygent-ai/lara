@@ -1227,6 +1227,9 @@ class LaraRuntimeService:
             context=lara_context,
             history=session.history,
             checkpoint=session.metadata.get("agent_context"),
+            checkpoint_history_count=session.metadata.get(
+                "agent_context_history_count"
+            ),
         )
         current = UserMessage(
             content=wrapped,

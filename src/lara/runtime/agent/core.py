@@ -524,6 +524,12 @@ class LaraAgent(Agent[UserMessage, AIMessage]):
                     execution_context,
                     registry=LARA_CONTEXT_CODECS,
                 )
+                # Record how much of the durable transcript this projection
+                # covers; a later restore replays boundaries recorded after
+                # it (written by turns that failed or were cancelled).
+                session.metadata["agent_context_history_count"] = len(
+                    session.history
+                )
             manager.save(session)
             if (
                 self.memory_harness is not None

@@ -43,11 +43,26 @@ def _serialize_tool_payload_for_model(payload: dict[str, Any]) -> str:
     return json.dumps(ordered, ensure_ascii=False)
 
 
+def _uncovered_history(
+    history: list[dict[str, Any]], covered_count: int | None
+) -> tuple[PygentMessage, ...]:
+    """Durable boundaries recorded after the restored checkpoint projection."""
+
+    if covered_count is None:
+        return ()
+    return tuple(
+        converted
+        for item in history[covered_count:]
+        if (converted := _to_pygent_message(item)) is not None
+    )
+
+
 def _initial_lara_context(
     *,
     context: LaraContext,
     history: list[dict[str, Any]],
     checkpoint: object | None = None,
+    checkpoint_history_count: int | None = None,
 ) -> tuple[LaraContext, bool]:
     if context.eternal_memory_enabled:
         if context.memory_covered_through > 0:
@@ -68,10 +83,16 @@ def _initial_lara_context(
             LaraContext,
             context_from_dict(checkpoint, registry=LARA_CONTEXT_CODECS),
         )
+        # A turn that failed or was cancelled mid-flight leaves its durable
+        # boundaries in history beyond the checkpoint's coverage; replay them
+        # after the restored projection instead of dropping the round.
         return (
             replace(
                 context,
-                messages=restored.messages,
+                messages=(
+                    *restored.messages,
+                    *_uncovered_history(history, checkpoint_history_count),
+                ),
                 compression_count=restored.compression_count,
                 input_token_scale_ppm=restored.input_token_scale_ppm,
                 last_input_tokens=restored.last_input_tokens,
