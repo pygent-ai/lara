@@ -3668,67 +3668,65 @@ function useSlidingTabIndicator(activeKey) {
 // newest-first; selecting a file fetches its persisted unified patch.
 function FileChangesPanel({ api, sessionId = "", fileChanges = [], diffFocus = null }) {
   const turns = useMemo(() => [...fileChanges].reverse(), [fileChanges]);
-  const [selected, setSelected] = useState(null); // {diffId, path}
-  const [patchState, setPatchState] = useState({ loading: false, error: "", record: null });
-  const patchRequestRef = useRef(0);
+  // Rows expand in place: `expandedIds` holds unfolded diff ids, the patch
+  // cache keeps fetched results so collapsing and re-expanding never refetches.
+  const [expandedIds, setExpandedIds] = useState(() => new Set());
+  const [patches, setPatches] = useState({});
+  const patchesRef = useRef(patches);
+  patchesRef.current = patches;
+  const focusedRowRef = useRef(null);
 
-  const openDiff = useCallback((diffId, path = "") => {
-    if (!api || !sessionId || !diffId) {
+  const ensurePatch = useCallback((diffId) => {
+    if (!api || !sessionId || !diffId || patchesRef.current[diffId]) {
       return;
     }
-    const requestToken = patchRequestRef.current + 1;
-    patchRequestRef.current = requestToken;
-    setSelected({ diffId, path });
-    setPatchState({ loading: true, error: "", record: null });
+    setPatches((current) => ({ ...current, [diffId]: { state: "loading" } }));
     api.getTurnPatch(sessionId, diffId)
       .then((record) => {
-        if (patchRequestRef.current === requestToken) {
-          setPatchState({ loading: false, error: "", record });
-        }
+        setPatches((current) => ({ ...current, [diffId]: record?.patch_available
+          ? { state: "ready", record }
+          : { state: "empty", reason: record?.patch_unavailable_reason || "该改动没有可显示的补丁" } }));
       })
       .catch((err) => {
-        if (patchRequestRef.current === requestToken) {
-          setPatchState({ loading: false, error: String(err?.message || err || "读取补丁失败"), record: null });
-        }
+        setPatches((current) => ({ ...current, [diffId]: { state: "error", reason: String(err?.message || err || "读取补丁失败") } }));
       });
   }, [api, sessionId]);
 
+  const toggleDiff = useCallback((diffId) => {
+    if (!diffId) {
+      return;
+    }
+    setExpandedIds((current) => {
+      const next = new Set(current);
+      if (next.has(diffId)) {
+        next.delete(diffId);
+      } else {
+        next.add(diffId);
+      }
+      return next;
+    });
+    ensurePatch(diffId);
+  }, [ensurePatch]);
+
   useEffect(() => {
     // A chat overview row re-focuses the panel on its file; the token makes
-    // repeated clicks on the same diff retrigger the selection.
+    // repeated clicks on the same diff retrigger the scroll.
     if (diffFocus?.diffId) {
-      openDiff(String(diffFocus.diffId));
+      setExpandedIds((current) => new Set(current).add(String(diffFocus.diffId)));
+      ensurePatch(String(diffFocus.diffId));
     }
-  }, [diffFocus, openDiff]);
+  }, [diffFocus, ensurePatch]);
 
   useEffect(() => {
-    setSelected(null);
-    setPatchState({ loading: false, error: "", record: null });
-  }, [sessionId]);
+    if (diffFocus?.diffId) {
+      focusedRowRef.current?.scrollIntoView({ block: "nearest" });
+    }
+  }, [diffFocus, expandedIds]);
 
-  if (selected) {
-    const record = patchState.record;
-    return (
-      <div className="file-changes-panel">
-        <div className="file-changes-patch-head">
-          <button type="button" className="file-changes-back" onClick={() => { setSelected(null); setPatchState({ loading: false, error: "", record: null }); }}>← 返回列表</button>
-          <span className={`file-change-badge is-${record?.change_type || ""}`}>{changeTypeBadge(record?.change_type)}</span>
-          <span className="file-changes-patch-path">{record?.relative_path || selected.path || selected.diffId}</span>
-        </div>
-        {patchState.loading ? (
-          <p className="file-changes-empty">正在读取补丁…</p>
-        ) : patchState.error ? (
-          <p className="file-changes-empty">{patchState.error}</p>
-        ) : record?.patch_available ? (
-          <pre className="file-changes-patch">{patchTextLines(record.patch).map((line, index) => (
-            <span key={index} className={patchLineClass(line)}>{line || " "}</span>
-          ))}</pre>
-        ) : (
-          <p className="file-changes-empty">{record?.patch_unavailable_reason || "该改动没有可显示的补丁"}</p>
-        )}
-      </div>
-    );
-  }
+  useEffect(() => {
+    setExpandedIds(new Set());
+    setPatches({});
+  }, [sessionId]);
 
   if (!turns.length) {
     return <p className="file-changes-empty">本会话还没有文件改动记录。</p>;
@@ -3750,25 +3748,44 @@ function FileChangesPanel({ api, sessionId = "", fileChanges = [], diffFocus = n
             ) : null}
           </header>
           <ul className="file-changes-list">
-            {(turn.files || []).map((file) => (
-              <li key={`${turn.turn_id}-${file.path}`}>
-                <button
-                  type="button"
-                  className="file-change-row"
-                  disabled={!file.patch_available}
-                  title={file.patch_available ? "查看改动内容" : "该改动没有可显示的补丁"}
-                  onClick={() => openDiff(file.diff_id, file.path)}
+            {(turn.files || []).map((file) => {
+              const expanded = expandedIds.has(file.diff_id);
+              const patch = patches[file.diff_id];
+              return (
+                <li
+                  key={`${turn.turn_id}-${file.path}`}
+                  ref={diffFocus?.diffId === file.diff_id ? focusedRowRef : undefined}
                 >
-                  <span className={`file-change-badge is-${file.change_type}`}>{changeTypeBadge(file.change_type)}</span>
-                  <span className="file-change-path">{file.path}</span>
-                  <span className="file-change-meta">
-                    {file.changes > 1 ? `${file.changes} 处` : ""}
-                    {file.additions != null ? ` +${file.additions}` : ""}
-                    {file.deletions != null ? ` −${file.deletions}` : ""}
-                  </span>
-                </button>
-              </li>
-            ))}
+                  <button
+                    type="button"
+                    className={`file-change-row${expanded ? " expanded" : ""}`}
+                    disabled={!file.patch_available}
+                    aria-expanded={expanded}
+                    title={file.patch_available ? "展开查看改动内容" : "该改动没有可显示的补丁"}
+                    onClick={() => toggleDiff(file.diff_id)}
+                  >
+                    <span className={`file-change-badge is-${file.change_type}`}>{changeTypeBadge(file.change_type)}</span>
+                    <span className="file-change-path">{file.path}</span>
+                    <span className="file-change-meta">
+                      {file.changes > 1 ? `${file.changes} 处` : ""}
+                      {file.additions != null ? ` +${file.additions}` : ""}
+                      {file.deletions != null ? ` −${file.deletions}` : ""}
+                    </span>
+                  </button>
+                  {expanded && file.patch_available && (
+                    !patch || patch.state === "loading" ? (
+                      <p className="file-changes-empty file-change-inline">正在读取补丁…</p>
+                    ) : patch.state === "ready" ? (
+                      <pre className="file-changes-patch file-change-inline">{patchTextLines(patch.record.patch).map((line, lineIndex) => (
+                        <span key={lineIndex} className={patchLineClass(line)}>{line || " "}</span>
+                      ))}</pre>
+                    ) : (
+                      <p className="file-changes-empty file-change-inline">{patch.reason}</p>
+                    )
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </section>
       ))}
