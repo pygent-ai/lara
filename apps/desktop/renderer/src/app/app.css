@@ -1568,13 +1568,26 @@ input:focus,
 .thinking-indicator { flex: 0 0 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0.5; }
 .thinking-indicator.running { animation: thinking-pulse 1.5s ease-in-out infinite; }
 .thinking-preview {
+  display: flex;
+  justify-content: flex-end;
   flex: 1 1 0;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   color: var(--muted);
   font-weight: 400;
+}
+/* Left fade only once the line overflows, so the accumulating head stays
+   crisp while it still fits. */
+.thinking-preview-overflow {
   mask-image: linear-gradient(to right, transparent, black 18px);
+}
+.thinking-preview-text {
+  /* Auto margin keeps the growing line left-aligned while it fits; once it
+     overflows, flex-end pins the newest tail to the right edge and every
+     landed fragment squeezes the line leftward. */
+  flex: 0 0 auto;
+  margin-right: auto;
 }
 .thinking-chevron { flex: 0 0 auto; transition: transform var(--dur-med) var(--ease-spring); }
 .thinking-activity[open] .thinking-chevron { transform: rotate(90deg); }
