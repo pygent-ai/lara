@@ -3543,7 +3543,7 @@ input:focus,
 
 /* Per-turn file change summaries: live strip above the composer, overview
    under a finished assistant bubble, and the inspector's 文件改动 mode. */
-.composer-turn-changes { max-width:840px; margin:0 auto 8px; display:flex; align-items:center; gap:6px; padding:6px 12px; border:1px solid var(--line); border-radius:10px; background:var(--surface); color:var(--muted); font-size:12px; animation:conversation-reveal var(--dur-slow) var(--ease-out); }
+.composer-turn-changes { width:fit-content; max-width:840px; margin:0 auto 8px; display:flex; align-items:center; gap:6px; padding:6px 12px; border:1px solid var(--line); border-radius:10px; background:var(--surface); color:var(--muted); font-size:12px; animation:conversation-reveal var(--dur-slow) var(--ease-out); }
 .composer-turn-changes svg { color:var(--accent); flex-shrink:0; }
 .turn-changes-counts { color:var(--text-secondary); font-variant-numeric:tabular-nums; }
 .file-changes { margin-top:14px; border:1px solid var(--line); border-radius:10px; background:var(--surface); overflow:hidden; }
