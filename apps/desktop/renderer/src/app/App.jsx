@@ -3452,7 +3452,10 @@ export function AssistantActivity({ message, collapseToken, api }) {
   );
 }
 
-const THINKING_PREVIEW_LIMIT = 160;
+// Cap the streaming line's text: once full the line only ever shows its
+// tail, so a sliding window bounds per-delta layout while the visible
+// slice stays continuous.
+const THINKING_PREVIEW_LIMIT = 2000;
 
 export function ThinkingActivity({ content, running, closed = false }) {
   const contentRef = useRef(null);
@@ -3461,11 +3464,27 @@ export function ThinkingActivity({ content, running, closed = false }) {
   // follow, because scroll events here also fire for the pin writes and for
   // anchoring adjustments caused by deltas landing above the scrollport.
   const userScrollingRef = useRef(false);
-  const userClosedRef = useRef(false);
+  const previewRef = useRef(null);
+  const previewTextRef = useRef(null);
+  const [previewOverflow, setPreviewOverflow] = useState(false);
   const flattened = content.replace(/\s+/g, " ").trim();
   const preview = flattened.length > THINKING_PREVIEW_LIMIT
-    ? `…${flattened.slice(-THINKING_PREVIEW_LIMIT)}`
+    ? flattened.slice(-THINKING_PREVIEW_LIMIT)
     : flattened;
+
+  // The left fade only makes sense once the line actually overflows; flip
+  // it on the first delta that no longer fits and keep it for the rest of
+  // the stream.
+  useEffect(() => {
+    if (previewOverflow || !running) {
+      return;
+    }
+    const node = previewRef.current;
+    const text = previewTextRef.current;
+    if (node && text && text.offsetWidth > node.clientWidth) {
+      setPreviewOverflow(true);
+    }
+  }, [content, running, previewOverflow]);
 
   const pinContentToLatest = useCallback(() => {
     const node = contentRef.current;
@@ -3487,15 +3506,13 @@ export function ThinkingActivity({ content, running, closed = false }) {
     }
   }, [content, running, pinContentToLatest]);
 
-  // Controlled open state: an ended block (interrupt or completion) keeps
-  // whatever is on screen instead of the open attribute removal folding it
-  // abruptly; while the turn is still live, `closed` folds thinking that the
-  // answer or a later tool call replaced.
-  const [open, setOpen] = useState(Boolean(running));
+  // Controlled open state: streaming thinking stays on the summary's single
+  // scrolling line until the user expands it; an ended block (interrupt or
+  // completion) folds instead of the open attribute removal folding it
+  // abruptly.
+  const [open, setOpen] = useState(false);
   useEffect(() => {
-    if (running) {
-      setOpen(!userClosedRef.current);
-    } else if (closed) {
+    if (!running && closed) {
       setOpen(false);
     }
   }, [running, closed]);
@@ -3515,7 +3532,6 @@ export function ThinkingActivity({ content, running, closed = false }) {
           }
           return;
         }
-        userClosedRef.current = !isOpen;
         if (isOpen) {
           followRef.current = true;
           pinContentToLatest();
@@ -3525,7 +3541,14 @@ export function ThinkingActivity({ content, running, closed = false }) {
       <summary className="thinking-summary">
         <span className="thinking-label">{running ? "思考中" : "思考完成"}</span>
         {running && <span className="thinking-indicator running" aria-hidden="true" />}
-        {running && <span className="thinking-preview">{preview}</span>}
+        {running && (
+          <span
+            className={`thinking-preview${previewOverflow ? " thinking-preview-overflow" : ""}`}
+            ref={previewRef}
+          >
+            <span className="thinking-preview-text" ref={previewTextRef}>{preview}</span>
+          </span>
+        )}
         <ChevronRight className="thinking-chevron" size={14} aria-hidden="true" />
       </summary>
       <div

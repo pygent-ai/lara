@@ -2077,14 +2077,14 @@ test("a history window that starts mid-turn groups the partial head into one act
   assert.equal(activityHeaderText(assistantBlocks[1], 90000), "已完成 7 秒");
 });
 
-test("thinking streams with a live preview and completes when the answer or tools begin", () => {
+test("thinking streams as a single scrolling line and completes when the answer or tools begin", () => {
   const section = { type: "text", title: "Thinking", content: "First line\nSecond line" };
   const live = renderToStaticMarkup(React.createElement(appModule.AssistantActivity, {
     message: { status: "running", sections: [section], content: "" },
   }));
-  assert.match(live, /<details[^>]* open/);
+  assert.doesNotMatch(live, /<details[^>]* open/);
   assert.match(live, /class="thinking-activity thinking-running"/);
-  assert.match(live, /thinking-preview[^>]*>First line Second line</);
+  assert.match(live, /thinking-preview-text[^>]*>First line Second line</);
   assert.match(live, /<span class="thinking-label">思考中<\/span>/);
   const longSection = {
     type: "text", title: "Thinking",
@@ -2093,7 +2093,11 @@ test("thinking streams with a live preview and completes when the answer or tool
   const long = renderToStaticMarkup(React.createElement(appModule.AssistantActivity, {
     message: { status: "running", sections: [longSection], content: "" },
   }));
+  // The line accumulates the whole stream from the start instead of a
+  // sliding ellipsis window; the tail pinning happens in CSS.
+  assert.match(long, /thinking-preview-text[^>]*>HEAD_MARKER/);
   assert.match(long, /thinking-preview[^>]*>[^<]*TAIL_END_MARKER</);
+  assert.doesNotMatch(long, /…/);
   const answered = renderToStaticMarkup(React.createElement(appModule.AssistantActivity, {
     message: { status: "running", sections: [section], content: "Answer" },
   }));
