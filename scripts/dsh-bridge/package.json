@@ -1,0 +1,16 @@
+{
+  "name": "dsh-bridge",
+  "private": true,
+  "version": "0.1.0",
+  "description": "MCP stdio bridge that loads DeepSeek Harness (Cordis) tool plugins and exposes them to the lora agent",
+  "type": "module",
+  "main": "bridge.mjs",
+  "engines": {
+    "node": ">=18.17"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "^4.0.5",
+    "@deepseek-ai/dsh-tools": "^0.0.1-rc.1",
+    "@modelcontextprotocol/sdk": "^1.32.2"
+  }
+}
