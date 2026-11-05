@@ -135,16 +135,20 @@ async def fork_session(
     """Fork one chat session; with at_sequence, fork at that checkpoint point."""
     service = session_service_for_scope(context, scope_id, with_reminders=True)
     validate_path_id(session_id, "session_id")
-    if await context.session_coordinator.session_busy(service.manager, session_id):
+    at_sequence = request.at_sequence if request is not None else None
+    # A fork at a historical checkpoint only reads durable rows, so it stays
+    # safe while a turn is running; forking "latest" would copy the live
+    # in-flight state and is still refused until the execution finishes.
+    if (
+        at_sequence is None
+        and await context.session_coordinator.session_busy(service.manager, session_id)
+    ):
         raise HTTPException(
             status_code=409,
             detail="Session cannot be forked while an execution is active",
         )
     try:
-        return service.fork_session(
-            session_id,
-            at_sequence=request.at_sequence if request is not None else None,
-        )
+        return service.fork_session(session_id, at_sequence=at_sequence)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except (RuntimeError, ValueError) as exc:

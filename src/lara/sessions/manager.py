@@ -226,6 +226,10 @@ class SessionManager:
                 shutil.copytree(src, dst)
             elif src.exists():
                 shutil.copy2(src, dst)
+        # A source with an active turn keeps appending checkpoints while the
+        # files are copied, so the durable conversation must come from a
+        # consistent backup snapshot rather than a possibly torn file copy.
+        self._snapshot_checkpoint_database(source_session_id, target.session_id)
         data = read_json(target_dir / "session.json")
         data.update(
             {
@@ -291,6 +295,31 @@ class SessionManager:
         session.metadata["history_checkpoint_seq"] = at_sequence
         session.updated_at = utc_now()
         self._save_session(session)
+
+    def _snapshot_checkpoint_database(
+        self, source_session_id: str, target_session_id: str
+    ) -> None:
+        """Replace the copied checkpoint database with a consistent snapshot.
+
+        A raw file copy can tear against a running source: its WAL keeps
+        accepting committed frames while ``context`` is copied, and copying
+        the main file and the WAL at different moments can drop rows or
+        resurrect stale pages. The backup API reads one committed state even
+        while the source keeps writing.
+        """
+        source_path = self._checkpoint_database_path(source_session_id)
+        if not source_path.exists():
+            return
+        target_path = self._checkpoint_database_path(target_session_id)
+        # Drop the raw copy first: a torn header would fail backup
+        # initialization instead of being replaced.
+        target_path.unlink(missing_ok=True)
+        for suffix in ("-wal", "-shm"):
+            target_path.with_name(target_path.name + suffix).unlink(missing_ok=True)
+        with closing(sqlite3.connect(source_path, timeout=30)) as source, closing(
+            sqlite3.connect(target_path, timeout=30)
+        ) as target:
+            source.backup(target)
 
     def start_case_run(
         self, session_id: str, case_id: str, run_config: RunConfig | None = None

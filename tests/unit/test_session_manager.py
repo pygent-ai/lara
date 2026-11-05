@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -310,6 +314,71 @@ class SessionManagerTests(unittest.TestCase):
             # The failed fork must not leave an orphan target session behind.
             sessions = list((Path(tmp) / ".lara" / "sessions").iterdir())
             self.assertEqual([path.name for path in sessions], [source.session_id])
+
+    def test_fork_snapshots_committed_wal_frames_of_a_live_source(self) -> None:
+        """The fork reads one committed state even while the source is live.
+
+        The copy tree runs while a simulated active turn commits a new
+        checkpoint, so the copied files can never contain that row; only a
+        consistent backup snapshot taken after the copy can.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = SessionManager(
+                RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
+            )
+            source = manager.create("chat", mode="chat")
+            run = manager.start_case_run(source.session_id, "chat")
+            manager.append_history_checkpoint(
+                run,
+                turn_id="turn-1",
+                checkpoint_id="checkpoint-1",
+                message={"role": "user", "content": "first question"},
+            )
+            manager.append_history_checkpoint(
+                run,
+                turn_id="turn-1",
+                checkpoint_id="checkpoint-2",
+                message={"role": "assistant", "content": "first answer"},
+            )
+            source_dir = Path(source.session_dir)
+            database_path = manager._checkpoint_database_path(source.session_id)
+
+            original_copytree = shutil.copytree
+
+            def copytree_with_live_writer(src, dst, **kwargs):
+                original_copytree(src, dst, **kwargs)
+                if Path(src) == source_dir / "context":
+                    with closing(sqlite3.connect(database_path)) as writer:
+                        writer.execute(
+                            """
+                            INSERT INTO conversation_checkpoints (
+                                checkpoint_id, session_id, case_id, case_run_id,
+                                turn_id, role, message_json, include_in_session,
+                                created_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                "checkpoint-live",
+                                source.session_id,
+                                "chat",
+                                run.case_run_id,
+                                "turn-2",
+                                "user",
+                                json.dumps({"role": "user", "content": "live question"}),
+                                1,
+                                "2026-01-01T00:00:00Z",
+                            ),
+                        )
+                        writer.commit()
+
+            with patch.object(shutil, "copytree", copytree_with_live_writer):
+                forked = manager.fork(source.session_id, mode="chat")
+
+            loaded = manager.load(forked.session_id)
+            self.assertEqual(
+                [message["content"] for message in loaded.history],
+                ["first question", "first answer", "live question"],
+            )
 
 
 if __name__ == "__main__":
