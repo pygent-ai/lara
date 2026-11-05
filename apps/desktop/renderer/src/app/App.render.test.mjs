@@ -618,6 +618,47 @@ test("history pages merge into one transcript with stable ids and turn grouping"
   assert.equal(merged[1].checkpointSequence, 4);
 });
 
+// The reported regression: once a session outgrows the 200-row display
+// window, turn-completion rebuilds dropped the user's first input from the
+// transcript for good. Pin the end-to-end effect — the first input may start
+// outside the tail window, but a page load must restore it and no later tail
+// rebuild may ever evict it again.
+test("a grown session keeps its first user input reachable across tail rebuilds", () => {
+  const { mergeHistoryRows, historyToMessages } = appModule;
+  const allRows = Array.from({ length: 352 }, (_, index) => {
+    const sequence = index + 1;
+    const role = sequence % 2 === 1 ? "user" : "assistant";
+    return {
+      checkpoint_sequence: sequence,
+      role,
+      content: role === "user" && sequence === 1 ? "first input" : `${role} ${sequence}`,
+      ...(role === "assistant" ? { usage: {} } : {}),
+    };
+  });
+  const firstInputVisible = (rows) => historyToMessages(rows).some(
+    (item) => item.role === "user" && item.content === "first input",
+  );
+
+  // Fresh app open: the tail page alone starts mid-session, so the first
+  // input is not rendered yet (by design — it is one scroll-up away).
+  let rows = mergeHistoryRows([], allRows.slice(-200));
+  assert.equal(firstInputVisible(rows), false);
+
+  // A turn completed and rebuilt the tail again: still without the first input.
+  rows = mergeHistoryRows(rows, allRows.slice(-180));
+  assert.equal(firstInputVisible(rows), false);
+
+  // One scroll-up page load restores the head; the effect holds.
+  rows = mergeHistoryRows(rows, allRows.slice(0, 152));
+  assert.equal(firstInputVisible(rows), true);
+
+  // Every later tail rebuild (next turn completed) keeps it in place.
+  rows = mergeHistoryRows(rows, allRows.slice(-100));
+  assert.equal(firstInputVisible(rows), true);
+  rows = mergeHistoryRows(rows, allRows.slice(-200));
+  assert.equal(firstInputVisible(rows), true);
+});
+
 test("a steering boundary already rendered from history does not split twice", () => {
   const restored = appModule.historyToMessages([
     { role: "user", content: "focus on tests", kind: "lara.user.steering", data: { input_id: "input-1" } },
