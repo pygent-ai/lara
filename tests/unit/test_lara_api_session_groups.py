@@ -279,6 +279,74 @@ def test_fork_session_rejects_active_executions(tmp_path: Path) -> None:
     assert captured.value.status_code == 409
 
 
+def test_fork_session_forks_historical_turns_of_an_active_session(tmp_path: Path) -> None:
+    """A running session refuses latest-forks but still forks past turns."""
+    from fastapi import HTTPException
+    from lara_api.models.requests import CreateSessionRequest, ForkSessionRequest
+    from lara_api.routers.sessions import create_session, fork_session, get_session
+
+    context = ApiContext(
+        workspace_root=str(tmp_path),
+        state_path=str(tmp_path / "state.json"),
+        _config=RunConfig(workspace_root=str(tmp_path)),
+    )
+    created = asyncio.run(create_session(CreateSessionRequest(), context=context))
+    manager = SessionManager(context.manager.config)
+    run = manager.start_case_run(created.session_id, "chat")
+    manager.append_history_checkpoint(
+        run,
+        turn_id="turn-1",
+        checkpoint_id="checkpoint-1",
+        message={"role": "user", "content": "source question"},
+    )
+    manager.append_history_checkpoint(
+        run,
+        turn_id="turn-1",
+        checkpoint_id="checkpoint-2",
+        message={"role": "assistant", "content": "source answer", "usage": {}},
+    )
+    # The run never finishes: from here the session counts as in-progress
+    # while turn-2 is still streaming.
+    manager.append_history_checkpoint(
+        run,
+        turn_id="turn-2",
+        checkpoint_id="checkpoint-3",
+        message={"role": "user", "content": "in-flight question"},
+    )
+    context._session_coordinator = SimpleNamespace(
+        session_busy=AsyncMock(return_value=True)
+    )
+    source_sequences = [
+        message["checkpoint_sequence"]
+        for message in manager.history_with_run_timing(manager.load(created.session_id))
+    ]
+
+    with pytest.raises(HTTPException) as captured:
+        asyncio.run(fork_session(created.session_id, None, context=context))
+    assert captured.value.status_code == 409
+
+    forked = asyncio.run(
+        fork_session(
+            created.session_id,
+            ForkSessionRequest(at_sequence=source_sequences[1]),
+            context=context,
+        )
+    )
+
+    assert forked.session_id != created.session_id
+    detail = get_session(forked.session_id, context=context)
+    assert [message["content"] for message in detail.history] == [
+        "source question",
+        "source answer",
+    ]
+    # Reloading must not resurrect the in-flight turn past the boundary.
+    reloaded = get_session(forked.session_id, context=context)
+    assert [message["content"] for message in reloaded.history] == [
+        "source question",
+        "source answer",
+    ]
+
+
 def test_active_session_rejects_preferred_child_change(tmp_path: Path) -> None:
     from fastapi import HTTPException
     from lara_api.models.requests import (
