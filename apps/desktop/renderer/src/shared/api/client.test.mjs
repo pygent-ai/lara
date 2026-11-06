@@ -406,11 +406,21 @@ test("api client creates a grouped chat and updates only its child model", async
     calls.push({ url, init });
     return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
   } });
-  await client.createSession({ modelGroupName: "coding" });
+  await client.createSession({ modelGroupName: "coding", selectedModelKey: "backup" });
   await client.updateSessionModel("chat one", "backup", { scopeId: "conversation" });
-  assert.equal(JSON.parse(calls[0].init.body).model_group_name, "coding");
+  await client.updateSessionModel("chat one", "main", { scopeId: "conversation", modelGroupName: "economy" });
+  assert.deepEqual(JSON.parse(calls[0].init.body), {
+    case_id: "chat",
+    mode: "chat",
+    model_group_name: "coding",
+    selected_model_key: "backup",
+  });
   assert.equal(calls[1].url, "http://127.0.0.1:8765/sessions/chat%20one/model?scope_id=conversation");
   assert.deepEqual(JSON.parse(calls[1].init.body), { selected_model_key: "backup" });
+  assert.deepEqual(JSON.parse(calls[2].init.body), {
+    selected_model_key: "main",
+    model_group_name: "economy",
+  });
 });
 
 test("api client delivers runtime approval decisions", async () => {
@@ -644,6 +654,13 @@ test("streamChat forwards workspace attachment paths in the request body", async
   await client.streamChat({ message: "", attachments: ["shots/c.png"] }, { onEvent: () => {} });
   assert.equal(calls[2].message, null);
   assert.deepEqual(calls[2].attachments, ["shots/c.png"]);
+  await client.streamChat(
+    { message: "pinned", modelGroupName: "coding", selectedModelKey: "backup" },
+    { onEvent: () => {} },
+  );
+  assert.equal(calls[3].selected_model_key, "backup");
+  await client.streamChat({ message: "plain" }, { onEvent: () => {} });
+  assert.equal(calls[4].selected_model_key, null);
 });
 
 test("streamChat reconnects when the event stream goes silent mid-run", async (t) => {

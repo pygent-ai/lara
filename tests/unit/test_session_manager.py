@@ -615,6 +615,88 @@ def test_session_rejects_model_outside_fixed_group(tmp_path: Path) -> None:
         manager.set_selected_model(ref.session_id, "vision-only")
 
 
+def spare_group_config(tmp_path: Path):
+    mapping = native_mapping(group=("main", "backup"))
+    mapping["models"]["spare"] = dict(mapping["models"]["backup"])
+    mapping["model_groups"]["spare-group"] = {"models": ["spare"]}
+    return RunConfig(
+        workspace_root=str(tmp_path),
+        lara_root=str(Path(tmp_path) / ".lara"),
+        model_config_mapping=mapping,
+        resolved_agent=ResolvedAgentConfig(
+            alias="default", default_model_group="coding"
+        ),
+    )
+
+
+def test_set_selected_model_can_switch_fixed_group(tmp_path: Path) -> None:
+    config = spare_group_config(tmp_path)
+    manager = SessionManager(config)
+    ref = manager.create("chat", mode="chat", model_group_name="coding")
+
+    changed = manager.set_selected_model(
+        ref.session_id, "spare", model_group_name="spare-group"
+    )
+
+    assert (changed.model_group_name, changed.selected_model_key) == (
+        "spare-group",
+        "spare",
+    )
+    assert SessionManager(config).model_selection(ref.session_id) == (
+        "spare-group",
+        "spare",
+    )
+    metadata = json.loads(
+        (Path(ref.session_dir) / "metadata.json").read_text(encoding="utf-8")
+    )
+    assert metadata["model_group_name"] == "spare-group"
+    assert metadata["selected_model_key"] == "spare"
+
+
+def test_set_selected_model_rejects_switch_to_unknown_group(
+    tmp_path: Path,
+) -> None:
+    manager = SessionManager(native_run_config(tmp_path))
+    ref = manager.create("chat", mode="chat", model_group_name="coding")
+    with pytest.raises(ValueError, match="unknown fixed model group"):
+        manager.set_selected_model(
+            ref.session_id, "main", model_group_name="missing"
+        )
+
+
+def test_set_selected_model_rejects_group_member_mismatch(tmp_path: Path) -> None:
+    manager = SessionManager(spare_group_config(tmp_path))
+    ref = manager.create("chat", mode="chat", model_group_name="coding")
+    with pytest.raises(ValueError, match="is not in fixed model group"):
+        manager.set_selected_model(
+            ref.session_id, "main", model_group_name="spare-group"
+        )
+
+
+def test_create_pins_preferred_model_in_group(tmp_path: Path) -> None:
+    config = native_run_config(tmp_path)
+    manager = SessionManager(config)
+    ref = manager.create(
+        "chat", mode="chat", model_group_name="coding", selected_model_key="backup"
+    )
+    assert manager.model_selection(ref.session_id) == ("coding", "backup")
+    metadata = json.loads(
+        (Path(ref.session_dir) / "metadata.json").read_text(encoding="utf-8")
+    )
+    assert metadata["selected_model_key"] == "backup"
+
+
+def test_create_rejects_model_outside_group_without_orphan(tmp_path: Path) -> None:
+    manager = SessionManager(native_run_config(tmp_path))
+    with pytest.raises(ValueError, match="is not in fixed model group"):
+        manager.create(
+            "chat", mode="chat", model_group_name="coding",
+            selected_model_key="vision-only",
+        )
+    sessions_root = Path(tmp_path) / ".lara" / "sessions"
+    assert not sessions_root.exists() or not any(sessions_root.iterdir())
+
+
 def test_session_rejects_unknown_creation_group(tmp_path: Path) -> None:
     manager = SessionManager(native_run_config(tmp_path))
     with pytest.raises(ValueError, match="unknown model group"):

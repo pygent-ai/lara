@@ -119,6 +119,7 @@ async def create_session(
             case_id=request.case_id,
             mode=request.mode,
             model_group_name=request.model_group_name,
+            selected_model_key=request.selected_model_key,
             eternal_memory=request.eternal_memory,
         )
     except (RuntimeError, ValueError) as exc:
@@ -196,7 +197,9 @@ async def update_session_model(
         )
     try:
         return service.update_selected_model(
-            session_id, request.selected_model_key
+            session_id,
+            request.selected_model_key,
+            model_group_name=request.model_group_name,
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

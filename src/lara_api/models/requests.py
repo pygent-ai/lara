@@ -10,6 +10,7 @@ class CreateSessionRequest(BaseModel):
     mode: str = "chat"
     scope_id: str | None = None
     model_group_name: str | None = None
+    selected_model_key: str | None = None
     eternal_memory: bool = False
 
 
@@ -21,6 +22,7 @@ class SetEternalMemoryRequest(BaseModel):
 class UpdateSessionModelRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     selected_model_key: str = Field(min_length=1)
+    model_group_name: str | None = None
 
 
 class ForkSessionRequest(BaseModel):
@@ -53,6 +55,7 @@ class ChatTurnRequest(BaseModel):
     scope_id: str | None = None
     case_id: str = "chat"
     model_group_name: str | None = None
+    selected_model_key: str | None = None
     turn_id: str | None = None
     execution_id: str | None = None
     # Resume the session's last run: reattach while it is recoverable, or

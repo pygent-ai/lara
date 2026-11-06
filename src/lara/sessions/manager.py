@@ -44,10 +44,16 @@ class SessionManager:
         mode: str = "e2e",
         *,
         model_group_name: str | None = None,
+        selected_model_key: str | None = None,
         eternal_memory: bool = False,
     ) -> SessionRef:
         validate_path_id(case_id, "case_id")
         selected_group, selected_model = self._selection_for_group(model_group_name)
+        # Validate before any directory is created so a bad model key cannot
+        # leave an orphan session behind.
+        if selected_model_key:
+            self._require_group_model(selected_group, selected_model_key)
+            selected_model = selected_model_key
         session_id = self._new_session_id(case_id, mode)
         session_dir = self.sessions_root / session_id
         session_dir.mkdir(parents=True, exist_ok=False)
@@ -126,25 +132,35 @@ class SessionManager:
         return session.model_group_name, session.selected_model_key
 
     def set_selected_model(
-        self, session_id: str, model_key: str
+        self,
+        session_id: str,
+        model_key: str,
+        *,
+        model_group_name: str | None = None,
     ) -> AgentSession:
         session = self.load(session_id)
+        target_group = model_group_name or session.model_group_name
+        self._require_group_model(target_group, model_key)
+        if model_group_name and model_group_name != session.model_group_name:
+            session.model_group_name = target_group
+        session.selected_model_key = model_key
+        self.save(session)
+        return session
+
+    def _require_group_model(self, group_name: str, model_key: str) -> None:
         native = self.config.model_config
-        if native is None or not session.model_group_name:
+        if native is None or not group_name:
             raise RuntimeError("model_configuration_required")
-        group = native.model_groups.get(session.model_group_name)
+        group = native.model_groups.get(group_name)
         if group is None:
             raise ValueError(
-                f"unknown fixed model group {session.model_group_name!r}"
+                f"unknown fixed model group {group_name!r}"
             )
         if model_key not in {entry.key for entry in group.models}:
             raise ValueError(
                 f"model {model_key!r} is not in fixed model group "
-                f"{session.model_group_name!r}"
+                f"{group_name!r}"
             )
-        session.selected_model_key = model_key
-        self.save(session)
-        return session
 
     def set_eternal_memory(self, session_id: str, *, enabled: bool) -> AgentSession:
         """Opt one session into (or out of) the eternal conversation."""

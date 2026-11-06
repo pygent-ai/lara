@@ -336,6 +336,7 @@ class ChatRunRegistry:
             case_id=request.case_id,
             turn_id=request.turn_id,
             model_group_name=request.model_group_name,
+            selected_model_key=request.selected_model_key,
             message_kind=message_kind,
             message_data=message_data,
             attachments=request.attachments,

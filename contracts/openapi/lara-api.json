@@ -2520,6 +2520,17 @@
             ],
             "title": "Model Group Name"
           },
+          "selected_model_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Model Key"
+          },
           "turn_id": {
             "anyOf": [
               {
@@ -2608,6 +2619,17 @@
               }
             ],
             "title": "Model Group Name"
+          },
+          "selected_model_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Model Key"
           },
           "eternal_memory": {
             "type": "boolean",
@@ -3633,6 +3655,17 @@
             "type": "string",
             "minLength": 1,
             "title": "Selected Model Key"
+          },
+          "model_group_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Group Name"
           }
         },
         "additionalProperties": false,

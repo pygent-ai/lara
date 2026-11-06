@@ -10,7 +10,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from lara.core.io import read_json, write_json
-from lara.schema import RunConfig
+from lara.schema import ResolvedAgentConfig, RunConfig
 from lara.sessions import SessionManager
 from lara.tracing.events import EventStore
 from lara_api.app import create_app
@@ -132,6 +132,55 @@ def test_create_session_chooses_fixed_group_and_returns_children(
     ]
 
 
+def test_create_session_pins_requested_model_in_group(tmp_path: Path) -> None:
+    from lara_api.models.requests import CreateSessionRequest
+    from lara_api.routers.sessions import create_session
+
+    config = native_run_config(tmp_path)
+    context = ApiContext(
+        workspace_root=str(tmp_path),
+        state_path=str(tmp_path / "state.json"),
+        _config=config,
+    )
+    created = asyncio.run(
+        create_session(
+            CreateSessionRequest(
+                model_group_name="coding", selected_model_key="backup"
+            ),
+            context=context,
+        )
+    )
+    assert (created.model_group_name, created.selected_model_key) == (
+        "coding",
+        "backup",
+    )
+
+
+def test_create_session_rejects_model_outside_group(tmp_path: Path) -> None:
+    from fastapi import HTTPException
+
+    from lara_api.models.requests import CreateSessionRequest
+    from lara_api.routers.sessions import create_session
+
+    config = native_run_config(tmp_path)
+    context = ApiContext(
+        workspace_root=str(tmp_path),
+        state_path=str(tmp_path / "state.json"),
+        _config=config,
+    )
+    with pytest.raises(HTTPException) as excinfo:
+        asyncio.run(
+            create_session(
+                CreateSessionRequest(
+                    model_group_name="coding", selected_model_key="vision-only"
+                ),
+                context=context,
+            )
+        )
+    assert excinfo.value.status_code == 422
+    assert "is not in fixed model group" in str(excinfo.value.detail)
+
+
 def test_idle_session_can_change_only_its_preferred_child(tmp_path: Path) -> None:
     from lara_api.models.requests import (
         CreateSessionRequest,
@@ -155,6 +204,76 @@ def test_idle_session_can_change_only_its_preferred_child(tmp_path: Path) -> Non
     )
     assert changed.model_group_name == "coding"
     assert changed.selected_model_key == "backup"
+
+
+def test_idle_session_can_switch_group_with_preferred_child(tmp_path: Path) -> None:
+    from lara_api.models.requests import (
+        CreateSessionRequest,
+        UpdateSessionModelRequest,
+    )
+    from lara_api.routers.sessions import create_session, get_session, update_session_model
+
+    mapping = native_run_config(tmp_path).model_config_mapping
+    mapping["models"]["spare"] = dict(mapping["models"]["backup"])
+    mapping["model_groups"]["spare-group"] = {"models": ["spare"]}
+    config = RunConfig(
+        workspace_root=str(tmp_path),
+        lara_root=str(Path(tmp_path) / ".lara"),
+        model_config_mapping=mapping,
+        resolved_agent=ResolvedAgentConfig(
+            alias="default", default_model_group="coding"
+        ),
+    )
+    context = ApiContext(
+        workspace_root=str(tmp_path),
+        state_path=str(tmp_path / "state.json"),
+        _config=config,
+    )
+    created = asyncio.run(create_session(CreateSessionRequest(), context=context))
+    changed = asyncio.run(
+        update_session_model(
+            created.session_id,
+            UpdateSessionModelRequest(
+                selected_model_key="spare", model_group_name="spare-group"
+            ),
+            context=context,
+        )
+    )
+    assert (changed.model_group_name, changed.selected_model_key) == (
+        "spare-group",
+        "spare",
+    )
+    detail = get_session(created.session_id, context=context)
+    assert [item.model_key for item in detail.selectable_models] == ["spare"]
+
+
+def test_update_session_model_rejects_unknown_group(tmp_path: Path) -> None:
+    from fastapi import HTTPException
+
+    from lara_api.models.requests import (
+        CreateSessionRequest,
+        UpdateSessionModelRequest,
+    )
+    from lara_api.routers.sessions import create_session, update_session_model
+
+    context = ApiContext(
+        workspace_root=str(tmp_path),
+        state_path=str(tmp_path / "state.json"),
+        _config=native_run_config(tmp_path),
+    )
+    created = asyncio.run(create_session(CreateSessionRequest(), context=context))
+    with pytest.raises(HTTPException) as excinfo:
+        asyncio.run(
+            update_session_model(
+                created.session_id,
+                UpdateSessionModelRequest(
+                    selected_model_key="main", model_group_name="missing"
+                ),
+                context=context,
+            )
+        )
+    assert excinfo.value.status_code == 422
+    assert "unknown fixed model group" in str(excinfo.value.detail)
 
 
 def test_fork_session_copies_chat_history_into_a_new_sidebar_chat(tmp_path: Path) -> None:
