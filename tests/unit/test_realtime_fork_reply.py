@@ -116,11 +116,7 @@ def test_extract_returns_none_without_speak() -> None:
 
 async def test_run_fork_reply_forced_path() -> None:
     invoker = FakeInvoker(
-        _response(
-            tool_calls=(
-                {"call_id": "c5", "name": "speak", "arguments": {"text": "在做了"}},
-            )
-        )
+        _response(tool_calls=(_speak_call("c5", {"text": "在做了"}),))
     )
     context = build_fork_context(
         system_prompt="s", messages=_prefix_messages(), tools=(_speak_definition(),)
