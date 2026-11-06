@@ -193,6 +193,13 @@ class SessionScope:
     runtime_workspace_root: str
 
 
+# The dedicated realtime session is one user-level scope outside every
+# project workspace: storage derives from its own workspace path through the
+# standard project_lara_root rule, so switching the selected project never
+# orphans it.
+LARA_SAYS_SCOPE_ID = "lara-says"
+
+
 def build_session_scopes(state: GuiProjectState, *, active_workspace_root: str | None = None) -> list[SessionScope]:
     user_root = user_lara_root()
     conversation_root = user_root / "conversations"
@@ -222,6 +229,19 @@ def build_session_scopes(state: GuiProjectState, *, active_workspace_root: str |
             )
         )
 
+    # The dedicated realtime scope sits with the other user-level scopes;
+    # the conversation scope stays last (tests pin it as scopes[-1]).
+    says_workspace = (user_root / "lara-says" / "workspace").resolve()
+    scopes.append(
+        SessionScope(
+            scope_id=LARA_SAYS_SCOPE_ID,
+            label="Lara说",
+            tooltip="The dedicated realtime conversation session",
+            workspace_root=None,
+            runtime_workspace_root=str(says_workspace),
+            lara_root=str(project_lara_root(says_workspace)),
+        )
+    )
     scopes.append(
         SessionScope(
             scope_id="conversation",
@@ -245,7 +265,7 @@ def _resolve_project(project_path: str | Path) -> str:
 
 def _normalize_scope_id(scope_id: object) -> str:
     value = str(scope_id).strip()
-    if value == "conversation":
+    if value == "conversation" or value == LARA_SAYS_SCOPE_ID:
         return value
     if value.startswith("project:"):
         project = value.removeprefix("project:")

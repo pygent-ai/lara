@@ -1756,23 +1756,25 @@ export const RECENT_MAX_SESSIONS = 20;
 // Merge every scope's sessions into the recents pool: pinned lead in their
 // pin order, the rest follows by recency, then the pool is capped.
 export function splitLaraSaysSession(sessionGroups) {
-  // Dedicated "Lara说" sessions are pulled out of every sidebar list and
-  // surfaced through the fixed entry; each scope may hold one, so all of
-  // them are collected and the entry picks the active scope's first.
+  // Dedicated "Lara说" sessions live in their own user-level scope and are
+  // pulled out of every sidebar list; the entry renders them, the empty
+  // synthetic scope group is dropped so no stray group header shows up.
   const laraSaysSessions = [];
   const source = Array.isArray(sessionGroups) ? sessionGroups : [];
-  const generalGroups = source.map((group) => {
-    const sessions = (group.sessions || []).filter((session) => {
-      if (isLaraSaysSession(session)) {
-        laraSaysSessions.push({ session, scope: group.scope || null });
-        return false;
-      }
-      return true;
+  const generalGroups = source
+    .filter((group) => group.scope?.scope_id !== "lara-says")
+    .map((group) => {
+      const sessions = (group.sessions || []).filter((session) => {
+        if (isLaraSaysSession(session)) {
+          laraSaysSessions.push({ session, scope: group.scope || null });
+          return false;
+        }
+        return true;
+      });
+      return sessions.length === (group.sessions || []).length
+        ? group
+        : { ...group, sessions };
     });
-    return sessions.length === (group.sessions || []).length
-      ? group
-      : { ...group, sessions };
-  });
   return { generalGroups, laraSaysSessions };
 }
 

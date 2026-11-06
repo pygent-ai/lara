@@ -8,6 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
 
 from lara.core.io import validate_path_id
+from lara.sessions import LARA_SAYS_SESSION_MODE
 from lara_api.dependencies import ApiContext, get_api_context
 from lara_api.models.requests import CreateSessionRequest, ForkSessionRequest, PinSessionRequest, ReorderSessionsRequest, SetEternalMemoryRequest, UpdateSessionModelRequest
 from lara_api.models.responses import (
@@ -19,7 +20,7 @@ from lara_api.models.responses import (
     SessionListResponse,
     SessionRecordResponse,
 )
-from lara_api.project_state import active_project_scope_id
+from lara_api.project_state import LARA_SAYS_SCOPE_ID, active_project_scope_id
 from lara_api.services.session_service import (
     SessionService,
     run_session_compression,
@@ -113,8 +114,15 @@ async def create_session(
     context: ApiContext = Depends(get_api_context),
 ) -> SessionRecordResponse:
     try:
+        # The dedicated realtime session ignores the requested scope: it is
+        # created in its user-level scope so switching projects never orphans it.
+        scope_id = (
+            LARA_SAYS_SCOPE_ID
+            if request.mode == LARA_SAYS_SESSION_MODE
+            else request.scope_id
+        )
         return session_service_for_scope(
-            context, request.scope_id, with_reminders=True
+            context, scope_id, with_reminders=True
         ).create_session(
             case_id=request.case_id,
             mode=request.mode,
