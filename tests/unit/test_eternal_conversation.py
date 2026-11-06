@@ -616,6 +616,51 @@ def test_memory_context_requires_clarification_for_unacknowledged_conflicts(
     assert "end the response with exactly one direct clarification question" in prompt
 
 
+def test_memory_context_requires_memory_search_evidence_for_conflicts(
+    tmp_path: Path,
+) -> None:
+    prompt = render_memory_context(
+        tmp_path,
+        {
+            "snapshot": {},
+            "covered_through": 4,
+            "memory_cli_command": '"python" "/memory/dynamic_memory_cli.py" --root "/session/memory"',
+        },
+    )
+    assert "search dynamic memory at least twice" in prompt
+    assert (
+        "once for the exact proper noun, codename, alias, or named constraint"
+        in prompt
+    )
+    assert (
+        "once for the affected component or the contradictory behavior" in prompt
+    )
+    assert (
+        "the only permitted tool calls are the required memory searches" in prompt
+    )
+    assert "do not inspect, modify, or test project files" in prompt
+    assert "repeat that exact original term" in prompt
+    assert "never replace it with a generic label" in prompt
+    assert "the final character of your response MUST be" in prompt
+
+
+def test_memory_context_conflict_evidence_falls_back_to_raw_history(
+    tmp_path: Path,
+) -> None:
+    prompt = render_memory_context(tmp_path, {"snapshot": {}, "covered_through": 4})
+    assert "perform the same two lookups directly against Raw History" in prompt
+    assert "the only permitted tool calls are the required memory searches" in prompt
+    assert "repeat that exact original term" in prompt
+
+
+def test_memory_context_explains_automatic_journaling(tmp_path: Path) -> None:
+    prompt = render_memory_context(tmp_path, {"snapshot": {}, "covered_through": 4})
+    assert "Memory publication is automatic and asynchronous" in prompt
+    assert "you may promise the user that something will be remembered" in prompt
+    assert "do not claim loss" in prompt
+    assert "long-term publication is pending" in prompt
+
+
 @pytest.mark.parametrize(
     "projection",
     [

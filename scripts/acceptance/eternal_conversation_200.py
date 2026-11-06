@@ -2083,7 +2083,11 @@ async def run(args: argparse.Namespace) -> int:
         write_json(run_root / "tasks.json", {"tasks": tasks})
     else:
         write_json(run_root / "tasks.json", {"tasks": tasks})
-        session_ref = manager.create("eternal-blind-500", mode="chat")
+        # The runtime gates the eternal conversation per session
+        # (eternal_enabled_for); the acceptance must opt its session in.
+        session_ref = manager.create(
+            "eternal-blind-500", mode="chat", eternal_memory=True
+        )
         fresh_history = fresh_session_evidence(manager, session_ref)
         if not fresh_history["clean"]:
             raise RuntimeError(
