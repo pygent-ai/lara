@@ -15,7 +15,6 @@ from lara.schema import (
     EternalConversationConfig,
     MCPServerConfig,
     ModelRetryConfig,
-    RealtimeInteractionConfig,
     ResolvedAgentConfig,
     RunConfig,
     RuntimeApprovalConfig,
@@ -149,7 +148,6 @@ def load_run_config(
         eternal_conversation=_resolve_eternal_conversation(
             config_data, alias, root
         ),
-        realtime_interaction=_resolve_realtime_interaction(config_data),
     )
 
 
@@ -219,11 +217,6 @@ def _default_config() -> dict[str, Any]:
             "builder_agent_alias": None,
             "dynamic_memory_cli_path": None,
         },
-        "realtime_interaction": {
-            "enabled": True,
-            "nudge_interval": 5,
-            "fork_deadline_seconds": 60.0,
-        },
     }
 
 
@@ -263,7 +256,6 @@ def _validate_config_shape(data: dict[str, Any]) -> None:
             "mcp",
             "delegation",
             "eternal_conversation",
-            "realtime_interaction",
             "connections",
             "models",
             "model_groups",
@@ -348,11 +340,6 @@ def _validate_config_shape(data: dict[str, Any]) -> None:
             "extraction_trigger_ratio",
         },
         "eternal_conversation",
-    )
-    _validate_mapping(
-        data.get("realtime_interaction"),
-        {"enabled", "nudge_interval", "fork_deadline_seconds"},
-        "realtime_interaction",
     )
     agents = data.get("agents")
     if agents is not None and not isinstance(agents, list):
@@ -578,21 +565,6 @@ def _resolve_eternal_conversation(
             0.7
             if _dig(data, "eternal_conversation.extraction_trigger_ratio") is None
             else float(_dig(data, "eternal_conversation.extraction_trigger_ratio"))
-        ),
-    )
-
-
-def _resolve_realtime_interaction(data: dict[str, Any]) -> RealtimeInteractionConfig:
-    return RealtimeInteractionConfig(
-        enabled=_bool_config(
-            _dig(data, "realtime_interaction.enabled"), default=True
-        ),
-        nudge_interval=_int_config(
-            _dig(data, "realtime_interaction.nudge_interval"), default=5
-        ),
-        fork_deadline_seconds=_float_config(
-            _dig(data, "realtime_interaction.fork_deadline_seconds"),
-            default=60.0,
         ),
     )
 
