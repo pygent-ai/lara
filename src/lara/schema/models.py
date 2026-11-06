@@ -179,12 +179,7 @@ class DelegationConfig:
 
 @dataclass(slots=True)
 class RealtimeInteractionConfig:
-    """Silent-work interaction (speak, fork replies, nudges).
-
-    The config loader enables it by default (``realtime_interaction.enabled``
-    defaults to true); direct construction defaults off so tests and embedded
-    runs keep the legacy behavior unless they opt in.
-    """
+    """Silent-work interaction (speak, fork replies, nudges) — off by default."""
 
     enabled: bool = False
     nudge_interval: int = 5
