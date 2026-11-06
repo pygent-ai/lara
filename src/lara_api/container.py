@@ -267,6 +267,7 @@ class ApiContext:
                 model_configuration_error=self.config.model_configuration_error,
                 user_lara_root=self.config.user_lara_root,
                 runtime_approvals=self.config.runtime_approvals,
+                realtime_interaction=self.config.realtime_interaction,
                 max_steps=self.max_steps if self.max_steps is not None else -1,
                 context_window=self.context_window,
             )

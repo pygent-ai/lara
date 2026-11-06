@@ -99,3 +99,12 @@ runtime:
     enabled: true
     timeout_seconds: 300
     preauthorized_tools: []
+
+realtime_interaction:
+  # Silent-work interaction: speak is the only user-visible output channel,
+  # mid-turn messages fork speak replies instead of steering. Values shown are
+  # the defaults.
+  enabled: true
+  # agent rounds without a speak call before a "say something?" reminder
+  nudge_interval: 5
+  fork_deadline_seconds: 60
