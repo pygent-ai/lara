@@ -1432,7 +1432,9 @@ class LaraRuntimeService:
             resolved_attachments = resolve_attachments(
                 attachments, config.workspace_root
             )
-        if message_kind == "lara.automation.trigger":
+        if message_kind in ("lara.automation.trigger", "lara.realtime.finalizer"):
+            # Harness-triggered injections carry their own framing; wrapping
+            # them in <user-context> would misrepresent their origin.
             wrapped = message
         else:
             lines = [

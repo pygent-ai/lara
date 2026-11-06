@@ -9,6 +9,8 @@ from typing import Any
 
 from lara.core.io import plain_object
 from lara.schema import CaseRunRef
+from lara.agents.context import system_reminder
+from lara.runtime.realtime.turn_finalizer import decide_turn_finalization
 
 from .managed_turn import ManagedSessionTurn
 from .models import TurnCommand, TurnState
@@ -45,6 +47,7 @@ class SessionExecutionCoordinator:
         self._session_lanes: dict[SessionExecutionKey, _SessionLane] = {}
         self._lock = asyncio.Lock()
         self._closing = False
+        self._finalized_turns: set[str] = set()
 
     async def submit_turn(
         self,
@@ -172,6 +175,11 @@ class SessionExecutionCoordinator:
             status = str(result.get("status") or "passed")
             if status == "error":
                 error_detail = str(result.get("error") or "") or None
+            else:
+                # D-RT11: a pure-text ending is invisible in speak mode, so the
+                # lane queues one bottom-line round before releasing the turn.
+                # The follow-up enters the same lane after this drive exits.
+                await self._maybe_start_finalizer(turn)
         except asyncio.CancelledError:
             status = "skipped"
             if turn.execution_handle is not None:
@@ -192,6 +200,52 @@ class SessionExecutionCoordinator:
             turn.state = terminal
             turn.ready.set()
             turn.finalized.set()
+
+    async def _maybe_start_finalizer(self, turn: ManagedSessionTurn) -> None:
+        """Queue the D-RT11 bottom-line round for a pure-text turn ending.
+
+        The final assistant message is invisible in speak mode, so the turn
+        gets exactly one follow-up round whose reminder demands an explicit
+        decision (speak the draft, or say_nothing). A second pure-text ending
+        — including any ending of a finalizer turn itself — is accepted as a
+        deliberate silent finish. The follow-up submits through the same
+        session lane, so it serializes behind this drive.
+        """
+
+        config = turn.runtime_service.config
+        if not config.realtime_interaction.enabled:
+            return
+        turn_key = (
+            turn.command.turn_id
+            or f"turn-{(turn.run_ref.case_run_id if turn.run_ref else '')[-8:]}"
+        )
+        if turn_key in self._finalized_turns or turn_key.endswith(":finalize"):
+            return
+        session = turn.manager.load(turn.command.session_id)
+        last = session.history[-1] if session.history else None
+        if (
+            not isinstance(last, dict)
+            or last.get("role") != "assistant"
+            or last.get("tool_calls")
+        ):
+            return
+        decision = decide_turn_finalization(
+            final_text=str(last.get("content") or ""), nudge_used=False
+        )
+        if decision.action != "nudge" or decision.reminder is None:
+            return
+        self._finalized_turns.add(turn_key)
+        await self.submit_turn(
+            lease=turn.lease,
+            command=TurnCommand(
+                session_id=turn.command.session_id,
+                case_id=turn.command.case_id,
+                message=system_reminder(decision.reminder),
+                turn_id=f"{turn_key}:finalize",
+                interactive_approvals=False,
+                message_kind="lara.realtime.finalizer",
+            ),
+        )
 
     @contextlib.asynccontextmanager
     async def session_execution(
