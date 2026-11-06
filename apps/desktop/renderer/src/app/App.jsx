@@ -79,6 +79,15 @@ import {
   seedBadgeBaseline,
   updateTaskbarBadge,
 } from "./taskbarBadge.js";
+import {
+  displayRowsForView,
+  extractSpeakFromTurn,
+  isSpeakToolCall,
+  loadViewMode,
+  normalizeViewMode,
+  speakArguments,
+  storeViewMode,
+} from "./realtimeView.js";
 
 function deferredPanel(load, exportName) {
   const Component = lazy(() => load().then((module) => ({ default: module[exportName] })));
@@ -99,6 +108,7 @@ const EMPTY_SETTINGS = {
   agent: "default",
   model_configuration_status: "unconfigured",
   model_configuration_error: "model_configuration_required",
+  realtime_interaction_enabled: false,
   connections: {},
   models: {},
   model_groups: {},
@@ -252,6 +262,11 @@ export function App() {
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
   }, [activeSessionId]);
+  const [speakUnread, setSpeakUnread] = useState({});
+  const speakUnreadTotal = useMemo(
+    () => Object.values(speakUnread).reduce((sum, item) => sum + (Number(item) || 0), 0),
+    [speakUnread],
+  );
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -1149,6 +1164,36 @@ export function App() {
                 }
                 setPendingSteerings((items) => resolvePendingSteering(items, streamSessionId, inputId));
               }
+              if (eventKind === "lara.realtime.speak") {
+                // The proactive-speak bubble (D-RT12): append to the live
+                // transcript; unread accrues when the session is not on the
+                // front view.
+                const speakData = eventData || {};
+                const speakRow = {
+                  id: `speak-${streamSessionId}-${Date.now()}`,
+                  role: "assistant",
+                  status: "done",
+                  content: "",
+                  speak: {
+                    text: String(speakData.text || ""),
+                    attachments: Array.isArray(speakData.attachments)
+                      ? speakData.attachments.map((item) => String(item))
+                      : [],
+                    sayNothing: false,
+                  },
+                  frontSpeak: true,
+                };
+                streamMessages = [...(streamMessages || []), speakRow];
+                updateCachedMessages(() => streamMessages);
+                messagesRef.current = streamMessages;
+                if (isStreamSessionVisible()) setMessages(() => streamMessages);
+                if (loadViewMode(streamSessionId) !== "front") {
+                  setSpeakUnread((items) => ({
+                    ...items,
+                    [streamSessionId]: (items[streamSessionId] || 0) + 1,
+                  }));
+                }
+              }
               if (eventKind === "lara.approval.requested") {
                 setApprovals((items) => [
                   ...items.filter((item) => item.approval_id !== eventData.approval_id),
@@ -1337,12 +1382,36 @@ export function App() {
     // input and emit its boundary while steerChat is still in flight, and a
     // chip added after that boundary event would never be resolved.
     setPendingSteerings((items) => addPendingSteering(items, sessionId, { inputId, text: message, attachments }));
+    let receipt;
     try {
-      await api.steerChat(execution.executionId, { sessionId, inputId, message, attachments });
+      receipt = await api.steerChat(execution.executionId, { sessionId, inputId, message, attachments });
     } catch (err) {
       // The runtime never accepted the input, so no boundary event will resolve it.
       setPendingSteerings((items) => resolvePendingSteering(items, sessionId, inputId));
       throw err;
+    }
+    const reply = receipt?.reply;
+    if (reply && !reply.say_nothing) {
+      // Realtime fork path (D-RT12): the reply rides the HTTP response and is
+      // transient — it renders as a speak bubble and never hits the journal.
+      const forkRow = {
+        id: `fork-${inputId}`,
+        role: "assistant",
+        status: "done",
+        content: "",
+        speak: {
+          text: String(reply.text || ""),
+          attachments: Array.isArray(reply.attachments) ? reply.attachments.map((item) => String(item)) : [],
+          sayNothing: false,
+        },
+        frontSpeak: true,
+      };
+      setMessages((items) => [...items, forkRow]);
+      if (activeSessionIdRef.current === sessionId) {
+        setNotice("已在不打断工作的情况下回复你。");
+      }
+      setPendingSteerings((items) => resolvePendingSteering(items, sessionId, inputId));
+      return;
     }
     if (activeSessionIdRef.current === sessionId) {
       setNotice("指令已送达，将打断当前步骤并立即生效。");
@@ -1472,6 +1541,7 @@ export function App() {
       {!layout.historyCollapsed && <PanelDivider side="history" width={fittedWidths.history} max={Math.max(200, Math.min(480, workbenchWidth - fittedWidths.trace - 320))} onResize={(width) => resizePanel("history", width)} onDragging={setResizingPanel} />}
       {!layout.traceCollapsed && <PanelDivider side="trace" width={fittedWidths.trace} max={Math.max(260, Math.min(720, workbenchWidth - fittedWidths.history - 320))} onResize={(width) => resizePanel("trace", width)} onDragging={setResizingPanel} />}
       <SessionSidebar
+        speakUnreadTotal={speakUnreadTotal}
         collapsed={layout.historyCollapsed}
         settings={settings}
         projects={projects}
@@ -1525,6 +1595,12 @@ export function App() {
         onApproval={handleApproval}
         onCompressContext={handleCompressContext}
         liveContextUsage={liveContextUsage[activeSessionId] || null}
+        realtimeInteractionEnabled={Boolean(settings.realtime_interaction_enabled)}
+        speakUnreadCount={speakUnread[activeSessionId] || 0}
+        onMarkSpeakRead={(sessionId) => {
+          if (!sessionId) return;
+          setSpeakUnread((items) => ({ ...items, [sessionId]: 0 }));
+        }}
         projects={projects}
         onSelectProject={handleCreateSession}
         onChooseProject={() => handleChooseProject(true)}
@@ -1659,6 +1735,7 @@ export function reorderIds(ids, fromId, toId) {
 }
 
 export const SessionSidebar = memo(function SessionSidebar({
+  speakUnreadTotal = 0,
   collapsed,
   settings,
   projects,
@@ -1746,8 +1823,8 @@ export const SessionSidebar = memo(function SessionSidebar({
     [badgeReady, sessionGroups, acknowledgedStatuses, badgeBaseline],
   );
   useEffect(() => {
-    updateTaskbarBadge(unacknowledgedCompletedCount);
-  }, [unacknowledgedCompletedCount]);
+    updateTaskbarBadge(unacknowledgedCompletedCount + speakUnreadTotal);
+  }, [unacknowledgedCompletedCount, speakUnreadTotal]);
 
   function toggleGroup(scopeId) {
     setCollapsedGroups((current) => ({ ...current, [scopeId]: !current[scopeId] }));
@@ -1806,7 +1883,10 @@ export const SessionSidebar = memo(function SessionSidebar({
       <div className="history-shell">
         <div className="history-top">
           <div className="brand">
-            <img className="brand-spark" src={laraLogo} alt="" aria-hidden="true" />
+            <span className="brand-spark-wrap">
+              <img className="brand-spark" src={laraLogo} alt="" aria-hidden="true" />
+              {speakUnreadTotal > 0 && <span className="brand-unread-dot" aria-label="有未读发言" />}
+            </span>
             <h1 className="brand-title">{collapsed ? "L" : "Lara"}</h1>
           </div>
           <div className="history-header-actions">
@@ -2171,7 +2251,7 @@ export function computeEnteringMessageIds(previous, sessionId, messages) {
   return new Set(messages.slice(previous.ids.length).map((message) => message.id));
 }
 
-export function ChatPane({ activeSession, messages, historyRemaining = 0, historyLoading = false, onLoadEarlier, activityCollapseToken, settings, status, running, steeringReady = false, approvals, pendingSteerings = [], api, onSendMessage, onForkSession, onSteering, onCancelTurn, onApproval, onCompressContext = () => {}, liveContextUsage = null, projects = [], onSelectProject, onChooseProject, onChangePermissions, pendingNewModelGroup = "", pendingNewModelKey = "", onSelectNewModel = () => {}, pendingNewSessionScope = "", onChangeModel = () => {}, composerDrafts = new Map(), fileChanges = [], onOpenFileChange = () => {} }) {
+export function ChatPane({ activeSession, messages, historyRemaining = 0, historyLoading = false, onLoadEarlier, activityCollapseToken, settings, status, running, steeringReady = false, approvals, pendingSteerings = [], api, onSendMessage, onForkSession, onSteering, onCancelTurn, onApproval, onCompressContext = () => {}, liveContextUsage = null, projects = [], onSelectProject, onChooseProject, onChangePermissions, pendingNewModelGroup = "", pendingNewModelKey = "", onSelectNewModel = () => {}, pendingNewSessionScope = "", onChangeModel = () => {}, composerDrafts = new Map(), fileChanges = [], onOpenFileChange = () => {}, speakUnreadCount = 0, onMarkSpeakRead = () => {}, realtimeInteractionEnabled = false }) {
   const empty = messages.length === 0;
   // A paused session (last run ended resumably) offers one-click continue on
   // an empty send; while it runs, the composer is in steering mode instead.
@@ -2272,9 +2352,31 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
   }, []);
   const [visibleMessageLimit, setVisibleMessageLimit] = useState(INITIAL_TRANSCRIPT_MESSAGE_LIMIT);
   const chatTitle = activeSession?.title || "选择或创建会话";
+  const realtimeSessionId = activeSession?.session_id || "";
+  const [realtimeViewMode, setRealtimeViewModeState] = useState(
+    () => loadViewMode(activeSession?.session_id),
+  );
+  useEffect(() => {
+    setRealtimeViewModeState(loadViewMode(activeSession?.session_id));
+  }, [activeSession?.session_id]);
+  const changeRealtimeViewMode = useCallback((mode) => {
+    const next = normalizeViewMode(mode);
+    setRealtimeViewModeState(next);
+    storeViewMode(activeSession?.session_id, next);
+    if (next === "front") {
+      onMarkSpeakRead?.(activeSession?.session_id);
+    }
+  }, [activeSession?.session_id, onMarkSpeakRead]);
   const visibleMessages = useMemo(
     () => latestItems(messages, visibleMessageLimit),
     [messages, visibleMessageLimit],
+  );
+  const displayMessages = useMemo(
+    () => displayRowsForView(
+      visibleMessages,
+      realtimeInteractionEnabled ? realtimeViewMode : "off",
+    ),
+    [visibleMessages, realtimeViewMode, realtimeInteractionEnabled],
   );
   const hiddenMessageCount = Math.max(0, messages.length - visibleMessages.length);
 
@@ -2587,9 +2689,15 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
                 : `显示更早消息（还有 ${hiddenMessageCount} 条）`}
           </button>
         )}
-        {visibleMessages.map((message) => (
+        {realtimeInteractionEnabled && (
+          <div className="realtime-view-toggle" role="tablist" aria-label="视图切换">
+            <button type="button" className={realtimeViewMode === "front" ? "active" : ""} onClick={() => changeRealtimeViewMode("front")}>对话</button>
+            <button type="button" className={realtimeViewMode === "back" ? "active" : ""} onClick={() => changeRealtimeViewMode("back")}>后台</button>
+          </div>
+        )}
+        {displayMessages.map((message) => (
           <MediaSourceScopeContext.Provider key={message.id} value={mediaScope}>
-            <MessageRow message={message} entering={enteringMessageIds.has(message.id)} activityCollapseToken={activityCollapseToken} api={api} scopeId={selectedScope} onForkAtMessage={handleForkAtMessage} fileChanges={fileChanges} onOpenFileChange={onOpenFileChange} />
+            <MessageRow message={message} entering={enteringMessageIds.has(message.id)} activityCollapseToken={activityCollapseToken} api={api} scopeId={selectedScope} onForkAtMessage={handleForkAtMessage} fileChanges={fileChanges} onOpenFileChange={onOpenFileChange} viewMode={realtimeInteractionEnabled ? realtimeViewMode : "off"} />
           </MediaSourceScopeContext.Provider>
         ))}
         {pendingSteerings.map((item) => (
@@ -3146,7 +3254,7 @@ export function MediaContent({ media, api, scopeId }) {
 
 // Memoized: during streaming every applied delta re-renders the transcript
 // once per frame, and only the active assistant message actually changes.
-const MessageRow = memo(function MessageRow({ message, entering = false, activityCollapseToken, api, scopeId = "", onForkAtMessage, fileChanges = [], onOpenFileChange }) {
+const MessageRow = memo(function MessageRow({ message, entering = false, activityCollapseToken, api, scopeId = "", onForkAtMessage, fileChanges = [], onOpenFileChange, viewMode = "front" }) {
   if (message.role === "activity") {
     return <ActivityMessage message={message} collapseToken={activityCollapseToken} api={api} />;
   }
@@ -3157,6 +3265,47 @@ const MessageRow = memo(function MessageRow({ message, entering = false, activit
       <div className={`message system-line${entering ? " message-enter" : ""}`} data-message-id={message.id}>
         已恢复上次会话
       </div>
+    );
+  }
+
+  if (viewMode === "front" && message.frontWorking) {
+    return (
+      <article className={`message assistant realtime-working${entering ? " message-enter" : ""}`} data-message-id={message.id}>
+        <div className="avatar">L</div>
+        <div className="bubble realtime-working-bubble">
+          <span className="working-dots" aria-hidden="true"><span /><span /><span /></span>
+          <span>正在处理……</span>
+        </div>
+      </article>
+    );
+  }
+
+  if (viewMode === "front" && message.frontSpeak) {
+    const speak = message.speak || {};
+    if (speak.sayNothing) {
+      return (
+        <article className={`message assistant realtime-speak${entering ? " message-enter" : ""}`} data-message-id={message.id}>
+          <div className="avatar">L</div>
+          <div className="bubble realtime-speak-bubble muted">
+            <span className="realtime-speak-text">（决定暂不打扰你）</span>
+          </div>
+        </article>
+      );
+    }
+    return (
+      <article className={`message assistant realtime-speak${entering ? " message-enter" : ""}`} data-message-id={message.id}>
+        <div className="avatar">L</div>
+        <div className="bubble realtime-speak-bubble">
+          {speak.text ? <div className="realtime-speak-text">{speak.text}</div> : null}
+          {Array.isArray(speak.attachments) && speak.attachments.length > 0 ? (
+            <div className="realtime-speak-attachments">
+              {speak.attachments.map((item) => (
+                <span key={item} className="realtime-speak-attachment">{item}</span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </article>
     );
   }
 
@@ -4614,10 +4763,12 @@ function renderTurnSegment(segment, idPrefix, timing = segment.find((message) =>
   const turnIds = [...new Set(segment
     .map((item) => String(item?.turn_id || ""))
     .filter(Boolean))];
+  const speak = extractSpeakFromTurn(segment);
   return [
     {
       id: `${idPrefix}-assistant`,
       role: "assistant",
+      ...(speak ? { speak } : {}),
       content: finalContent,
       status: "success",
       ...runTimingFields(timing),
@@ -4863,6 +5014,15 @@ export function projectLiveAssistantEvent(message, event, now = Date.now()) {
       // Pure backfill: keep streaming content where it is instead of moving it
       // into a section for a row that already exists.
       return nextSections === sections ? message : { ...message, sections: nextSections };
+    }
+    // A speak call carries its delivery payload on the row: the front view
+    // renders it as a bubble instead of the workbench card.
+    const speakRaw = calls.find((raw) => isSpeakToolCall(raw));
+    if (speakRaw) {
+      const speak = speakArguments(speakRaw);
+      if (speak) {
+        return { ...message, content: "", sections: appendToolCallsSection(nextSections, newCalls), speak };
+      }
     }
     if (String(message.content || "").trim()) {
       nextSections = appendTextSection(nextSections, "Assistant content", message.content);
