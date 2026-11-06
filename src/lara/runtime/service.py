@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Mapping, cast
 
 from pygent import (
+    AIMessage,
     ModelGroup,
     ToolKit,
     UserMessage,
