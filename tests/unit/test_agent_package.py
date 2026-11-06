@@ -10,11 +10,8 @@ from pygent import (
     ModelEntry,
     ModelErrorKind,
     ModelSpec,
-    Module,
     PygentAgent,
     PygentAgentContext,
-    ToolCall,
-    ToolMessage,
     UserMessage,
     freeze_json_object,
 )
@@ -36,10 +33,6 @@ from lara.runtime.agent.core import (
     _error_trace_payload,
     _model_trace_payload,
 )
-from lara.runtime.agent.pipeline import (
-    MAX_IDENTICAL_FOREGROUND_TOOL_CALLS,
-    RepeatedToolCallGuardModule,
-)
 from lara.runtime.agent.prompt_models import PromptRenderContext
 from lara.runtime.context import LaraContext
 from tests.unit.test_model_usage_defaults import model_agent
@@ -58,36 +51,6 @@ def test_runtime_packages_do_not_reexport_implementation_symbols() -> None:
     assert not hasattr(runtime_package, "LaraAgent")
     assert not hasattr(agent_package, "LaraAgent")
     assert not hasattr(agent_package, "PromptRenderContext")
-
-
-class _EchoToolModule(Module[AIMessage, ToolMessage]):
-    async def forward(self, message, context):
-        del message
-        return ToolMessage(content="ok"), context
-
-
-@pytest.mark.asyncio
-async def test_foreground_identical_tool_call_guard_is_scoped_to_turn() -> None:
-    guard = RepeatedToolCallGuardModule(_EchoToolModule())
-    message = AIMessage(
-        tool_calls=(
-            ToolCall(
-                call_id="call-1",
-                name="bash",
-                arguments={"command": "same command"},
-            ),
-        )
-    )
-    first_turn = LaraContext(turn_id="turn-1")
-
-    for _ in range(MAX_IDENTICAL_FOREGROUND_TOOL_CALLS - 1):
-        await guard.invoke(message, first_turn)
-    with pytest.raises(
-        RuntimeError, match="identical tool arguments.*durable baseline"
-    ):
-        await guard.invoke(message, first_turn)
-
-    await guard.invoke(message, LaraContext(turn_id="turn-2"))
 
 
 def test_lara_foreground_uses_pygent_030_native_agent_and_compressor(

@@ -59,7 +59,6 @@ from .pipeline import (
     LaraToolAuthorization,
     PersistedDiffModule,
     PreparedToolModule,
-    RepeatedToolCallGuardModule,
     RuntimeReminderModule,
     ToolAuditModule,
     _model_tool_definition,
@@ -388,19 +387,15 @@ class LaraAgent(Agent[UserMessage, AIMessage]):
             )
             prepared_tools = ConversationCheckpointToolModule(
                 self.config,
-                RepeatedToolCallGuardModule(
-                    PreparedToolModule(
-                        tools=self.new_tool_layer(),
-                        audit=ToolAuditModule(self.config, bash_tasks=self.bash_tasks),
-                        reminders=RuntimeReminderModule(self.reminders),
-                        persisted_diff=PersistedDiffModule(
-                            self.workspace_root, diff_tasks
-                        ),
-                        realtime_nudge=(
-                            RealtimeNudgeModule()
-                            if self.realtime_interaction_enabled
-                            else None
-                        ),
+                PreparedToolModule(
+                    tools=self.new_tool_layer(),
+                    audit=ToolAuditModule(self.config, bash_tasks=self.bash_tasks),
+                    reminders=RuntimeReminderModule(self.reminders),
+                    persisted_diff=PersistedDiffModule(self.workspace_root, diff_tasks),
+                    realtime_nudge=(
+                        RealtimeNudgeModule()
+                        if self.realtime_interaction_enabled
+                        else None
                     ),
                 ),
             )

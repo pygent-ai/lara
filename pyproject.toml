@@ -7,7 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "dynamic-memory-cli",
     "fastapi>=0.115.0",
-    "pygent-ai[video]==0.3.32",
+    "pygent-ai[video]==0.3.33",
     "python-dateutil>=2.9.0",
     "tzdata>=2025.2",
     "tzlocal>=5.2",
@@ -28,10 +28,8 @@ credentials = [
 # The packaging lives on the codex/dynamic-memory-cli branch until it merges
 # to main (or the package is published); uv.lock pins the resolved commit.
 dynamic-memory-cli = { git = "ssh://git@github.com/pygent-ai/memory-cli", branch = "codex/dynamic-memory-cli" }
-# 0.3.32 is not on PyPI yet; resolve from the local source repo so uv sync
-# stops reverting the venv (which twice corrupted the package on the locked
-# _native.pyd). Remove this override when 0.3.32 publishes.
-pygent-ai = { path = "E:/Projects/pygent" }
+# 0.3.32 was tagged but never reached PyPI (ruff gate); 0.3.33 supersedes it
+# and publishes from PyPI, so the temporary local-path override is gone.
 
 [project.scripts]
 lara = "lara.cli:main"

@@ -835,46 +835,6 @@ class PersistedDiffModule(Module[ToolMessage, ToolMessage]):
         return message, next_context
 
 
-MAX_IDENTICAL_FOREGROUND_TOOL_CALLS = 8
-
-
-class _RepeatedToolCallState:
-    def __init__(self) -> None:
-        self.turn_id: str | None = None
-        self.signature: tuple[tuple[str, str], ...] | None = None
-        self.count = 0
-
-
-class RepeatedToolCallGuardModule(Module[AIMessage, ToolMessage]):
-    execution_requirements = EFFECT_FREE_RECOVERY
-    trusted_live_resource_attributes = ("state",)
-
-    def __init__(self, inner: Module[AIMessage, ToolMessage]) -> None:
-        super().__init__()
-        self.inner = inner
-        self.state = _RepeatedToolCallState()
-
-    async def forward(
-        self, message: AIMessage, context: LaraContext
-    ) -> tuple[ToolMessage, LaraContext]:
-        signature = tuple(
-            (call.name, repr(call.arguments)) for call in message.tool_calls
-        )
-        if context.turn_id == self.state.turn_id and signature == self.state.signature:
-            self.state.count += 1
-        else:
-            self.state.turn_id = context.turn_id
-            self.state.signature = signature
-            self.state.count = 1
-        if signature and self.state.count >= MAX_IDENTICAL_FOREGROUND_TOOL_CALLS:
-            raise RuntimeError(
-                "foreground Agent requested the identical tool arguments "
-                f"{self.state.count} consecutive times in turn {context.turn_id or '<unknown>'}; "
-                "stop this attempt so the caller can retry from its durable baseline"
-            )
-        return await self.inner(message, context)
-
-
 class PreparedToolModule(Module[AIMessage, ToolMessage]):
     execution_requirements = EFFECT_FREE_RECOVERY
 
