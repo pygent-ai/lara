@@ -334,6 +334,29 @@ def _context_manager(
     )
 
 
+def render_model_request_text(
+    config: Any, context: LaraContext, prompt_registry: Any
+) -> str:
+    """Render the model-request system prompt for one context.
+
+    Shared by :class:`DynamicPromptModule` (managed turns) and the fork-reply
+    path so both produce byte-identical prompt text for the same state.
+    """
+
+    tool_names = [definition.name for definition in context.tools]
+    prompt = _context_manager(config, context, prompt_registry).build_model_request_prompt(
+        context=context,
+        tool_names=tool_names,
+    )
+    text = prompt.text
+    if context.eternal_memory_enabled:
+        text = (
+            f"{text}\n\n"
+            f"{render_memory_access_instruction(_session_dir_for_run(Path(context.run_dir)), plain_object(context.memory_projection))}"
+        )
+    return text
+
+
 class DynamicPromptModule(Module[PygentMessage, PygentMessage]):
     execution_requirements = MANAGED_EFFECT_RECOVERY
     trusted_live_resource_attributes = ("config", "prompt_registry")
@@ -354,20 +377,7 @@ class DynamicPromptModule(Module[PygentMessage, PygentMessage]):
             raise RuntimeError("dynamic prompt requires managed execution")
 
         async def operation():
-            prompt = _context_manager(
-                self.config,
-                context,
-                self.prompt_registry,
-            ).build_model_request_prompt(
-                context=context,
-                tool_names=tool_names,
-            )
-            text = prompt.text
-            if context.eternal_memory_enabled:
-                text = (
-                    f"{text}\n\n"
-                    f"{render_memory_access_instruction(_session_dir_for_run(Path(context.run_dir)), plain_object(context.memory_projection))}"
-                )
+            text = render_model_request_text(self.config, context, self.prompt_registry)
             return freeze_json({"text": text})
 
         effect = await infrastructure.execute_effect(

@@ -98,7 +98,12 @@ from .agent.core import (
     LaraAgent,
     SessionCompressionModule,
 )
-from .agent.pipeline import checkpoint_conversation_message
+from .agent.pipeline import (
+    checkpoint_conversation_message,
+    render_model_request_text,
+)
+from .realtime.fork_reply import build_fork_context, run_fork_reply
+from .realtime.posting import queue_exchange_envelope
 from .agent_collaboration import (
     AGENT_COLLABORATION_TOOL_SPECS,
     visible_agent_collaboration_specs,
@@ -698,6 +703,7 @@ class LaraRuntimeService:
         config: RunConfig | None = None,
         selected_model_key: str | None = None,
         eternal_memory_enabled: bool | None = None,
+        realtime_interaction_enabled: bool | None = None,
     ) -> LaraAgent:
         effective_config = config or self.config
         resolved = effective_config.resolved_agent
@@ -711,6 +717,11 @@ class LaraRuntimeService:
             if eternal_memory_enabled is None
             else eternal_memory_enabled
         )
+        realtime_interaction = (
+            effective_config.realtime_interaction.enabled
+            if realtime_interaction_enabled is None
+            else realtime_interaction_enabled
+        )
         # The selected model decides the layer's media output modalities, so
         # agents must not be shared across different session selections.
         key = (
@@ -719,6 +730,7 @@ class LaraRuntimeService:
             selected_group,
             selected_model_key,
             eternal_memory,
+            realtime_interaction,
         )
         existing = self._agent_definitions.get(key)
         if existing is not None:
@@ -739,6 +751,7 @@ class LaraRuntimeService:
             bash_tasks=self.bash_tasks,
             selected_model_key=selected_model_key,
             eternal_memory_enabled=eternal_memory,
+            realtime_interaction_enabled=realtime_interaction,
         )
         if resolved is not None and agent.llm is not None:
             self._model_invokers.setdefault(resolved.alias, agent.llm)
@@ -1063,6 +1076,78 @@ class LaraRuntimeService:
                 )
             ),
         )
+
+    async def send_interrupt(
+        self,
+        execution_id: str,
+        *,
+        manager: SessionManager,
+        run_ref: CaseRunRef,
+        session_id: str,
+        input_id: str,
+        message: str,
+    ) -> Any:
+        """Fork-reply path for a user message arriving mid-turn (D-RT2/3).
+
+        Copies the request state up to the last checkpoint (the session's
+        committed history), renders the same system prompt as the main turn,
+        appends the user message verbatim and runs ONE model call through the
+        fork invocation — the main execution is never interrupted. Delivery
+        of the reply to the user's chat stays with the API layer; the runtime
+        queues the exchange envelope so the main agent learns what happened
+        at its next tool-result boundary. The fork reply is transient: it is
+        never recorded in the main transcript.
+        """
+
+        await self.initialize()
+        config = self.config
+        if not config.realtime_interaction.enabled:
+            raise RuntimeError("realtime interaction is not enabled")
+        session = manager.load(session_id)
+        agent = self.new_agent(
+            interactive_approvals=False,
+            model_group_name=session.model_group_name,
+            selected_model_key=session.selected_model_key,
+            eternal_memory_enabled=eternal_enabled_for(session, config),
+            realtime_interaction_enabled=True,
+        )
+        fork_context = self._restored_session_context(
+            session=session,
+            run_ref=run_ref,
+            turn_id=f"interrupt:{input_id}",
+            config=config,
+            carry_context=True,
+        )
+        system_prompt = render_model_request_text(config, fork_context, None)
+        request = build_fork_context(
+            system_prompt=system_prompt,
+            messages=tuple(fork_context.messages),
+            tools=agent.tool_definitions,
+        )
+        invoker, model_group, retry_policy = agent.fork_invocation()
+        outcome = await run_fork_reply(
+            invoker=invoker,
+            model_group=model_group,
+            retry_policy=retry_policy,
+            context=request,
+            user_message=UserMessage(content=message, kind="lara.user.interrupt"),
+            deadline=time.monotonic()
+            + config.realtime_interaction.fork_deadline_seconds,
+        )
+        if outcome.speak_args is not None and outcome.speak_args.say_nothing:
+            response_text = "(decided not to speak)"
+        elif outcome.speak_args is not None:
+            response_text = outcome.speak_args.text or ""
+        else:
+            response_text = outcome.text or ""
+        queue_exchange_envelope(
+            self.reminders.message_store,
+            session_id=session_id,
+            submission_id=f"realtime-exchange:{input_id}",
+            user_asked=message,
+            response=response_text or "(no verbal reply)",
+        )
+        return outcome
 
     async def cancel_turn(self, execution_id: str) -> bool:
         """Request cancellation of one running execution.
