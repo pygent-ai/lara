@@ -228,3 +228,139 @@ async def test_next_turn_replays_the_conversation_of_a_failed_mid_round_turn() -
             )
         finally:
             await service.close()
+
+
+class _CancelMidRoundInvoker:
+    """Turn 1 answers, turn 2 starts a slow tool and waits for the cancel."""
+
+    def __init__(self) -> None:
+        self.contexts: list[object] = []
+
+    def validate_model(self, _model: object) -> None:
+        return None
+
+    async def aclose(self) -> None:
+        return None
+
+    def execute(self, *, message: object, context: object = None, **_kwargs: object):
+        self.contexts.append(context)
+
+        async def invoke(_emit: object) -> ModelProviderResponse:
+            if "<user-message>second</user-message>" in str(message.content):
+                return ModelProviderResponse(
+                    message=AIMessage(
+                        content="starting slow tool",
+                        tool_calls=(
+                            ToolCall(
+                                call_id="probe-cancel",
+                                name="bash",
+                                arguments={"command": "sleep 8"},
+                            ),
+                        ),
+                    ),
+                    usage={},
+                )
+            return ModelProviderResponse(
+                message=AIMessage(content="final answer"), usage={}
+            )
+
+        return ModelExecution(invoke)
+
+
+@pytest.mark.asyncio
+async def test_next_turn_replays_the_conversation_of_a_cancelled_mid_round_turn() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp)
+        config, service = recovery_service(workspace)
+        manager = SessionManager(config)
+        session_ref = manager.create(case_id="replay", mode="chat")
+        invoker = _CancelMidRoundInvoker()
+        assert config.resolved_agent is not None
+        service._model_invokers[config.resolved_agent.alias] = invoker
+        for agent in service._agent_definitions.values():
+            agent.llm = invoker
+        loop = asyncio.get_running_loop()
+
+        async def run_turn(turn_id: str, message: str):
+            run_ref = manager.start_case_run(
+                session_ref.session_id, "replay", run_config=config
+            )
+            return await service.start_turn(
+                manager=manager,
+                message=message,
+                run_ref=run_ref,
+                turn_id=turn_id,
+                interactive_approvals=False,
+                deadline=loop.time() + 60,
+            )
+
+        try:
+            handle = await run_turn("turn-1", "first")
+            await handle.result()
+
+            handle = await run_turn("turn-2", "second")
+            # Cancel while the slow tool is in flight: the assistant tool call
+            # is durable, its result never will be.
+            deadline = loop.time() + 15
+            while loop.time() < deadline:
+                history = manager.load(session_ref.session_id).history
+                if history[-1]["role"] == "assistant" and history[-1].get(
+                    "tool_calls"
+                ):
+                    break
+                await asyncio.sleep(0.05)
+            await handle.cancel()
+            with pytest.raises(BaseException):
+                await handle.result()
+
+            stale = manager.load(session_ref.session_id)
+            assert stale.metadata["last_case_run_status"] == "skipped"
+            assert [item["role"] for item in stale.history] == [
+                "user",
+                "assistant",
+                "user",
+                "assistant",
+            ]
+            stale_context = context_from_dict(
+                stale.metadata["agent_context"], registry=LARA_CONTEXT_CODECS
+            )
+            assert isinstance(stale_context, LaraContext)
+            assert len(stale_context.messages) == 2
+            assert stale.metadata["agent_context_history_count"] == 2
+
+            handle = await run_turn("turn-3", "third")
+            output, _ = await handle.result()
+            assert output.content == "final answer"
+
+            # The model of turn 3 sees the cancelled round after the
+            # checkpoint, including its unfinished tool call.
+            third_context = invoker.contexts[-1]
+            assert [message.role for message in third_context.messages] == [
+                "user",
+                "assistant",
+                "user",
+                "assistant",
+            ]
+            assert "<user-message>second</user-message>" in (
+                third_context.messages[2].content
+            )
+            assert third_context.messages[3].tool_calls[0].call_id == "probe-cancel"
+
+            healed = manager.load(session_ref.session_id)
+            agent_context = context_from_dict(
+                healed.metadata["agent_context"], registry=LARA_CONTEXT_CODECS
+            )
+            assert isinstance(agent_context, LaraContext)
+            assert [message.role for message in agent_context.messages] == [
+                "user",
+                "assistant",
+                "user",
+                "assistant",
+                "user",
+                "assistant",
+            ]
+            assert healed.metadata["agent_context_history_count"] == len(
+                healed.history
+            )
+        finally:
+            await service.close()
