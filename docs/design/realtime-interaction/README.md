@@ -188,6 +188,8 @@ ass+tool_call(speak) 或 ass（静默）   ← agent 自行判断说还是不说
 
 ## 6. 开发思路
 
+**状态（2026-11-06）**：Phase 1 与 Phase 2 的 runtime 侧全部落库——speak 通道（D-RT10）、fork_reply（D-RT2/3）、信封走 agent-message 通道、RealtimeNudgeModule（工具边界注入）、speak 工具面（realtime_interaction 门控）、send_interrupt 分流接缝、turn finalizer（coordinator lane 触发，D-RT11）。全量单测 765 通过。**待接**：API 路由（deliver_steering 按 config 分流至 send_interrupt）+ SSE 桥（fork/finalizer 气泡进桌面流，涉及桌面在途工作）+ 桌面 assistant 内容隐藏（Phase 1 item 2）+ 启用开关决策（config.realtime_interaction.enabled，默认关）。
+
 **Phase 1 — speak 通道（最小可演示）**
 
 0. 落位（D-RT9）：新建 `src/lara/runtime/realtime/` 子包，后续模块全部入包；service.py 不扩容；
