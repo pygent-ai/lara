@@ -1,17 +1,17 @@
-"""Fork-snapshot single-call reply (D-RT2/D-RT3).
+"""Fork-snapshot request construction and speak extraction (D-RT2/D-RT3).
 
-The interrupt path: copy the main agent's request state verbatim (cache
-prefix), append the user's message, and make ONE model call. Delivery is
-capability-gated (D-RT3):
+The interrupt path copies the main agent's request state verbatim (cache
+prefix), appends the user's message, and runs ONE model call. The call itself
+is a pygent managed execution (see ``fork_agent.ForkReplyModule``) so it
+shares admission, capacity coordination, journaling and recovery with every
+other runtime call. Delivery is capability-gated (D-RT3): the main path
+forces ``tool_choice="speak"`` and extracts the speak arguments; a stray text
+response is deliverable through the harness's fallback rendering
+(``via="text"``).
 
-- main path:    ``GenerationConfig(tool_choice="speak")`` forces the reply
-    through the speak tool; the speak arguments are extracted and returned.
-- fallback path: no forcing — the model replies in plain text and the harness
-    renders the final answer (``via="text"``).
-
-The call reuses the runtime's existing ``LaraModelInvoker`` so credentials,
-admission and reasoning-event relay behave exactly like foreground calls. The
-execution is transient by design: lost on crash, the user simply re-asks.
+The fork reply is transient by design: it never enters the session transcript
+(fork agents carry no conversation-checkpoint modules), and a lost reply is
+simply re-asked.
 """
 
 from __future__ import annotations
@@ -19,19 +19,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from pygent import (
-    AIMessage,
-    Context,
-    GenerationConfig,
-    Message,
-    RetryPolicy,
-    ToolDefinition,
-)
+from pygent import AIMessage, Context, Message, ToolDefinition
 
 from lara.runtime.realtime.speak import SPEAK_TOOL_NAME, SpeakArgs, parse_speak_args
-
-FORCED_SPEAK_GENERATION = GenerationConfig(tool_choice=SPEAK_TOOL_NAME)
-FALLBACK_GENERATION = GenerationConfig()
 
 
 @dataclass(frozen=True)
@@ -73,57 +63,9 @@ def extract_speak_args(message: AIMessage) -> SpeakArgs | None:
     return None
 
 
-async def run_fork_reply(
-    *,
-    invoker,
-    model_group,
-    retry_policy: RetryPolicy,
-    context: Context,
-    user_message: Message,
-    force_speak: bool = True,
-    deadline: float | None = None,
-) -> ForkReplyOutcome:
-    """Run the single fork model call and normalize the reply.
-
-    ``force_speak`` selects the delivery path (D-RT3); the caller gates it on
-    the model's declared ``tools.choice`` capability. ``context`` must carry
-    the copied prefix **including** the speak tool definition, and must NOT
-    contain the user message — it is passed separately as ``user_message``
-    (pygent appends ``current`` after ``context.messages``).
-    """
-
-    generation = FORCED_SPEAK_GENERATION if force_speak else FALLBACK_GENERATION
-    execution = invoker.execute(
-        model_group=model_group,
-        retry_policy=retry_policy,
-        generation=generation,
-        message=user_message,
-        context=context,
-        tools=tuple(context.tools),
-        deadline=deadline,
-    )
-    response = await execution.result()
-    message = response.message
-
-    if force_speak:
-        speak_args = extract_speak_args(message)
-        if speak_args is not None:
-            return ForkReplyOutcome(
-                via="speak", speak_args=speak_args, text=None, message=message
-            )
-        # Forced calls should always carry speak; a stray text response is
-        # still deliverable through the fallback rendering.
-    return ForkReplyOutcome(
-        via="text", speak_args=None, text=message.content or "", message=message
-    )
-
-
 __all__ = [
-    "FALLBACK_GENERATION",
-    "FORCED_SPEAK_GENERATION",
     "ForkReplyOutcome",
     "SPEAK_TOOL_NAME",
     "build_fork_context",
     "extract_speak_args",
-    "run_fork_reply",
 ]
