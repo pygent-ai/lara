@@ -32,6 +32,7 @@ from pygent.runtime import (
     DurableToolTaskManager,
     ExecutionAdmissionError,
     ExecutionCapacityPolicy,
+    ExecutionOptions,
     LocalRuntime,
     SQLiteCapacityCoordinator,
     SQLiteHistoryStore,
@@ -97,6 +98,7 @@ from .agent.core import (
     LARA_PROJECTION_READY_KIND,
     LaraAgent,
     SessionCompressionModule,
+    model_retry_policy,
 )
 from .agent.pipeline import (
     checkpoint_conversation_message,
@@ -868,6 +870,17 @@ class LaraRuntimeService:
             raise
         return handle
 
+    def _model_calls_option(
+        self, group_name: str, selected_model_key: str | None
+    ) -> dict[str, dict[str, str]]:
+        """The ExecutionOptions ``model_calls`` entry for one group/profile."""
+
+        return {
+            f"lara:{group_name}": {
+                "profile": preferred_profile_name(selected_model_key)
+            }
+        }
+
     async def start_turn(
         self,
         *,
@@ -881,8 +894,6 @@ class LaraRuntimeService:
         attachments: Sequence[str] = (),
         deadline: float | None = None,
     ) -> Any:
-        from pygent.runtime import ExecutionOptions
-
         await self.initialize()
         group_name, selected_model_key = manager.model_selection(run_ref.session_id)
         agent = self.new_agent(
@@ -914,11 +925,7 @@ class LaraRuntimeService:
                     idempotency_key=run_ref.case_run_id,
                     identity=run_ref.session_id,
                     model_calls=(
-                        {
-                            f"lara:{group_name}": {
-                                "profile": preferred_profile_name(selected_model_key)
-                            }
-                        }
+                        self._model_calls_option(group_name, selected_model_key)
                         if agent.llm is not None
                         else {}
                     ),
@@ -991,8 +998,6 @@ class LaraRuntimeService:
                 "session context has no projected history to compress"
             )
         bound = await self.bind(SessionCompressionModule(agent), agent)
-        from pygent.runtime import ExecutionOptions
-
         handle = await bound.start(
             UserMessage(content="compress context", kind="lara.session.compress"),
             context,
@@ -1000,12 +1005,8 @@ class LaraRuntimeService:
                 request_id=request_id,
                 idempotency_key=request_id,
                 identity=session_id,
-                model_calls=(
-                    {
-                        f"lara:{group_name}": {
-                            "profile": preferred_profile_name(selected_model_key)
-                        }
-                    }
+                model_calls=self._model_calls_option(
+                    group_name, selected_model_key
                 ),
                 deadline=(
                     deadline
@@ -1105,8 +1106,6 @@ class LaraRuntimeService:
         config = self.config
         if not config.realtime_interaction.enabled:
             raise RuntimeError("realtime interaction is not enabled")
-        from pygent.runtime import ExecutionOptions
-
         session = manager.load(session_id)
         main_agent = self.new_agent(
             interactive_approvals=False,
@@ -1118,7 +1117,7 @@ class LaraRuntimeService:
         fork_context = self._restored_session_context(
             session=session,
             run_ref=run_ref,
-            turn_id=f"interrupt:{input_id}",
+            turn_id=f"fork:{input_id}",
             config=config,
             carry_context=True,
         )
@@ -1136,11 +1135,7 @@ class LaraRuntimeService:
         bound = await self.bind(fork_agent, fork_agent)
         group_name = session.model_group_name or config.resolved_agent.default_model_group
         model_calls = (
-            {
-                f"lara:{group_name}": {
-                    "profile": preferred_profile_name(session.selected_model_key)
-                }
-            }
+            self._model_calls_option(group_name, session.selected_model_key)
             if main_agent.llm is not None
             else {}
         )
@@ -1201,16 +1196,7 @@ class LaraRuntimeService:
             model_group_name=group_name,
             llm=invoker,
             tools=tools,
-            retry_policy=RetryPolicy(
-                max_attempts_per_model=retry.max_attempts_per_model,
-                retry_on=MODEL_RETRYABLE_ERROR_KINDS,
-                attempt_idle_timeout_seconds=retry.attempt_idle_timeout_seconds,
-                backoff=ExponentialBackoff(
-                    initial=retry.backoff_initial,
-                    maximum=retry.backoff_maximum,
-                    multiplier=retry.backoff_multiplier,
-                ),
-            ),
+            retry_policy=model_retry_policy(retry),
         )
         self._fork_agents[key] = agent
         return agent
@@ -1311,8 +1297,6 @@ class LaraRuntimeService:
         case: Any,
         run_ref: CaseRunRef,
     ) -> dict[str, Any]:
-        from pygent.runtime import ExecutionOptions
-
         await self.initialize()
 
         store = EventStore(run_ref)
@@ -1387,11 +1371,7 @@ class LaraRuntimeService:
                     idempotency_key=run_ref.case_run_id,
                     identity=run_ref.session_id,
                     model_calls=(
-                        {
-                            f"lara:{group_name}": {
-                                "profile": preferred_profile_name(selected_model_key)
-                            }
-                        }
+                        self._model_calls_option(group_name, selected_model_key)
                         if agent.llm is not None
                         else {}
                     ),

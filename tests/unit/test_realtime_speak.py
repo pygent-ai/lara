@@ -11,7 +11,7 @@ from lara.runtime.realtime.speak import (
     SpeakArgsError,
     execute_speak,
     parse_speak_args,
-    resolve_attachments,
+    resolve_speak_attachments,
 )
 
 
@@ -84,20 +84,20 @@ def test_parse_attachment_items_must_be_strings() -> None:
 
 def test_resolve_attachments_happy_path(tmp_path: Path) -> None:
     (tmp_path / "report.md").write_text("data", encoding="utf-8")
-    resolved = resolve_attachments(tmp_path, ["report.md"])
+    resolved = resolve_speak_attachments(tmp_path, ["report.md"])
     assert resolved == (tmp_path / "report.md",)
 
 
 def test_resolve_attachments_refuses_traversal(tmp_path: Path) -> None:
     outside = tmp_path.parent / "outside.txt"
     outside.write_text("x", encoding="utf-8")
-    with pytest.raises(SpeakArgsError, match="escapes the workspace"):
-        resolve_attachments(tmp_path, ["../outside.txt"])
+    with pytest.raises(ValueError, match="escapes the workspace"):
+        resolve_speak_attachments(tmp_path, ["../outside.txt"])
 
 
 def test_resolve_attachments_refuses_missing_file(tmp_path: Path) -> None:
-    with pytest.raises(SpeakArgsError, match="not a file"):
-        resolve_attachments(tmp_path, ["ghost.md"])
+    with pytest.raises(ValueError, match="not found"):
+        resolve_speak_attachments(tmp_path, ["ghost.md"])
 
 
 def test_execute_speak_delivers_text() -> None:

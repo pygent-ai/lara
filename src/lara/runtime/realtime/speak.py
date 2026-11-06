@@ -17,6 +17,8 @@ from typing import Protocol
 from pygent import IdempotencyPolicy, ToolDefinition, ToolSideEffect
 from pygent.tool import ToolSpec
 
+from lara.runtime.attachments import resolve_attachments
+
 SPEAK_TOOL_ID = "lara.realtime.speak"
 SPEAK_RESOURCE_KEY = "lara-realtime-speak"
 SPEAK_TOOL_NAME = "speak"
@@ -135,21 +137,13 @@ class SpeakRenderer(Protocol):
         ...
 
 
-def resolve_attachments(
+def resolve_speak_attachments(
     workspace_root: Path, raw: Sequence[str]
 ) -> tuple[Path, ...]:
-    """Resolve attachment paths inside the workspace, refusing traversal."""
+    """Resolve attachment paths through the canonical workspace resolver."""
 
-    root = workspace_root.resolve()
-    resolved: list[Path] = []
-    for item in raw:
-        candidate = (root / item).resolve()
-        if candidate != root and root not in candidate.parents:
-            raise SpeakArgsError(f"attachment escapes the workspace: {item}")
-        if not candidate.is_file():
-            raise SpeakArgsError(f"attachment is not a file: {item}")
-        resolved.append(candidate)
-    return tuple(resolved)
+    resolved = resolve_attachments(raw, workspace_root)
+    return tuple(item.path for item in resolved)
 
 
 def execute_speak(
@@ -168,7 +162,7 @@ def execute_speak(
             raise SpeakArgsError(
                 "workspace_root is required to resolve attachments"
             )
-        attachments = resolve_attachments(workspace_root, args.attachments)
+        attachments = resolve_speak_attachments(workspace_root, args.attachments)
     renderer.render(args.text or "", attachments)
     return "delivered"
 
@@ -180,5 +174,5 @@ __all__ = [
     "SpeakRenderer",
     "execute_speak",
     "parse_speak_args",
-    "resolve_attachments",
+    "resolve_speak_attachments",
 ]
