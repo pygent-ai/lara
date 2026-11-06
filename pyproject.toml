@@ -27,7 +27,7 @@ credentials = [
 [tool.uv.sources]
 # The packaging lives on the codex/dynamic-memory-cli branch until it merges
 # to main (or the package is published); uv.lock pins the resolved commit.
-dynamic-memory-cli = { git = "ssh://git@github.com/pygent-ai/memory-cli", branch = "codex/dynamic-memory-cli" }
+dynamic-memory-cli = { git = "https://github.com/pygent-ai/memory-cli", branch = "codex/dynamic-memory-cli" }
 # 0.3.32 was tagged but never reached PyPI (ruff gate); 0.3.33 supersedes it
 # and publishes from PyPI, so the temporary local-path override is gone.
 
