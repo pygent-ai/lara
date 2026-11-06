@@ -2846,6 +2846,15 @@ test("splitLaraSaysSession pulls the dedicated session out of every list", () =>
   const empty = appModule.splitLaraSaysSession(recentTestGroups());
   assert.equal(empty.laraSaysSessions.length, 0);
   assert.equal(empty.generalGroups.length, 2);
+
+  // The synthetic user-level scope group drops out entirely, so no stray
+  // "Lara说" project header renders in the projects section.
+  const withSynthetic = [
+    ...groups,
+    { scope: { scope_id: "lara-says", label: "Lara说", workspace_root: null }, sessions: [] },
+  ];
+  const split = appModule.splitLaraSaysSession(withSynthetic);
+  assert.ok(split.generalGroups.every((group) => group.scope?.scope_id !== "lara-says"));
 });
 
 test("sidebar renders the Lara说 entry above 最近对话 with its own unread dot", () => {

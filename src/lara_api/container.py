@@ -256,6 +256,9 @@ class ApiContext:
 
     def config_for_scope(self, scope: SessionScope) -> RunConfig:
         if scope.workspace_root is None:
+            # Workspace-less scopes own their storage under the user root;
+            # make sure the agent's working directory exists before tools run.
+            Path(scope.runtime_workspace_root).mkdir(parents=True, exist_ok=True)
             return RunConfig(
                 workspace_root=scope.runtime_workspace_root,
                 lara_root=scope.lara_root,
