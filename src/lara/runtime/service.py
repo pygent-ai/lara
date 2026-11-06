@@ -86,6 +86,7 @@ from lara.sessions import (
     AgentMessage,
     CollaborationOperation,
     SessionManager,
+    realtime_enabled_for,
     user_lara_root_for,
 )
 from lara.tracing import DIFF_TOOL_SPEC, DiffTool, EventStore
@@ -108,7 +109,7 @@ from .agent.pipeline import (
 from .realtime.fork_agent import ForkReplyModule, outcome_from_result
 from .realtime.fork_reply import build_fork_context
 from .realtime.posting import queue_exchange_envelope
-from .realtime.speak import SPEAK_TOOL_SPEC, parse_speak_args
+from .realtime.speak import SILENT_ACKNOWLEDGEMENT, SPEAK_TOOL_SPEC, parse_speak_args
 from .agent_collaboration import (
     AGENT_COLLABORATION_TOOL_SPECS,
     visible_agent_collaboration_specs,
@@ -198,7 +199,7 @@ class _SpeakExecutor:
         del spec
         args = parse_speak_args(plain_object(call.arguments))
         if args.say_nothing:
-            return "acknowledged (silent)"
+            return SILENT_ACKNOWLEDGEMENT
         if context.emit is None:  # pragma: no cover - managed executions carry emit
             raise RuntimeError("speak delivery requires an execution event emitter")
         attachments: list[str] = []
@@ -929,13 +930,13 @@ class LaraRuntimeService:
     ) -> Any:
         await self.initialize()
         group_name, selected_model_key = manager.model_selection(run_ref.session_id)
+        session = manager.load(run_ref.session_id)
         agent = self.new_agent(
             interactive_approvals=interactive_approvals,
             model_group_name=group_name,
             selected_model_key=selected_model_key,
-            eternal_memory_enabled=eternal_enabled_for(
-                manager.load(run_ref.session_id), self.config
-            ),
+            eternal_memory_enabled=eternal_enabled_for(session, self.config),
+            realtime_interaction_enabled=realtime_enabled_for(session),
         )
         turn_message, turn_context = await self._prepare_turn(
             manager=manager,
@@ -1137,9 +1138,9 @@ class LaraRuntimeService:
 
         await self.initialize()
         config = self.config
-        if not config.realtime_interaction.enabled:
-            raise RuntimeError("realtime interaction is not enabled")
         session = manager.load(session_id)
+        if not realtime_enabled_for(session):
+            raise RuntimeError("realtime interaction is not enabled for this session")
         main_agent = self.new_agent(
             interactive_approvals=False,
             model_group_name=session.model_group_name,
@@ -1268,13 +1269,15 @@ class LaraRuntimeService:
         group_name, selected_model_key = session_manager.model_selection(
             recovered_context.session_id
         )
+        recovered_session = session_manager.load(recovered_context.session_id)
         agent = self.new_agent(
             interactive_approvals=True,
             model_group_name=group_name,
             selected_model_key=selected_model_key,
             eternal_memory_enabled=eternal_enabled_for(
-                session_manager.load(recovered_context.session_id), self.config
+                recovered_session, self.config
             ),
+            realtime_interaction_enabled=realtime_enabled_for(recovered_session),
         )
         bound = await self.bind(agent, agent)
         await self.runtime.recover_tool_jobs(bound)
@@ -1376,13 +1379,13 @@ class LaraRuntimeService:
         if carry_context and messages[:-1]:
             session = manager.load(run_ref.session_id)
         group_name, selected_model_key = manager.model_selection(run_ref.session_id)
+        session = manager.load(run_ref.session_id)
         agent = self.new_agent(
             interactive_approvals=False,
             model_group_name=group_name,
             selected_model_key=selected_model_key,
-            eternal_memory_enabled=eternal_enabled_for(
-                manager.load(run_ref.session_id), self.config
-            ),
+            eternal_memory_enabled=eternal_enabled_for(session, self.config),
+            realtime_interaction_enabled=realtime_enabled_for(session),
         )
         turn_message, turn_context = await self._prepare_turn(
             manager=manager,

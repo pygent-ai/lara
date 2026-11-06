@@ -29,6 +29,21 @@ from lara.schema import (
 )
 from lara.sessions.directory import SessionDirectory, user_lara_root_for
 
+# The dedicated session where realtime silent-work interaction lives: the
+# agent works silently and ``speak`` is the only user-visible channel.
+LARA_SAYS_SESSION_MODE = "lara-says"
+
+
+def realtime_enabled_for(session: AgentSession) -> bool:
+    """Realtime interaction is exclusive to the ``lara-says`` session.
+
+    Every other session keeps the live-work behavior regardless of the
+    realtime runtime config, so the dedicated sidebar entry is the only
+    place speak bubbles, fork replies and nudges exist.
+    """
+
+    return str(session.metadata.get("mode") or "") == LARA_SAYS_SESSION_MODE
+
 
 class SessionManager:
     def __init__(self, config: RunConfig):

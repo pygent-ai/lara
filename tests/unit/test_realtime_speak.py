@@ -112,7 +112,10 @@ def test_execute_speak_silent_skips_renderer() -> None:
     renderer = RecordingRenderer()
     args = parse_speak_args({"say_nothing": True})
     result = execute_speak(args, renderer=renderer)
-    assert result == "acknowledged (silent)"
+    assert result == (
+        "acknowledged (silent). Your decision is recorded - do not call "
+        "speak again; end this turn with a normal plain-text reply."
+    )
     assert renderer.calls == []
 
 
@@ -176,7 +179,10 @@ async def test_executor_say_nothing_emits_nothing() -> None:
         SimpleNamespace(arguments={"say_nothing": True}),
         context,
     )
-    assert result == "acknowledged (silent)"
+    assert result == (
+        "acknowledged (silent). Your decision is recorded - do not call "
+        "speak again; end this turn with a normal plain-text reply."
+    )
     assert context.events == []
 
 

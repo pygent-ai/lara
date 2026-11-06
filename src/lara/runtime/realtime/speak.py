@@ -23,6 +23,15 @@ SPEAK_TOOL_ID = "lara.realtime.speak"
 SPEAK_RESOURCE_KEY = "lara-realtime-speak"
 SPEAK_TOOL_NAME = "speak"
 
+# The tool result for a deliberate ``say_nothing`` decision. It must steer the
+# model back to a plain-text turn ending: after every tool result pygent runs
+# another round, and a bare acknowledgement left the finalizer round looping
+# on say_nothing calls until the step cap (observed 70 in a row).
+SILENT_ACKNOWLEDGEMENT = (
+    "acknowledged (silent). Your decision is recorded - do not call speak "
+    "again; end this turn with a normal plain-text reply."
+)
+
 SPEAK_TOOL_SPEC = ToolSpec(
     tool_id=SPEAK_TOOL_ID,
     version="1",
@@ -154,7 +163,7 @@ def execute_speak(
     """Deliver a validated speak call and return the tool_result text."""
 
     if args.say_nothing:
-        return "acknowledged (silent)"
+        return SILENT_ACKNOWLEDGEMENT
     attachments: tuple[Path, ...] = ()
     if args.attachments:
         if workspace_root is None:

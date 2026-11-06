@@ -253,11 +253,7 @@ async def test_nonterminal_durable_execution_is_recovered_instead_of_only_attach
         def __init__(self) -> None:
             self.runtime = _ManagedRuntime()
             self.recovered: list[str] = []
-            # The turn drive reads the realtime flag at completion; the stub
-            # models the production RunConfig field (disabled here).
-            self.config = SimpleNamespace(
-                realtime_interaction=SimpleNamespace(enabled=False)
-            )
+            self.config = SimpleNamespace()
 
         async def initialize(self) -> None:
             return None
@@ -278,6 +274,11 @@ async def test_nonterminal_durable_execution_is_recovered_instead_of_only_attach
             self.sessions_root = tmp_path / "sessions"
             self.config = SimpleNamespace()
             self.finished: list[tuple[CaseRunRef, str]] = []
+
+        def load(self, session_id: str):
+            # The completion drive consults the session mode for the realtime
+            # finalizer gate; this recovery stub models a regular chat session.
+            return SimpleNamespace(metadata={"mode": "chat"}, history=[])
 
         def load_run_config(self, ref: CaseRunRef, *, credential_source):
             assert ref is run_ref
@@ -964,7 +965,7 @@ def test_resume_request_accepts_only_pure_resume() -> None:
 
 
 class _StubActive:
-    def __init__(self, runtime_service, session_id="session-1", case_run_id="run-1"):
+    def __init__(self, runtime_service, session_id="session-1", case_run_id="run-1", mode="chat"):
         self.runtime_service = runtime_service
         self.run_ref = CaseRunRef(
             session_id=session_id,
@@ -972,7 +973,9 @@ class _StubActive:
             case_run_id=case_run_id,
             run_dir=".",
         )
-        self.manager = SimpleNamespace()
+        self.manager = SimpleNamespace(
+            load=lambda sid: SimpleNamespace(metadata={"mode": mode}, history=[])
+        )
 
 
 class _StubRuntimeService:
@@ -1012,9 +1015,9 @@ class _StubRegistry(ChatRunRegistry):
         self.coordinator = _StubCoordinator(active)
 
 
-async def test_deliver_steering_routes_to_interrupt_when_realtime_enabled() -> None:
+async def test_deliver_steering_routes_to_interrupt_for_lara_says_session() -> None:
     service = _StubRuntimeService(enabled=True)
-    registry = _StubRegistry(_StubActive(service))
+    registry = _StubRegistry(_StubActive(service, mode="lara-says"))
     receipt = await registry.deliver_steering(
         "execution-1", session_id="session-1", input_id="input-1",
         message="进度如何",
@@ -1027,9 +1030,9 @@ async def test_deliver_steering_routes_to_interrupt_when_realtime_enabled() -> N
     assert service.interrupts[0]["input_id"] == "input-1"
 
 
-async def test_deliver_steering_keeps_steering_when_realtime_disabled() -> None:
-    service = _StubRuntimeService(enabled=False)
-    registry = _StubRegistry(_StubActive(service))
+async def test_deliver_steering_keeps_steering_for_regular_sessions() -> None:
+    service = _StubRuntimeService(enabled=True)
+    registry = _StubRegistry(_StubActive(service, mode="chat"))
     receipt = await registry.deliver_steering(
         "execution-1", session_id="session-1", input_id="input-1",
         message="继续",

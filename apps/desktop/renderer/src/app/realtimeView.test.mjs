@@ -5,6 +5,8 @@ import {
   displayRowsForView,
   extractSpeakFromTurn,
   isInternalMessage,
+  isLaraSaysSession,
+  LARA_SAYS_SESSION_MODE,
   loadViewMode,
   normalizeViewMode,
   storeViewMode,
@@ -179,4 +181,11 @@ test("front filtering composes with speak history rows", () => {
   const front = displayRowsForView(rows, "front");
   assert.deepEqual(front.map((row) => row.id), ["u1", "a1"]);
   assert.equal(front[1].speak.attachments[0], "out/result.txt");
+});
+
+test("isLaraSaysSession matches only the dedicated session mode", () => {
+  assert.equal(isLaraSaysSession({ mode: LARA_SAYS_SESSION_MODE }), true);
+  assert.equal(isLaraSaysSession({ mode: "chat" }), false);
+  assert.equal(isLaraSaysSession({}), false);
+  assert.equal(isLaraSaysSession(null), false);
 });

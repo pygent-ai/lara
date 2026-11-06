@@ -11,7 +11,7 @@ immediately preceding assistant message, already in context — quoting it would
 duplicate tokens right next to the original.
 
 Case "final response is a speak call" belongs to ``speak.execute_speak``
-(``say_nothing=true`` → ``acknowledged (silent)``, nothing rendered) and never
+(``say_nothing=true`` → ``SILENT_ACKNOWLEDGEMENT``, nothing rendered) and never
 reaches this module.
 """
 
