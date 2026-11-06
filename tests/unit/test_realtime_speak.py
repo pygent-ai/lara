@@ -129,3 +129,79 @@ def test_execute_speak_attachments_need_workspace(tmp_path: Path) -> None:
     args = parse_speak_args({"attachments": ["out.md"]})
     with pytest.raises(SpeakArgsError, match="workspace_root"):
         execute_speak(args, renderer=RecordingRenderer())
+
+
+# --- the runtime executor (stream-event delivery) ---
+
+import json
+from types import SimpleNamespace
+
+from lara.runtime.service import _SpeakExecutor
+
+
+class _RecordingContext:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict]] = []
+
+    async def emit(self, kind: str, data: dict) -> None:
+        self.events.append((kind, json.loads(json.dumps(data))))
+
+
+def _executor(tmp_path: Path) -> _SpeakExecutor:
+    service = SimpleNamespace(
+        config=SimpleNamespace(workspace_root=str(tmp_path))
+    )
+    return _SpeakExecutor(service)
+
+
+async def test_executor_emits_speak_event(tmp_path: Path) -> None:
+    executor = _executor(tmp_path)
+    context = _RecordingContext()
+    result = await executor.execute(
+        SPEAK_TOOL_SPEC,
+        SimpleNamespace(arguments={"text": "干完了", "attachments": []}),
+        context,
+    )
+    assert result == "delivered"
+    assert context.events == [
+        ("lara.realtime.speak", {"text": "干完了", "attachments": []})
+    ]
+
+
+async def test_executor_say_nothing_emits_nothing() -> None:
+    executor = _executor(Path("."))
+    context = _RecordingContext()
+    result = await executor.execute(
+        SPEAK_TOOL_SPEC,
+        SimpleNamespace(arguments={"say_nothing": True}),
+        context,
+    )
+    assert result == "acknowledged (silent)"
+    assert context.events == []
+
+
+async def test_executor_reports_workspace_relative_attachments(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "out").mkdir()
+    (tmp_path / "out" / "result.txt").write_text("x", encoding="utf-8")
+    executor = _executor(tmp_path)
+    context = _RecordingContext()
+    await executor.execute(
+        SPEAK_TOOL_SPEC,
+        SimpleNamespace(
+            arguments={"text": "结果在这", "attachments": ["out/result.txt"]}
+        ),
+        context,
+    )
+    assert context.events[0][1]["attachments"] == ["out/result.txt"]
+
+
+async def test_executor_rejects_empty_speak(tmp_path: Path) -> None:
+    executor = _executor(tmp_path)
+    with pytest.raises(SpeakArgsError):
+        await executor.execute(
+            SPEAK_TOOL_SPEC,
+            SimpleNamespace(arguments={}),
+            _RecordingContext(),
+        )
