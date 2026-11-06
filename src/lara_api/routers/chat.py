@@ -59,7 +59,15 @@ async def deliver_steering(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if receipt.status == "execution_finished":
         raise HTTPException(status_code=409, detail="当前执行已结束，无法追加指令；请作为新消息发送。")
-    return {"execution_id": execution_id, "input_id": receipt.input_id, "status": receipt.status}
+    response: dict[str, object] = {
+        "execution_id": execution_id,
+        "input_id": receipt.input_id,
+        "status": receipt.status,
+    }
+    reply = getattr(receipt, "reply", None)
+    if reply is not None:
+        response["reply"] = reply
+    return response
 
 @router.post("/executions/{execution_id}/cancel")
 async def cancel_execution(
