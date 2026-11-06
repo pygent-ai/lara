@@ -379,13 +379,7 @@ class LaraRuntimeService:
                 capacity_key="lara-api-tool",
                 scope=scope,
             ),
-            durability=DurabilityPolicy(
-                DurabilityMode(
-                    DurabilityMode.DISABLED.value
-                    if config.runtime_steering.mode == "immediate"
-                    else config.runtime_durability.mode
-                )
-            ),
+            durability=DurabilityPolicy(DurabilityMode(config.runtime_durability.mode)),
         )
         self.external_tools: tuple[ToolSpec, ...] = visible_agent_collaboration_specs(
             config,

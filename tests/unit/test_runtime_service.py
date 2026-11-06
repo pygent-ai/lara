@@ -565,7 +565,7 @@ async def test_projection_delivery_failure_cancels_started_execution():
     assert calls == ["cancelled"]
 
 @pytest.mark.asyncio
-async def test_default_steering_mode_runs_turns_interruptible() -> None:
+async def test_default_steering_mode_runs_turns_durable_and_interruptible() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         config = load_run_config(workspace_root=Path(tmp))
         assert config.runtime_steering.mode == "immediate"
@@ -573,7 +573,10 @@ async def test_default_steering_mode_runs_turns_interruptible() -> None:
         try:
             agent = service.new_agent(interactive_approvals=False)
             report = service.binding.bind(agent).durability
-            assert "durability.sqlite" not in report.effective_capabilities
+            # pygent 0.3.33 interrupts in-flight steps on durable executions,
+            # so immediate steering no longer trades away the journal that
+            # feeds the trace Context inspector.
+            assert "durability.sqlite" in report.effective_capabilities
         finally:
             await service.close()
 

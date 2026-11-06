@@ -89,11 +89,12 @@ class RuntimeSteeringConfig:
     """Steering delivery mode for interactive agent turns.
 
     ``immediate`` lets a steering message interrupt the in-flight model or
-    tool step so it becomes the next model input as soon as possible. Pygent
-    only provides in-flight interrupts on non-durable executions, so this
-    mode runs interactive turns in memory and turns off per-turn crash
-    recovery. ``wait`` keeps durable, recoverable turns; steering then
-    applies at the next processing boundary.
+    tool step so it becomes the next model input as soon as possible; since
+    pygent 0.3.33 the interrupt also cooperatively cancels the in-flight
+    step on durable executions, so turns keep per-turn crash recovery and
+    the journal that feeds the trace Context inspector. ``wait`` keeps the
+    same durable turns but delivers steering only at the next processing
+    boundary without interrupting.
     """
 
     mode: Literal["wait", "immediate"] = "immediate"
