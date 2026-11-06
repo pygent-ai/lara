@@ -189,7 +189,7 @@ ass+tool_call(speak) 或 ass（静默）   ← agent 自行判断说还是不说
 
 ## 6. 开发思路
 
-**状态（2026-11-06）**：Phase 1 与 Phase 2 的 runtime 侧全部落库——speak 通道（D-RT10）、fork_reply（D-RT2/3）、信封走 agent-message 通道、RealtimeNudgeModule（工具边界注入）、speak 工具面+执行器（`lara.realtime.speak` 事件交付，D-RT12）、send_interrupt 分流接缝（fork reply 已收编为 pygent managed execution，idempotency key `fork:{input_id}`）、turn finalizer（coordinator lane 触发，D-RT11）、**API 分流已接**（deliver_steering 按 config 分流：enabled → send_interrupt，回复走 HTTP `reply` 字段；disabled → 原 steering）。全量单测通过。**待接**：端到端场景集成测试（工作中插话/连续插话/主动说/收尾兜底）+ 桌面 assistant 内容隐藏与气泡渲染（Phase 1 item 2，前端）+ 启用开关决策（config.realtime_interaction.enabled，默认关）。
+**状态（2026-11-06）**：Phase 1 与 Phase 2 的 runtime 侧全部落库——speak 通道（D-RT10）、fork_reply（D-RT2/3）、信封走 agent-message 通道、RealtimeNudgeModule（工具边界注入）、speak 工具面+执行器（`lara.realtime.speak` 事件交付，D-RT12）、send_interrupt 分流接缝（fork reply 已收编为 pygent managed execution，idempotency key `fork:{input_id}`）、turn finalizer（coordinator lane 触发，D-RT11）、**API 分流已接**（deliver_steering 按 config 分流：enabled → send_interrupt，回复走 HTTP `reply` 字段；disabled → 原 steering）。全量单测通过。**桌面前端已落地**（§8 双视图：realtimeView.js 纯滤镜 + ChatPane 前/后切换 + speak 气泡/工作指示器 + 品牌徽标；非 realtime 会话走 "off" 透传，渲染与之前逐字节一致；settings API 暴露 realtime_interaction_enabled）。**待办**：启用开关决策（config.realtime_interaction.enabled，默认关）+ 真机会话联调（桌面端手测）。
 
 **Phase 1 — speak 通道（最小可演示）**
 
