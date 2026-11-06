@@ -167,7 +167,7 @@ ass+tool_call(speak) 或 ass（静默）   ← agent 自行判断说还是不说
 | 打断区域 | 现状 |
 |---|---|
 | 最终文本流式期间打断 | **安全区**：纯模型调用、assistant 消息未落盘，无悬空 tool_use |
-| 工具批次期间执行级取消 | **危险区**：`CancelledError` 裸穿 → transcript 悬空 → 后续每轮 400 → 会话卡死（pygent 0.3.31 未修复） |
+| 工具批次期间执行级取消 | **危险区**：`CancelledError` 裸穿 → transcript 悬空 → 后续每轮 400 → 会话卡死（pygent 0.3.32 已修复：tool/layer.py 执行级取消时同步重建配对 tool 结果；lara 升级 pygent 即自动获得，自建层无需补丁） |
 
 实时交互设计中**主 agent 永不被执行级取消**：用户插话走 fork 子 agent，主执行继续。取消缺陷的危险区被整个绕开。
 
@@ -217,3 +217,5 @@ ass+tool_call(speak) 或 ass（静默）   ← agent 自行判断说还是不说
 2. **speak 对话框的桌面设计**（D-RT12 的展开）：speak 消息的数据通道与历史回放、对话框入口形态（侧栏 tab/抽屉/独立会话）、用户输入与主视图输入的路由关系、agent 主动 speak 时的未读/通知方式。
 3. **N 的取值**：多少轮未 speak 触发提醒，按真实使用校准。
 4. **回退路径的滥用面**：软指令"勿调工具"在模型不配合时的兜底强度（tool_choice 未解锁期间），必要时先行加 tool_choice 透传探针之外的服务端校验。
+5. **pygent 升级到 0.3.32**：取消缺陷修复（tool/layer.py 配对重建）已在源码仓 tag；PyPI 尚未发布。venv 当前一致于 0.3.31（一次部分安装曾造成 namespace 包损坏，已外科修复）；完成升级需 lara-api.exe 停机窗口（_native.pyd 被其加载锁定）：停 → 装 → 启。调研会话（agent-collaboration-20261105-201807-458270）已确认 lara 的执行管理本来就是 pygent runtime（executions.sqlite3 各表由 pygent SQLiteHistoryStore 创建），service.py 是 pygent 刻意不提供的应用编排层——『整体迁移到 pygent runtime』议题不成立，仅余 `_turn_contexts` 注册表等局部打磨项。
+6. **验收脚本的 retention 与 limit 错配**：retention 考试位于任务表 341-469 位（exam1 341-369、exam2 381-417、final 441-469），`--limit 200` 截断后这些任务不存在，`accepted` 在 200 轮变体中结构性不可达。200 轮实验的验收语义需用户定义：跑满 500 / exam 前移 / 按 limit 分级调整 accepted 公式。
