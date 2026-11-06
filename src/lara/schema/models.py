@@ -177,6 +177,28 @@ class DelegationConfig:
 
 
 @dataclass(slots=True)
+class RealtimeInteractionConfig:
+    """Silent-work interaction (speak, fork replies, nudges) — off by default."""
+
+    enabled: bool = False
+    nudge_interval: int = 5
+    fork_deadline_seconds: float = 60.0
+
+    def __post_init__(self) -> None:
+        self.enabled = bool(self.enabled)
+        if isinstance(self.nudge_interval, bool) or not isinstance(
+            self.nudge_interval, int
+        ) or self.nudge_interval < 1:
+            raise ValueError("nudge_interval must be a positive integer")
+        if (
+            isinstance(self.fork_deadline_seconds, bool)
+            or not isinstance(self.fork_deadline_seconds, (int, float))
+            or self.fork_deadline_seconds <= 0
+        ):
+            raise ValueError("fork_deadline_seconds must be positive")
+
+
+@dataclass(slots=True)
 class EternalConversationConfig:
     enabled: bool = False
     extractor_agent_alias: str | None = None
@@ -308,6 +330,9 @@ class RunConfig:
     eternal_conversation: EternalConversationConfig = field(
         default_factory=EternalConversationConfig
     )
+    realtime_interaction: RealtimeInteractionConfig = field(
+        default_factory=RealtimeInteractionConfig
+    )
 
     def __post_init__(self) -> None:
         self.workspace_root = _abs_path(self.workspace_root)
@@ -375,6 +400,7 @@ class RunConfig:
             ("runtime_approvals", RuntimeApprovalConfig),
             ("delegation", DelegationConfig),
             ("eternal_conversation", EternalConversationConfig),
+            ("realtime_interaction", RealtimeInteractionConfig),
         ):
             value = getattr(self, name)
             if not isinstance(value, cls):

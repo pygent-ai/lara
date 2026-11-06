@@ -39,6 +39,7 @@ from lara.runtime.eternal_conversation import (
 from lara.runtime.file_effects import FILE_EFFECT_TOOL_SPEC
 from lara.runtime.reminders import ReminderService
 from lara.runtime.realtime.injection import RealtimeNudgeModule
+from lara.runtime.realtime.speak import SPEAK_TOOL_SPEC
 from lara.runtime.model_configuration import (
     CredentialEnvironment,
     build_model_invoker,
@@ -272,9 +273,13 @@ class LaraAgent(Agent[UserMessage, AIMessage]):
     @property
     def tool_definitions(self) -> tuple[ToolDefinition, ...]:
         local = self._toolkit.definitions if self._toolkit is not None else ()
+        realtime_defs = (
+            (SPEAK_TOOL_SPEC.definition,) if self.realtime_interaction_enabled else ()
+        )
         return (
             *(_model_tool_definition(definition) for definition in local),
             DIFF_TOOL_SPEC.definition,
+            *realtime_defs,
             *(spec.definition for spec in self._external_tools),
         )
 
@@ -317,16 +322,7 @@ class LaraAgent(Agent[UserMessage, AIMessage]):
         return ModelCallLayer(
             model_group=group,
             policy=ModelCallPolicy(allow_profile_override=self.managed_model),
-            retry_policy=RetryPolicy(
-                max_attempts_per_model=retry.max_attempts_per_model,
-                retry_on=MODEL_RETRYABLE_ERROR_KINDS,
-                attempt_idle_timeout_seconds=retry.attempt_idle_timeout_seconds,
-                backoff=ExponentialBackoff(
-                    initial=retry.backoff_initial,
-                    maximum=retry.backoff_maximum,
-                    multiplier=retry.backoff_multiplier,
-                ),
-            ),
+            retry_policy=self._retry_policy(retry),
             generation=GenerationConfig(
                 output_modalities=self._media_output_modalities()
             ),
@@ -334,11 +330,49 @@ class LaraAgent(Agent[UserMessage, AIMessage]):
             invoker=None if self.managed_model else self.llm,
         )
 
+    def _retry_policy(self, retry) -> RetryPolicy:
+        return RetryPolicy(
+            max_attempts_per_model=retry.max_attempts_per_model,
+            retry_on=MODEL_RETRYABLE_ERROR_KINDS,
+            attempt_idle_timeout_seconds=retry.attempt_idle_timeout_seconds,
+            backoff=ExponentialBackoff(
+                initial=retry.backoff_initial,
+                maximum=retry.backoff_maximum,
+                multiplier=retry.backoff_multiplier,
+            ),
+        )
+
+    def fork_invocation(self) -> tuple[Any, Any, RetryPolicy]:
+        """Invoker, model group and retry policy for one fork-reply call.
+
+        Mirrors ``new_model_layer``'s construction so the fork behaves like a
+        foreground call (same group entries, same retry posture), without
+        creating a managed execution.
+        """
+
+        if self.llm is None:
+            raise RuntimeError("model invoker is not configured")
+        group = (
+            ModelGroup.deferred(name=f"lara:{self.model_group_name}")
+            if self.managed_model
+            else ModelGroup(
+                name=f"lara:{self.model_group_name}",
+                models=self._model_entries(),
+            )
+        )
+        return self.llm, group, self._retry_policy(self.config.model_retry)
+
     def new_tool_layer(self, *, max_concurrency: int = 8) -> ToolCallLayer:
         if self._toolkit is None:
             raise RuntimeError("LaraAgent run graph has not been assembled")
+        realtime_specs = (SPEAK_TOOL_SPEC,) if self.realtime_interaction_enabled else ()
         return ToolCallLayer(
-            tools=(*self._toolkit.specs, DIFF_TOOL_SPEC, *self._external_tools),
+            tools=(
+                *self._toolkit.specs,
+                DIFF_TOOL_SPEC,
+                *realtime_specs,
+                *self._external_tools,
+            ),
             authorization=LaraToolAuthorization(
                 enabled=self.config.runtime_approvals.enabled,
                 timeout_seconds=self.config.runtime_approvals.timeout_seconds,
