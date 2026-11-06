@@ -102,7 +102,8 @@ from .agent.pipeline import (
     checkpoint_conversation_message,
     render_model_request_text,
 )
-from .realtime.fork_reply import build_fork_context, run_fork_reply
+from .realtime.fork_agent import ForkReplyModule, outcome_from_result
+from .realtime.fork_reply import build_fork_context
 from .realtime.posting import queue_exchange_envelope
 from .agent_collaboration import (
     AGENT_COLLABORATION_TOOL_SPECS,
@@ -350,6 +351,7 @@ class LaraRuntimeService:
             collaboration_available=collaboration is not None,
         )
         self._turn_contexts: dict[str, LaraContext] = {}
+        self._fork_agents: dict[tuple, ForkReplyModule] = {}
         self.warnings: list[str] = []
         self._initialized = False
         self._initializing_task: asyncio.Task[None] | None = None
@@ -1091,20 +1093,22 @@ class LaraRuntimeService:
 
         Copies the request state up to the last checkpoint (the session's
         committed history), renders the same system prompt as the main turn,
-        appends the user message verbatim and runs ONE model call through the
-        fork invocation — the main execution is never interrupted. Delivery
-        of the reply to the user's chat stays with the API layer; the runtime
-        queues the exchange envelope so the main agent learns what happened
-        at its next tool-result boundary. The fork reply is transient: it is
-        never recorded in the main transcript.
+        and runs ONE model call as a pygent managed execution
+        (``ForkReplyModule`` — admission, capacity coordination, journaling
+        and idempotent recovery included; the session transcript stays
+        untouched). Delivery of the reply to the user's chat stays with the
+        API layer; the runtime queues the exchange envelope so the main agent
+        learns what happened at its next tool-result boundary.
         """
 
         await self.initialize()
         config = self.config
         if not config.realtime_interaction.enabled:
             raise RuntimeError("realtime interaction is not enabled")
+        from pygent.runtime import ExecutionOptions
+
         session = manager.load(session_id)
-        agent = self.new_agent(
+        main_agent = self.new_agent(
             interactive_approvals=False,
             model_group_name=session.model_group_name,
             selected_model_key=session.selected_model_key,
@@ -1122,18 +1126,39 @@ class LaraRuntimeService:
         request = build_fork_context(
             system_prompt=system_prompt,
             messages=tuple(fork_context.messages),
-            tools=agent.tool_definitions,
+            tools=main_agent.tool_definitions,
         )
-        invoker, model_group, retry_policy = agent.fork_invocation()
-        outcome = await run_fork_reply(
-            invoker=invoker,
-            model_group=model_group,
-            retry_policy=retry_policy,
-            context=request,
-            user_message=UserMessage(content=message, kind="lara.user.interrupt"),
-            deadline=time.monotonic()
-            + config.realtime_interaction.fork_deadline_seconds,
+        fork_agent = self._fork_agent(
+            model_group_name=session.model_group_name,
+            selected_model_key=session.selected_model_key,
+            tools=main_agent.tool_definitions,
         )
+        bound = await self.bind(fork_agent, fork_agent)
+        group_name = session.model_group_name or config.resolved_agent.default_model_group
+        model_calls = (
+            {
+                f"lara:{group_name}": {
+                    "profile": preferred_profile_name(session.selected_model_key)
+                }
+            }
+            if main_agent.llm is not None
+            else {}
+        )
+        handle = await bound.start(
+            UserMessage(content=message, kind="lara.user.interrupt"),
+            request,
+            execution=ExecutionOptions(
+                request_id=f"fork:{input_id}",
+                idempotency_key=f"fork:{input_id}",
+                identity=run_ref.session_id,
+                model_calls=model_calls,
+                deadline=time.monotonic()
+                + config.realtime_interaction.fork_deadline_seconds,
+            ),
+        )
+        output, _ = await handle.result()
+        assert isinstance(output, AIMessage)
+        outcome = outcome_from_result(output)
         if outcome.speak_args is not None and outcome.speak_args.say_nothing:
             response_text = "(decided not to speak)"
         elif outcome.speak_args is not None:
@@ -1148,6 +1173,47 @@ class LaraRuntimeService:
             response=response_text or "(no verbal reply)",
         )
         return outcome
+
+    def _fork_agent(
+        self,
+        *,
+        model_group_name: str | None,
+        selected_model_key: str | None,
+        tools: tuple,
+    ) -> ForkReplyModule:
+        """One cached fork-reply graph per configuration shape."""
+
+        group_name = (
+            model_group_name or self.config.resolved_agent.default_model_group
+        )
+        key = (id(self.config), group_name, selected_model_key, tools)
+        existing = self._fork_agents.get(key)
+        if existing is not None:
+            return existing
+        invoker = (
+            self._model_invokers.get(self.config.resolved_agent.alias)
+            if self.config.resolved_agent is not None
+            else None
+        )
+        retry = self.config.model_retry
+        agent = ForkReplyModule(
+            config=self.config,
+            model_group_name=group_name,
+            llm=invoker,
+            tools=tools,
+            retry_policy=RetryPolicy(
+                max_attempts_per_model=retry.max_attempts_per_model,
+                retry_on=MODEL_RETRYABLE_ERROR_KINDS,
+                attempt_idle_timeout_seconds=retry.attempt_idle_timeout_seconds,
+                backoff=ExponentialBackoff(
+                    initial=retry.backoff_initial,
+                    maximum=retry.backoff_maximum,
+                    multiplier=retry.backoff_multiplier,
+                ),
+            ),
+        )
+        self._fork_agents[key] = agent
+        return agent
 
     async def cancel_turn(self, execution_id: str) -> bool:
         """Request cancellation of one running execution.

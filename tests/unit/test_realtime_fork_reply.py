@@ -1,17 +1,18 @@
-"""Tests for fork_reply: request construction, extraction, delivery paths."""
+"""Tests for fork_reply construction/extraction and the fork execution module."""
 
 from __future__ import annotations
 
+import pytest
+from pygent import AIMessage, Context, ToolCall, ToolDefinition, UserMessage
 
-
-from pygent import AIMessage, GenerationConfig, ToolCall, ToolDefinition
-from pygent.llm import ModelProviderResponse
-
+from lara.runtime.realtime.fork_agent import (
+    FORK_RESULT_KIND,
+    ForkReplyModule,
+    outcome_from_result,
+)
 from lara.runtime.realtime.fork_reply import (
-    FORCED_SPEAK_GENERATION,
     build_fork_context,
     extract_speak_args,
-    run_fork_reply,
 )
 
 
@@ -35,34 +36,7 @@ def _other_definition() -> ToolDefinition:
     )
 
 
-def _assistant(text: str = "") -> AIMessage:
-    return AIMessage(content=text)
-
-
-class FakeExecution:
-    def __init__(self, response: ModelProviderResponse) -> None:
-        self._response = response
-
-    async def result(self) -> ModelProviderResponse:
-        return self._response
-
-
-class FakeInvoker:
-    def __init__(self, response: ModelProviderResponse) -> None:
-        self._response = response
-        self.calls: list[dict] = []
-
-    def execute(self, **kwargs):
-        self.calls.append(kwargs)
-        return FakeExecution(self._response)
-
-
-def _response(tool_calls=(), text: str = "") -> ModelProviderResponse:
-    # Real 0.3.32 response type (pygent.llm export; requires the env upgrade).
-    return ModelProviderResponse(message=AIMessage(content=text, tool_calls=tool_calls))
-
-
-def _speak_call(call_id: str, arguments: dict | str) -> ToolCall:
+def _speak_call(call_id: str, arguments: dict) -> ToolCall:
     return ToolCall(call_id=call_id, name="speak", arguments=arguments)
 
 
@@ -70,14 +44,8 @@ def _read_call(call_id: str) -> ToolCall:
     return ToolCall(call_id=call_id, name="read", arguments={"path": "a.md"})
 
 
-def _prefix_messages() -> tuple:
-    from pygent import UserMessage
-
-    return (UserMessage(content="把报表导出修一下"),)
-
-
 def test_build_fork_context_copies_request_verbatim() -> None:
-    messages = _prefix_messages()
+    messages = (UserMessage(content="把报表导出修一下"),)
     tools = (_speak_definition(), _other_definition())
     context = build_fork_context(
         system_prompt="You are Lara.", messages=messages, tools=tools
@@ -87,112 +55,93 @@ def test_build_fork_context_copies_request_verbatim() -> None:
     assert context.tools == tools
 
 
-def test_forced_path_extracts_speak_args() -> None:
-    message = AIMessage(
+def test_extract_speak_args_variants() -> None:
+    spoke = AIMessage(
         content="", tool_calls=(_speak_call("c1", {"text": "你好，马上处理。"}),)
     )
-    speak_args = extract_speak_args(message)
-    assert speak_args is not None
-    assert speak_args.text == "你好，马上处理。"
+    assert extract_speak_args(spoke) is not None
+    assert extract_speak_args(spoke).text == "你好，马上处理。"
 
-
-def test_extract_ignores_non_speak_calls() -> None:
-    message = AIMessage(
+    mixed = AIMessage(
         content="",
-        tool_calls=(
-            _read_call("c3"),
-            _speak_call("c4", {"text": "ok"}),
-        ),
+        tool_calls=(_read_call("c3"), _speak_call("c4", {"text": "ok"})),
     )
-    speak_args = extract_speak_args(message)
-    assert speak_args is not None
-    assert speak_args.text == "ok"
+    assert extract_speak_args(mixed).text == "ok"
+
+    assert extract_speak_args(AIMessage(content="纯文本")) is None
 
 
-def test_extract_returns_none_without_speak() -> None:
-    message = AIMessage(content="纯文本", tool_calls=())
-    assert extract_speak_args(message) is None
+class _FakeLayer:
+    """Stands in for the managed ModelCallLayer inside module.forward."""
+
+    def __init__(self, answer: AIMessage) -> None:
+        self._answer = answer
+        self.calls: list[tuple] = []
+
+    async def __call__(self, message, context):
+        self.calls.append((message, context))
+        return self._answer, context
 
 
-async def test_run_fork_reply_forced_path() -> None:
-    invoker = FakeInvoker(
-        _response(tool_calls=(_speak_call("c5", {"text": "在做了"}),))
-    )
-    context = build_fork_context(
-        system_prompt="s", messages=_prefix_messages(), tools=(_speak_definition(),)
-    )
-    from pygent import UserMessage
-
-    outcome = await run_fork_reply(
-        invoker=invoker,
-        model_group=object(),
+def _module(answer: AIMessage) -> tuple[ForkReplyModule, _FakeLayer]:
+    module = ForkReplyModule(
+        config=object(),
+        model_group_name="default",
+        llm=object(),
+        tools=(_speak_definition(),),
         retry_policy=object(),
-        context=context,
-        user_message=UserMessage(content="进度如何"),
     )
+    layer = _FakeLayer(answer)
+    module.model = layer  # allowed before the first invoke/bind
+    return module, layer
+
+
+async def test_fork_module_returns_speak_outcome() -> None:
+    module, layer = _module(
+        AIMessage(content="", tool_calls=(_speak_call("c1", {"text": "在做了"}),))
+    )
+    context = Context(system_prompt="s", messages=(), tools=(_speak_definition(),))
+    result, _ = await module.forward(
+        UserMessage(content="进度如何"), context
+    )
+    assert result.kind == FORK_RESULT_KIND
+    assert result.data["via"] == "speak"
+    assert dict(result.data["speak_args"]) == {
+        "text": "在做了",
+        "attachments": (),
+        "say_nothing": False,
+    }
+    # The user message reaches the managed layer separately from the prefix.
+    assert layer.calls[0][0].content == "进度如何"
+
+    outcome = outcome_from_result(result)
     assert outcome.via == "speak"
     assert outcome.speak_args is not None
     assert outcome.speak_args.text == "在做了"
-    # request shape: prefix copied verbatim, user message appended separately
-    call = invoker.calls[0]
-    assert call["message"].content == "进度如何"
-    assert len(call["context"].messages) == 1
-    assert call["context"].messages[0].content == "把报表导出修一下"
-    assert call["generation"].tool_choice == "speak"
-    assert [t.name for t in call["tools"]] == ["speak"]
 
 
-async def test_run_fork_reply_forced_stray_text_falls_back() -> None:
-    invoker = FakeInvoker(_response(text="未走工具的文本"))
-    context = build_fork_context(system_prompt="s", messages=(), tools=(_speak_definition(),))
-    from pygent import UserMessage
-
-    outcome = await run_fork_reply(
-        invoker=invoker,
-        model_group=object(),
-        retry_policy=object(),
-        context=context,
-        user_message=UserMessage(content="hi"),
+async def test_fork_module_stray_text_becomes_text_outcome() -> None:
+    module, _ = _module(AIMessage(content="未走工具的文本"))
+    result, _ = await module.forward(
+        UserMessage(content="hi"), Context(system_prompt="s")
     )
+    assert result.data["via"] == "text"
+    assert result.data["text"] == "未走工具的文本"
+    outcome = outcome_from_result(result)
     assert outcome.via == "text"
     assert outcome.text == "未走工具的文本"
 
 
-async def test_run_fork_reply_fallback_path_no_forcing() -> None:
-    invoker = FakeInvoker(_response(text="直接回答"))
-    context = build_fork_context(system_prompt="s", messages=(), tools=(_other_definition(),))
-    from pygent import UserMessage
-
-    outcome = await run_fork_reply(
-        invoker=invoker,
-        model_group=object(),
-        retry_policy=object(),
-        context=context,
-        user_message=UserMessage(content="hi"),
-        force_speak=False,
+async def test_fork_module_say_nothing_roundtrip() -> None:
+    module, _ = _module(
+        AIMessage(content="", tool_calls=(_speak_call("c2", {"say_nothing": True}),))
     )
-    assert outcome.via == "text"
-    assert outcome.text == "直接回答"
-    call = invoker.calls[0]
-    assert isinstance(call["generation"], GenerationConfig)
-    assert call["generation"].tool_choice is None
+    result, _ = await module.forward(UserMessage(content="hi"), Context())
+    outcome = outcome_from_result(result)
+    assert outcome.speak_args is not None
+    assert outcome.speak_args.say_nothing is True
 
 
-async def test_run_fork_reply_passes_deadline() -> None:
-    invoker = FakeInvoker(_response(text="x"))
-    context = build_fork_context(system_prompt="s", messages=(), tools=())
-    from pygent import UserMessage
-
-    await run_fork_reply(
-        invoker=invoker,
-        model_group=object(),
-        retry_policy=object(),
-        context=context,
-        user_message=UserMessage(content="hi"),
-        deadline=1234.5,
-    )
-    assert invoker.calls[0]["deadline"] == 1234.5
-
-
-def test_forced_generation_constant() -> None:
-    assert FORCED_SPEAK_GENERATION.tool_choice == "speak"
+def test_outcome_from_result_rejects_foreign_kind() -> None:
+    with pytest.raises(ValueError):
+        outcome_from_result(AIMessage(content="x", kind="lara.chat.result"))
