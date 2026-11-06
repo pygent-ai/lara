@@ -19,6 +19,7 @@ from pygent.tool import ToolSpec
 
 SPEAK_TOOL_ID = "lara.realtime.speak"
 SPEAK_RESOURCE_KEY = "lara-realtime-speak"
+SPEAK_TOOL_NAME = "speak"
 
 SPEAK_TOOL_SPEC = ToolSpec(
     tool_id=SPEAK_TOOL_ID,

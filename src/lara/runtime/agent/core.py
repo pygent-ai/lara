@@ -38,6 +38,7 @@ from lara.runtime.eternal_conversation import (
 )
 from lara.runtime.file_effects import FILE_EFFECT_TOOL_SPEC
 from lara.runtime.reminders import ReminderService
+from lara.runtime.realtime.injection import RealtimeNudgeModule
 from lara.runtime.model_configuration import (
     CredentialEnvironment,
     build_model_invoker,
@@ -215,6 +216,7 @@ class LaraAgent(Agent[UserMessage, AIMessage]):
         bash_tasks: BashTaskObservations | None = None,
         selected_model_key: str | None = None,
         eternal_memory_enabled: bool | None = None,
+        realtime_interaction_enabled: bool = False,
     ) -> None:
         super().__init__()
         self.config = config
@@ -241,6 +243,10 @@ class LaraAgent(Agent[UserMessage, AIMessage]):
             if eternal_memory_enabled is None
             else eternal_memory_enabled
         )
+        # Realtime silent-work interaction (speak nudges, fork replies) is
+        # wired but inert until a session turns it on; the speak tool surface
+        # itself lands with the routing seam.
+        self.realtime_interaction_enabled = realtime_interaction_enabled
         self.workspace_root = Path(config.workspace_root)
         if model_invoker is not None:
             self.llm = model_invoker
@@ -372,6 +378,11 @@ class LaraAgent(Agent[UserMessage, AIMessage]):
                         reminders=RuntimeReminderModule(self.reminders),
                         persisted_diff=PersistedDiffModule(
                             self.workspace_root, diff_tasks
+                        ),
+                        realtime_nudge=(
+                            RealtimeNudgeModule()
+                            if self.realtime_interaction_enabled
+                            else None
                         ),
                     ),
                 ),

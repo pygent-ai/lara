@@ -50,6 +50,7 @@ from lara.runtime.eternal_conversation import render_memory_access_instruction
 from lara.runtime.file_effect_models import DeferredFileEffectJob
 from lara.runtime.file_effects import FILE_EFFECT_TOOL_SPEC, DeferredFileEffectBatch
 from lara.runtime.reminders import ReminderService
+from lara.runtime.realtime.injection import RealtimeNudgeModule
 from lara.runtime.reminders.agent_messages import render_agent_message
 from lara.runtime.tools import ToolObserver
 from lara.schema import RunConfig
@@ -874,12 +875,14 @@ class PreparedToolModule(Module[AIMessage, ToolMessage]):
         audit: ToolAuditModule,
         reminders: RuntimeReminderModule,
         persisted_diff: PersistedDiffModule,
+        realtime_nudge: RealtimeNudgeModule | None = None,
     ) -> None:
         super().__init__()
         self.tools = tools
         self.audit = audit
         self.reminders = reminders
         self.persisted_diff = persisted_diff
+        self.realtime_nudge = realtime_nudge
 
     async def forward(
         self, message: AIMessage, context: LaraContext
@@ -897,6 +900,10 @@ class PreparedToolModule(Module[AIMessage, ToolMessage]):
         tool_message, projection_context = await self.persisted_diff(
             tool_message, projection_context
         )
+        if self.realtime_nudge is not None:
+            tool_message, projection_context = await self.realtime_nudge(
+                tool_message, projection_context
+            )
         return tool_message, replace(
             tool_context,
             pending_file_effects=projection_context.pending_file_effects,
