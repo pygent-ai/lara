@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import {
   displayRowsForView,
-  extractSpeakFromTurn,
+  extractSpeaksFromTurn,
   isInternalMessage,
   isLaraSaysSession,
   LARA_SAYS_SESSION_MODE,
@@ -51,7 +51,7 @@ test("finalizer reminders are internal in both views", () => {
   assert.equal(displayRowsForView([row], "back").length, 0);
 });
 
-test("extractSpeakFromTurn picks the last speak call", () => {
+test("extractSpeaksFromTurn collects every speak call in order", () => {
   const turn = [
     { role: "user", content: "first" },
     {
@@ -65,34 +65,40 @@ test("extractSpeakFromTurn picks the last speak call", () => {
       tool_calls: [{ name: "speak", arguments: { text: "最终的说法" } }],
     },
   ];
-  const speak = extractSpeakFromTurn(turn);
-  assert.equal(speak.text, "最终的说法");
-  assert.deepEqual(speak.attachments, []);
-  assert.equal(speak.sayNothing, false);
+  const speaks = extractSpeaksFromTurn(turn);
+  assert.deepEqual(
+    speaks.map((speak) => speak.text),
+    ["第一次", "最终的说法"],
+  );
+  assert.equal(speaks[1].sayNothing, false);
 });
 
-test("extractSpeakFromTurn handles say_nothing and string arguments", () => {
-  const sayNothingTurn = [
+test("extractSpeaksFromTurn keeps delivered speaks ahead of a trailing say_nothing", () => {
+  // The finalizer's bottom-line decision must not erase the replies the turn
+  // already delivered.
+  const turn = [
+    { role: "assistant", tool_calls: [{ name: "speak", arguments: { text: "先说结论" } }] },
     { role: "assistant", tool_calls: [{ name: "speak", arguments: { say_nothing: true, text: " x " } }] },
   ];
-  assert.deepEqual(extractSpeakFromTurn(sayNothingTurn), {
-    text: null,
-    attachments: [],
-    sayNothing: true,
-  });
+  const speaks = extractSpeaksFromTurn(turn);
+  assert.equal(speaks.length, 2);
+  assert.equal(speaks[0].text, "先说结论");
+  assert.equal(speaks[1].sayNothing, true);
+});
 
+test("extractSpeaksFromTurn handles string arguments", () => {
   const stringArgsTurn = [
     { role: "assistant", tool_calls: [{ name: "speak", arguments: JSON.stringify({ text: "json" }) }] },
   ];
-  assert.equal(extractSpeakFromTurn(stringArgsTurn).text, "json");
+  assert.equal(extractSpeaksFromTurn(stringArgsTurn)[0].text, "json");
 });
 
-test("extractSpeakFromTurn returns null without a speak call", () => {
+test("extractSpeaksFromTurn returns an empty list without a speak call", () => {
   const turn = [
     { role: "user", content: "first" },
     { role: "assistant", content: "纯文本", tool_calls: [] },
   ];
-  assert.equal(extractSpeakFromTurn(turn), null);
+  assert.deepEqual(extractSpeaksFromTurn(turn), []);
 });
 
 test("front view keeps user rows, turns running rows into indicators, finished silent rows disappear", () => {
@@ -122,7 +128,10 @@ test("front view renders speak rows and drops intermediate work", () => {
       role: "assistant",
       status: "done",
       sections: [{ type: "text", title: "Thinking", text: "内部思考" }],
-      speak: { text: "给你的结论", attachments: [], sayNothing: false },
+      speaks: [
+        { text: "进展汇报", attachments: [], sayNothing: false },
+        { text: "给你的结论", attachments: [], sayNothing: false },
+      ],
     },
     { id: "u2", role: "user", content: "收到" },
     {
@@ -130,14 +139,14 @@ test("front view renders speak rows and drops intermediate work", () => {
       role: "assistant",
       status: "done",
       content: "",
-      speak: { text: null, attachments: [], sayNothing: true },
+      speaks: [{ text: null, attachments: [], sayNothing: true }],
     },
   ];
   const front = displayRowsForView(rows, "front");
   assert.equal(front.length, 4);
   assert.equal(front[1].frontSpeak, true);
-  assert.equal(front[1].speak.text, "给你的结论");
-  assert.equal(front[3].speak.sayNothing, true);
+  assert.deepEqual(front[1].speaks.map((speak) => speak.text), ["进展汇报", "给你的结论"]);
+  assert.equal(front[3].speaks[0].sayNothing, true);
 });
 
 test("back view drops user inputs and keeps agent rows", () => {
@@ -175,12 +184,12 @@ test("front filtering composes with speak history rows", () => {
       id: "a1",
       role: "assistant",
       status: "done",
-      speak: { text: "说完了", attachments: ["out/result.txt"], sayNothing: false },
+      speaks: [{ text: "说完了", attachments: ["out/result.txt"], sayNothing: false }],
     },
   ];
   const front = displayRowsForView(rows, "front");
   assert.deepEqual(front.map((row) => row.id), ["u1", "a1"]);
-  assert.equal(front[1].speak.attachments[0], "out/result.txt");
+  assert.equal(front[1].speaks[0].attachments[0], "out/result.txt");
 });
 
 test("isLaraSaysSession matches only the dedicated session mode", () => {
