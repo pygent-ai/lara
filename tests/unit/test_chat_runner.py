@@ -252,6 +252,11 @@ async def test_nonterminal_durable_execution_is_recovered_instead_of_only_attach
         def __init__(self) -> None:
             self.runtime = _ManagedRuntime()
             self.recovered: list[str] = []
+            # The turn drive reads the realtime flag at completion; the stub
+            # models the production RunConfig field (disabled here).
+            self.config = SimpleNamespace(
+                realtime_interaction=SimpleNamespace(enabled=False)
+            )
 
         async def initialize(self) -> None:
             return None
