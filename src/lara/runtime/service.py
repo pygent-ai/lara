@@ -107,6 +107,7 @@ from .agent.pipeline import (
 from .realtime.fork_agent import ForkReplyModule, outcome_from_result
 from .realtime.fork_reply import build_fork_context
 from .realtime.posting import queue_exchange_envelope
+from .realtime.speak import SPEAK_TOOL_SPEC, parse_speak_args
 from .agent_collaboration import (
     AGENT_COLLABORATION_TOOL_SPECS,
     visible_agent_collaboration_specs,
@@ -177,6 +178,42 @@ def _uncovered_conversation_messages(
         for item in history[start:]
         if (message := _to_pygent_message(item)) is not None
     )
+
+
+class _SpeakExecutor:
+    """Delivers the model's speak calls as user-facing stream events (D-RT10).
+
+    The event (``lara.realtime.speak``) is the bubble the desktop renders;
+    ``say_nothing`` emits nothing and acknowledges silently. Attachments are
+    validated against the workspace and reported as workspace-relative paths.
+    """
+
+    def __init__(self, service: "LaraRuntimeService") -> None:
+        self.service = service
+
+    async def execute(
+        self, spec: ToolSpec, call: Any, context: ToolExecutionContext
+    ) -> object:
+        del spec
+        args = parse_speak_args(plain_object(call.arguments))
+        if args.say_nothing:
+            return "acknowledged (silent)"
+        if context.emit is None:  # pragma: no cover - managed executions carry emit
+            raise RuntimeError("speak delivery requires an execution event emitter")
+        attachments: list[str] = []
+        if args.attachments:
+            resolved = resolve_attachments(
+                args.attachments, self.service.config.workspace_root
+            )
+            attachments = [item.relative for item in resolved]
+        await context.emit(
+            kind="lara.realtime.speak",
+            data={
+                "text": args.text or "",
+                "attachments": attachments,
+            },
+        )
+        return "delivered"
 
 
 class _DiffExecutor:
@@ -282,6 +319,7 @@ class LaraRuntimeService:
         )
         self.runtime.register_tool(FILE_EFFECT_TOOL_SPEC, FileEffectToolExecutor())
         self.runtime.register_tool(DIFF_TOOL_SPEC, self._diff_executor)
+        self.runtime.register_tool(SPEAK_TOOL_SPEC, _SpeakExecutor(self))
         collaboration_executor = AgentToolExecutor(
             invoke=self._execute_agent_collaboration
         )
