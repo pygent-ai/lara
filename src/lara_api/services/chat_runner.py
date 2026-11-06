@@ -93,6 +93,18 @@ async def stream_chat_turn(
 
 
 @dataclass(slots=True)
+class ForkReplyReceipt:
+    """The deliver_steering receipt for the fork-reply path (D-RT2/3)."""
+
+    input_id: str
+    reply: dict[str, object]
+
+    @property
+    def status(self) -> str:
+        return "fork_replied"
+
+
+@dataclass(slots=True)
 class ActiveChatRun:
     """SSE-facing view over a transport-independent managed session turn."""
 
@@ -535,6 +547,32 @@ class ChatRunRegistry:
             resolve_attachments(
                 attachments, active.runtime_service.config.workspace_root
             )
+        if active.runtime_service.config.realtime_interaction.enabled:
+            # Realtime mode: a mid-turn message forks a speak reply instead of
+            # steering the running execution. The reply rides the HTTP
+            # response — it is transient by design and never enters the
+            # session transcript.
+            if attachments:
+                raise ValueError("实时插话暂不支持附件，请先移除附件后重试。")
+            outcome = await active.runtime_service.send_interrupt(
+                execution_id, manager=active.manager, run_ref=active.run_ref,
+                session_id=session_id, input_id=input_id, message=message or "",
+            )
+            if outcome.speak_args is not None:
+                reply = {
+                    "via": "speak",
+                    "text": outcome.speak_args.text,
+                    "attachments": list(outcome.speak_args.attachments),
+                    "say_nothing": outcome.speak_args.say_nothing,
+                }
+            else:
+                reply = {
+                    "via": "text",
+                    "text": outcome.text,
+                    "attachments": [],
+                    "say_nothing": False,
+                }
+            return ForkReplyReceipt(input_id=input_id, reply=reply)
         return await active.runtime_service.send_steering(
             execution_id, input_id=input_id, message=message,
             case_run_id=active.run_ref.case_run_id,

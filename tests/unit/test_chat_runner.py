@@ -17,6 +17,7 @@ from lara.sessions import SessionManager
 from lara_api.models.requests import ChatTurnRequest
 from lara_api.services import chat_runner
 from lara_api.services.chat_runner import (
+    ForkReplyReceipt,
     ActiveChatRun,
     ChatRunRegistry,
     _sse,
@@ -957,3 +958,82 @@ def test_resume_request_accepts_only_pure_resume() -> None:
         ChatTurnRequest(resume=True, session_id="session-1", message="hello")
     with pytest.raises(ValueError):
         ChatTurnRequest(resume=True, session_id="session-1", attachments=["a.txt"])
+
+
+# --- steering routing: fork path vs steering path (realtime gate) ---
+
+
+class _StubActive:
+    def __init__(self, runtime_service, session_id="session-1", case_run_id="run-1"):
+        self.runtime_service = runtime_service
+        self.run_ref = CaseRunRef(
+            session_id=session_id,
+            case_id="chat",
+            case_run_id=case_run_id,
+            run_dir=".",
+        )
+        self.manager = SimpleNamespace()
+
+
+class _StubRuntimeService:
+    def __init__(self, enabled: bool) -> None:
+        self.config = SimpleNamespace(
+            realtime_interaction=SimpleNamespace(enabled=enabled),
+            workspace_root=".",
+        )
+        self.interrupts: list[dict] = []
+        self.steerings: list[dict] = []
+
+    async def send_interrupt(self, execution_id, **kwargs):
+        self.interrupts.append({"execution_id": execution_id, **kwargs})
+        return SimpleNamespace(
+            speak_args=SimpleNamespace(
+                text="在做了", attachments=(), say_nothing=False
+            ),
+            text=None,
+        )
+
+    async def send_steering(self, execution_id, **kwargs):
+        self.steerings.append({"execution_id": execution_id, **kwargs})
+        return SimpleNamespace(status="delivered", input_id=kwargs["input_id"])
+
+
+class _StubCoordinator:
+    def __init__(self, active) -> None:
+        self._active = active
+
+    async def find_execution(self, execution_id):
+        return self._active
+
+
+class _StubRegistry(ChatRunRegistry):
+    def __init__(self, active) -> None:
+        super().__init__()
+        self.coordinator = _StubCoordinator(active)
+
+
+async def test_deliver_steering_routes_to_interrupt_when_realtime_enabled() -> None:
+    service = _StubRuntimeService(enabled=True)
+    registry = _StubRegistry(_StubActive(service))
+    receipt = await registry.deliver_steering(
+        "execution-1", session_id="session-1", input_id="input-1",
+        message="进度如何",
+    )
+    assert isinstance(receipt, ForkReplyReceipt)
+    assert receipt.status == "fork_replied"
+    assert receipt.reply["via"] == "speak"
+    assert receipt.reply["text"] == "在做了"
+    assert service.interrupts and not service.steerings
+    assert service.interrupts[0]["input_id"] == "input-1"
+
+
+async def test_deliver_steering_keeps_steering_when_realtime_disabled() -> None:
+    service = _StubRuntimeService(enabled=False)
+    registry = _StubRegistry(_StubActive(service))
+    receipt = await registry.deliver_steering(
+        "execution-1", session_id="session-1", input_id="input-1",
+        message="继续",
+    )
+    assert not isinstance(receipt, ForkReplyReceipt)
+    assert receipt.status == "delivered"
+    assert service.steerings and not service.interrupts

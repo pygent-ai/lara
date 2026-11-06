@@ -70,7 +70,6 @@ SPEAK_TOOL_SPEC = ToolSpec(
     side_effect=ToolSideEffect.EXTERNAL,
     idempotency=IdempotencyPolicy.INHERENT,
     resource_key=SPEAK_RESOURCE_KEY,
-    sandbox_profile="agent",
 )
 
 
