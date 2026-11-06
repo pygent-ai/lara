@@ -28,9 +28,7 @@ from pygent import (
     ToolDefinition,
 )
 
-from lara.runtime.realtime.speak import SpeakArgs, parse_speak_args
-
-SPEAK_TOOL_NAME = "speak"
+from lara.runtime.realtime.speak import SPEAK_TOOL_NAME, SpeakArgs, parse_speak_args
 
 FORCED_SPEAK_GENERATION = GenerationConfig(tool_choice=SPEAK_TOOL_NAME)
 FALLBACK_GENERATION = GenerationConfig()
