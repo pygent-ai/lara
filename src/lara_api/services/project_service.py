@@ -91,6 +91,7 @@ def config_response(config: RunConfig) -> RuntimeConfigResponse:
     retry = config.model_retry
     return RuntimeConfigResponse(
         approvals_enabled=config.runtime_approvals.enabled,
+        realtime_interaction_enabled=bool(config.realtime_interaction.enabled),
         workspace_root=config.workspace_root,
         lara_root=config.lara_root,
         agent=config.agent_alias,

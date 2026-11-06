@@ -26,6 +26,7 @@ class RuntimeConfigResponse(BaseModel):
     max_steps: int
     context_window: int | None
     context_compression_trigger_ratio: float
+    realtime_interaction_enabled: bool = False
 
 
 class ProjectResponse(BaseModel):

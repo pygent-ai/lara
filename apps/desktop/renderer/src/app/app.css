@@ -3611,3 +3611,89 @@ input:focus,
 .file-changes-patch .patch-hunk { display:block; color:#5b6472; }
 .file-changes-patch .patch-meta { display:block; color:var(--text-subtle); }
 .file-changes-patch .patch-context { display:block; color:var(--text-secondary); }
+
+/* Realtime front/back dual view (design §8) */
+.realtime-view-toggle {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  padding: 6px 0 2px;
+}
+.realtime-view-toggle button {
+  border: 1px solid var(--border, #d8d8d8);
+  background: transparent;
+  color: var(--muted, #666);
+  border-radius: 999px;
+  padding: 3px 14px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.realtime-view-toggle button.active {
+  background: var(--accent, #2563eb);
+  border-color: var(--accent, #2563eb);
+  color: #fff;
+}
+.realtime-working-bubble {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted, #666);
+  font-size: 13px;
+}
+.working-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+.working-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent, #2563eb);
+  animation: realtime-working-bounce 1.2s infinite ease-in-out;
+}
+.working-dots span:nth-child(2) { animation-delay: 0.15s; }
+.working-dots span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes realtime-working-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+.realtime-speak-bubble {
+  background: var(--accent-soft, #eef2ff);
+  border: 1px solid var(--accent, #2563eb);
+}
+.realtime-speak-bubble.muted {
+  background: transparent;
+  border-style: dashed;
+  color: var(--muted, #666);
+}
+.realtime-speak-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.realtime-speak-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.realtime-speak-attachment {
+  border: 1px solid var(--border, #d8d8d8);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--muted, #666);
+}
+.brand-spark-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.brand-unread-dot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #2563eb;
+  border: 2px solid var(--panel, #fff);
+}
