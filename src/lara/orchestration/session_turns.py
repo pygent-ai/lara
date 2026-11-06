@@ -41,6 +41,7 @@ class SessionTurnService:
         message_data: dict[str, object] | None = None,
         session_title: str | None = None,
         model_group_name: str | None = None,
+        selected_model_key: str | None = None,
         attachments: Sequence[str] = (),
     ) -> ManagedSessionTurn:
         Path(config.workspace_root).mkdir(parents=True, exist_ok=True)
@@ -49,7 +50,10 @@ class SessionTurnService:
             active_session_id = session_id
             if active_session_id is None:
                 active_session_id = manager.create(
-                    case_id, mode="chat", model_group_name=model_group_name
+                    case_id,
+                    mode="chat",
+                    model_group_name=model_group_name,
+                    selected_model_key=selected_model_key,
                 ).session_id
             lease.runtime.reminders.prewarm_session(active_session_id)
             if session_title:

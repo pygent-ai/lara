@@ -33,9 +33,10 @@ async def test_submit_creates_session_prewarms_titles_and_transfers_lease(
             workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara")
         )
 
-        def create(self, case_id, *, mode, model_group_name=None):
+        def create(self, case_id, *, mode, model_group_name=None, selected_model_key=None):
             assert (case_id, mode) == ("chat", "chat")
             assert model_group_name is None
+            assert selected_model_key is None
             return SimpleNamespace(session_id="session-1")
 
         def save_title_from_user_input(self, session_id, message):
@@ -66,6 +67,48 @@ async def test_submit_creates_session_prewarms_titles_and_transfers_lease(
     assert lease.prewarmed == ["session-1"]
     assert lease.releases == 0
     assert submitted[0][0] is lease
+
+
+@pytest.mark.asyncio
+async def test_submit_passes_creation_group_and_model_key(tmp_path) -> None:
+    lease = _Lease()
+    captured = {}
+
+    class Manager:
+        config = RunConfig(
+            workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara")
+        )
+
+        def create(self, case_id, *, mode, model_group_name=None, selected_model_key=None):
+            captured["group"] = model_group_name
+            captured["model"] = selected_model_key
+            return SimpleNamespace(session_id="session-1")
+
+        def save_title_from_user_input(self, session_id, message):
+            pass
+
+    class Coordinator:
+        async def submit_turn(self, *, lease, command):
+            return SimpleNamespace(command=command)
+
+    async def acquire_runtime(**_kwargs):
+        return lease
+
+    manager = Manager()
+    service = SessionTurnService(
+        coordinator=cast(Any, Coordinator()),
+        acquire_runtime=cast(Any, acquire_runtime),
+    )
+    await service.submit(
+        config=manager.config,
+        manager=cast(Any, manager),
+        message="hello",
+        model_group_name="coding",
+        selected_model_key="backup",
+    )
+
+    assert captured == {"group": "coding", "model": "backup"}
+    assert lease.prewarmed == ["session-1"]
 
 
 @pytest.mark.asyncio

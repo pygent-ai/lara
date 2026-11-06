@@ -3397,6 +3397,11 @@ input:focus,
 .composer-menu-item:hover, .composer-menu-item:focus-visible { background:var(--surface-2); outline:none; }
 .composer-menu-item[aria-checked="true"] { background:var(--row-active-bg); }
 .composer-menu-item.menu-action { margin-top:5px; border-top:1px solid var(--line); border-radius:0 0 5px 5px; }
+.composer-menu-row { position:relative; }
+/* The cascading submenu is fixed-positioned so the scrollable parent popup
+   cannot clip it; coordinates come from the hovered row's bounding rect. */
+.composer-menu-submenu { position:fixed; z-index:40; width:280px; max-height:240px; overflow:auto; padding:6px; border:1px solid var(--line); border-radius:10px; background:var(--bg-content); box-shadow:0 6px 24px #30323814; }
+.composer-menu-submenu .composer-menu-item small { max-width:230px; }
 .composer-surface .composer-config-error { padding:0 12px 10px; }
 .composer-option select { appearance:none; padding-right:20px; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m3 4.5 3 3 3-3' fill='none' stroke='%2376787d' stroke-width='1.2'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 4px center; }
 .transcript { background:var(--bg-content); }

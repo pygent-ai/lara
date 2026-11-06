@@ -149,12 +149,19 @@ export function App() {
   });
   const [settings, setSettings] = useState(EMPTY_SETTINGS);
   const [pendingNewModelGroup, setPendingNewModelGroup] = useState("");
+  const [pendingNewModelKey, setPendingNewModelKey] = useState("");
   const [pendingNewSessionScope, setPendingNewSessionScope] = useState("");
   useEffect(() => {
     setPendingNewModelGroup((current) => current && settings.model_groups?.[current]
       ? current
       : settings.default_model_group || "");
   }, [settings.default_model_group, settings.model_groups]);
+  // A settings save can remove or rename the pending model key; the pending
+  // selection must not survive as a create-time key the backend would reject.
+  useEffect(() => {
+    const group = pendingNewModelGroup || settings.default_model_group || "";
+    setPendingNewModelKey((current) => current && (settings.model_groups?.[group]?.models || []).includes(current) ? current : "");
+  }, [pendingNewModelGroup, settings.default_model_group, settings.model_groups]);
   useEffect(() => {
     if (!layout.compact) saveWorkbenchPreferences({ layout: { historyCollapsed: layout.historyCollapsed, traceCollapsed: layout.traceCollapsed } });
   }, [layout]);
@@ -1015,6 +1022,7 @@ export function App() {
             sessionId: streamSessionId,
             caseId: "chat",
             modelGroupName: pendingNewModelGroup || settings.default_model_group || undefined,
+            selectedModelKey: pendingNewModelKey || undefined,
             scopeId: streamScopeId,
             attachments: attachments.length ? attachments : undefined,
             resume: resume || undefined,
@@ -1055,6 +1063,7 @@ export function App() {
                     session_id: eventSessionId,
                     scope_id: eventData.scope_id || streamScopeId,
                     model_group_name: pendingNewModelGroup || settings.default_model_group,
+                    selected_model_key: pendingNewModelKey || "",
                   });
                   // The started event only carries identifiers, and the
                   // background poll sleeps while the turn runs: fetch the
@@ -1218,7 +1227,7 @@ export function App() {
         }
       }
     },
-    [activeSession?.scope_id, api, pendingNewModelGroup, pendingNewSessionScope, refreshWorkbench, sessionGroupSync, setSessionRunning, settings.default_model_group],
+    [activeSession?.scope_id, api, pendingNewModelGroup, pendingNewModelKey, pendingNewSessionScope, refreshWorkbench, sessionGroupSync, setSessionRunning, settings.default_model_group],
   );
   resumeSessionRef.current = (detail) => handleSendMessage("", detail);
 
@@ -1524,11 +1533,15 @@ export function App() {
           setSettings(nextSettings);
         }}
         pendingNewModelGroup={pendingNewModelGroup}
-        onChangeNewModelGroup={setPendingNewModelGroup}
+        pendingNewModelKey={pendingNewModelKey}
+        onSelectNewModel={(option) => {
+          setPendingNewModelGroup(option.group);
+          setPendingNewModelKey(option.value);
+        }}
         pendingNewSessionScope={pendingNewSessionScope}
-        onChangeModel={async (selectedModelKey) => {
+        onChangeModel={async (option) => {
           if (!activeSessionIdRef.current) return;
-          await api.updateSessionModel(activeSessionIdRef.current, selectedModelKey, { scopeId: activeSession?.scope_id });
+          await api.updateSessionModel(activeSessionIdRef.current, option.value, { scopeId: activeSession?.scope_id, modelGroupName: option.group });
           await loadSession(activeSessionIdRef.current, activeSession, { resumeExecution: false });
         }}
       />}
@@ -2158,7 +2171,7 @@ export function computeEnteringMessageIds(previous, sessionId, messages) {
   return new Set(messages.slice(previous.ids.length).map((message) => message.id));
 }
 
-export function ChatPane({ activeSession, messages, historyRemaining = 0, historyLoading = false, onLoadEarlier, activityCollapseToken, settings, status, running, steeringReady = false, approvals, pendingSteerings = [], api, onSendMessage, onForkSession, onSteering, onCancelTurn, onApproval, onCompressContext = () => {}, liveContextUsage = null, projects = [], onSelectProject, onChooseProject, onChangePermissions, pendingNewModelGroup = "", onChangeNewModelGroup = () => {}, pendingNewSessionScope = "", onChangeModel = () => {}, composerDrafts = new Map(), fileChanges = [], onOpenFileChange = () => {} }) {
+export function ChatPane({ activeSession, messages, historyRemaining = 0, historyLoading = false, onLoadEarlier, activityCollapseToken, settings, status, running, steeringReady = false, approvals, pendingSteerings = [], api, onSendMessage, onForkSession, onSteering, onCancelTurn, onApproval, onCompressContext = () => {}, liveContextUsage = null, projects = [], onSelectProject, onChooseProject, onChangePermissions, pendingNewModelGroup = "", pendingNewModelKey = "", onSelectNewModel = () => {}, pendingNewSessionScope = "", onChangeModel = () => {}, composerDrafts = new Map(), fileChanges = [], onOpenFileChange = () => {} }) {
   const empty = messages.length === 0;
   // A paused session (last run ended resumably) offers one-click continue on
   // an empty send; while it runs, the composer is in steering mode instead.
@@ -2677,10 +2690,23 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
             ]} />}
           <ComposerMenu label="任务权限（全局）" title="全局权限设置，对后续新运行生效" value={settings.approvals_enabled === false ? "full" : "ask"} disabled={running || configuring} onChange={(value) => void configure(() => onChangePermissions(value === "ask"))}
             options={[{ value:"ask", label:"逐次审批" }, { value:"full", label:"完全访问" }]} />
-          {!activeSession && <ComposerMenu label="模型组" title="模型组在对话创建后固定" value={pendingNewModelGroup || settings.default_model_group || ""} disabled={running || configuring} onChange={onChangeNewModelGroup}
-            options={Object.keys(settings.model_groups || {}).map((name) => ({ value: name, label: name, description: (settings.model_groups[name]?.models || []).join(" → ") }))} />}
-          {activeSession && <ComposerMenu label="首选模型" title={`固定模型组：${activeSession.model_group_name || "未配置"}`} value={activeSession.selected_model_key || ""} disabled={running || configuring} onChange={(value) => void configure(() => onChangeModel(value))}
-            options={(activeSession.selectable_models || []).map((model) => ({ value: model.model_key, label: model.model_key, description: modelCapabilitySummary(model, settings) }))} />}
+          {(() => {
+            // One cascading picker serves both composer states with the same
+            // code path: picking an entry fixes the group and preferred model
+            // for a new chat, or moves the live chat onto another group/model
+            // for its next run. An untouched menu equals the primary model
+            // (the backend seeds new sessions with models[0]).
+            const groups = settings.model_groups || {};
+            const pendingGroup = pendingNewModelGroup || settings.default_model_group || "";
+            const value = activeSession
+              ? activeSession.selected_model_key || ""
+              : pendingNewModelKey || (groups[pendingGroup]?.models || [])[0] || "";
+            const options = modelGroupMenuOptions(settings, activeSession?.selectable_models || []);
+            const [label, title, onSelect] = activeSession
+              ? ["首选模型", "悬停模型组选择其中的首选模型；切换模型组对下一次运行生效", (option) => void configure(() => onChangeModel(option))]
+              : ["模型组", "悬停模型组选择其中的首选模型；模型组在对话创建后固定", onSelectNewModel];
+            return <ComposerMenu label={label} title={title} value={value} disabled={running || configuring} onSelect={onSelect} options={options} />;
+          })()}
           <div className="composer-send-actions">
             <input ref={fileInputRef} type="file" multiple hidden aria-hidden="true" tabIndex={-1} onChange={(event) => void pickFiles(event)} />
             <button className="attach" aria-label="添加附件" title="添加工作区文件作为附件（图片/视频原生识别，其他文件转 XML）" disabled={sending || configuring || pendingAttachments.length >= 10} type="button" onClick={() => fileInputRef.current?.click()}>
@@ -2795,21 +2821,54 @@ function ContextGauge({ usedTokens, totalTokens, triggerRatio, compressionCount 
   );
 }
 
-function ComposerMenu({ label, title, icon, value, options, disabled, onChange }) {
+// Composer menus render flat option lists; an option may carry `children`
+// to cascade a fixed-positioned submenu to the item's right (clipped popups
+// cannot host it). `onSelect`, when provided, receives the whole picked
+// option object instead of just its value — the cascading group/model menu
+// needs the group context that a bare model key cannot carry.
+function ComposerMenu({ label, title, icon, value, options, disabled, onChange, onSelect }) {
   const [open, setOpen] = useState(false);
+  const [submenuFor, setSubmenuFor] = useState(null);
+  const [submenuPos, setSubmenuPos] = useState(null);
   const rootRef = useRef(null);
   const triggerRef = useRef(null);
   const menuRef = useRef(null);
+  const findOption = (key) => {
+    for (const option of options) {
+      if (option.value === key) return option;
+      const child = option.children?.find((child) => child.value === key);
+      if (child) return child;
+    }
+    return null;
+  };
+  const openSubmenu = (option, row) => {
+    const rect = row.getBoundingClientRect();
+    const width = 280;
+    let left = rect.right + 4;
+    if (left + width > window.innerWidth - 8) left = rect.left - width - 4;
+    const height = Math.min(240, (option.children?.length || 1) * 44 + 12);
+    const top = Math.max(8, Math.min(rect.top, window.innerHeight - height - 8));
+    setSubmenuPos({ left, top });
+    setSubmenuFor(option.value);
+  };
+  const pick = (option) => {
+    setOpen(false);
+    triggerRef.current?.focus();
+    if (onSelect) onSelect(option);
+    else if (option.value !== value) onChange(option.value);
+  };
   useEffect(() => {
     if (!open) return;
-    const items = menuRef.current?.querySelectorAll('[role^="menuitem"]');
-    const selected = options.findIndex((option) => option.value === value);
+    const items = menuRef.current?.querySelectorAll(':scope > .composer-menu-row > button');
+    const selected = options.findIndex((option) => option.value === value || option.children?.some((child) => child.value === value));
     items?.[Math.max(0, selected)]?.focus();
     const dismiss = (event) => { if (!rootRef.current?.contains(event.target)) setOpen(false); };
     document.addEventListener("pointerdown", dismiss);
     return () => document.removeEventListener("pointerdown", dismiss);
   }, [open]);
   useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
+  useEffect(() => { if (!open) setSubmenuFor(null); }, [open]);
+  const selectedOption = findOption(value);
   return <div className="composer-menu" ref={rootRef} onBlur={(event) => {
     if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
   }}>
@@ -2817,23 +2876,61 @@ function ComposerMenu({ label, title, icon, value, options, disabled, onChange }
       onClick={() => setOpen((current) => !current)} onKeyDown={(event) => {
         if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setOpen(true); }
       }}>
-      {icon}<span>{options.find((option) => option.value === value)?.label || label}</span><ChevronRight size={12} className="composer-menu-chevron" aria-hidden="true" />
+      {icon}<span>{selectedOption?.label || label}</span><ChevronRight size={12} className="composer-menu-chevron" aria-hidden="true" />
     </button>
     {open && <div ref={menuRef} className="composer-menu-popup" role="menu" aria-label={label} onKeyDown={(event) => {
       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setOpen(false); triggerRef.current?.focus(); }
-      const items = Array.from(menuRef.current.querySelectorAll('[role^="menuitem"]'));
+      const items = Array.from(menuRef.current.querySelectorAll(':scope > .composer-menu-row > button'));
       const index = items.indexOf(document.activeElement);
       const target = event.key === "ArrowDown" ? (index + 1) % items.length : event.key === "ArrowUp" ? (index - 1 + items.length) % items.length : event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : -1;
       if (target >= 0) { event.preventDefault(); items[target]?.focus(); }
     }}>
       <div className="composer-menu-heading">{label}</div>
-      {options.map((option) => <button key={option.value} type="button" tabIndex={-1} role={option.action ? "menuitem" : "menuitemradio"} aria-checked={option.action ? undefined : value === option.value}
-        className={`composer-menu-item${option.action ? " menu-action" : ""}`} title={option.description}
-        onClick={() => { setOpen(false); triggerRef.current?.focus(); if (option.value !== value) onChange(option.value); }}>
-        <span>{option.label}{option.description && <small>{option.description}</small>}</span>
-        {value === option.value && <Check size={14} aria-hidden="true" />}
-        {option.action && <Folder size={14} aria-hidden="true" />}
-      </button>)}
+      {options.map((option) => {
+        const children = Array.isArray(option.children) && option.children.length ? option.children : null;
+        const submenuOpen = Boolean(children) && submenuFor === option.value;
+        const checked = option.action ? undefined : option.value === value || Boolean(children?.some((child) => child.value === value));
+        return <div key={option.value} className="composer-menu-row" onMouseEnter={(event) => {
+          if (children) openSubmenu(option, event.currentTarget);
+          else setSubmenuFor(null);
+        }}>
+          <button type="button" tabIndex={-1} role={option.action ? "menuitem" : "menuitemradio"} aria-checked={checked}
+            aria-haspopup={children ? "menu" : undefined} aria-expanded={children ? submenuOpen : undefined}
+            className={`composer-menu-item${option.action ? " menu-action" : ""}`} title={option.description}
+            onKeyDown={(event) => {
+              if (children && event.key === "ArrowRight") {
+                event.preventDefault();
+                const row = event.currentTarget.closest(".composer-menu-row");
+                openSubmenu(option, row);
+                requestAnimationFrame(() => row.querySelector(".composer-menu-submenu button")?.focus());
+              }
+            }}
+            onClick={() => pick(children ? (option.select || children[0]) : option)}>
+            <span>{option.label}{option.description && <small>{option.description}</small>}</span>
+            {children ? <ChevronRight size={14} aria-hidden="true" /> : Boolean(checked) && <Check size={14} aria-hidden="true" />}
+            {option.action && <Folder size={14} aria-hidden="true" />}
+          </button>
+          {submenuOpen && <div className="composer-menu-submenu" role="menu" aria-label={option.label} style={submenuPos} onKeyDown={(event) => {
+            if (event.key === "Escape" || event.key === "ArrowLeft") {
+              event.preventDefault(); event.stopPropagation();
+              setSubmenuFor(null);
+              event.currentTarget.closest(".composer-menu-row")?.querySelector("button")?.focus();
+              return;
+            }
+            const items = Array.from(event.currentTarget.querySelectorAll('[role^="menuitem"]'));
+            const index = items.indexOf(document.activeElement);
+            const target = event.key === "ArrowDown" ? (index + 1) % items.length : event.key === "ArrowUp" ? (index - 1 + items.length) % items.length : -1;
+            if (target >= 0) { event.preventDefault(); items[target]?.focus(); }
+          }}>
+            {children.map((child) => <button key={child.value} type="button" tabIndex={-1} role="menuitemradio" aria-checked={child.value === value}
+              className="composer-menu-item" title={child.description}
+              onClick={() => pick(child)}>
+              <span>{child.label}{child.description && <small>{child.description}</small>}</span>
+              {child.value === value && <Check size={14} aria-hidden="true" />}
+            </button>)}
+          </div>}
+        </div>;
+      })}
     </div>}
   </div>;
 }
@@ -5533,6 +5630,24 @@ function primaryModel(settings) {
 // Media capability summary for the session's model picker, so a multimodal
 // main model is recognizable before selection; models without declared
 // media capabilities keep the plain provider/model description.
+// One option builder feeds both composer states (new chat and live chat):
+// every model group becomes a cascading parent whose children are its models.
+// Descriptions prefer the backend's selectable_models summary for the chat's
+// current group and fall back to the settings metadata elsewhere.
+function modelGroupMenuOptions(settings, selectableModels = []) {
+  const groups = settings.model_groups || {};
+  return Object.keys(groups).flatMap((name) => {
+    const children = (groups[name]?.models || []).map((key) => {
+      const summary = selectableModels.find((model) => model.model_key === key);
+      const native = settings.models?.[key];
+      const model = summary || (native ? { model_key: key, provider: native.connection || "", model_id: native.model_id || "" } : null);
+      return { value: key, group: name, label: key, description: model ? modelCapabilitySummary(model, settings) : "" };
+    });
+    if (!children.length) return [];
+    return [{ value: name, label: name, description: children.map((child) => child.value).join(" → "), children, select: children[0] }];
+  });
+}
+
 function modelCapabilitySummary(model, settings) {
   const base = `${model.provider} / ${model.model_id}`;
   const modalities = settings?.models?.[model.model_key]?.capabilities?.modalities;

@@ -63,12 +63,14 @@ class SessionService:
         case_id: str = "chat",
         mode: str = "chat",
         model_group_name: str | None = None,
+        selected_model_key: str | None = None,
         eternal_memory: bool = False,
     ) -> SessionRecordResponse:
         ref = self.manager.create(
             case_id,
             mode=mode,
             model_group_name=model_group_name,
+            selected_model_key=selected_model_key,
             eternal_memory=eternal_memory,
         )
         if self.reminders is not None:
@@ -144,9 +146,14 @@ class SessionService:
         )
 
     def update_selected_model(
-        self, session_id: str, selected_model_key: str
+        self,
+        session_id: str,
+        selected_model_key: str,
+        model_group_name: str | None = None,
     ) -> SessionRecordResponse:
-        session = self.manager.set_selected_model(session_id, selected_model_key)
+        session = self.manager.set_selected_model(
+            session_id, selected_model_key, model_group_name=model_group_name
+        )
         metadata = read_json(Path(session.session_dir) / "metadata.json")
         return _record_from_metadata(
             Path(session.session_dir), metadata, scope_id=self.scope_id

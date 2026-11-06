@@ -2440,7 +2440,7 @@ test("connection buffer commit replaces the slice and remaps model groups", () =
   assert.equal(renamedConnection.models.renamed.connection, "main");
 });
 
-test("existing idle chat exposes only child models from its fixed group", () => {
+test("existing idle chat reuses the cascading group and model picker", () => {
   const html = renderToStaticMarkup(React.createElement(appModule.ChatPane, {
     activeSession: {
       session_id: "s1", title: "Chat", model_group_name: "coding", selected_model_key: "backup",
@@ -2453,9 +2453,12 @@ test("existing idle chat exposes only child models from its fixed group", () => 
     status: "Ready", running: false, approvals: [], projects: [], api: {},
     onSendMessage() {}, onSteering() {}, onApproval() {}, onChangePermissions() {}, onChangeModel() {},
   }));
-  assert.match(html, /coding/);
   assert.match(html, /backup/);
-  assert.doesNotMatch(html, /vision-only/);
+  assert.match(html, /aria-label="首选模型"/);
+  assert.equal((html.match(/aria-label="首选模型"/g) || []).length, 1);
+  // The fixed-group wording is gone: the picker can move the live chat onto
+  // another group, and groups stay inside the closed popup.
+  assert.doesNotMatch(html, /固定模型组/);
   assert.doesNotMatch(html, /aria-label="模型组"/);
 });
 
@@ -2481,6 +2484,39 @@ test("new-chat composer keeps the pending model group and pending scope selectab
   assert.match(html, /aria-label="模型组"/);
   assert.match(html, /glm-5\.3-flash/);
   assert.match(html, /独立对话/);
+});
+
+test("new-chat composer picks group and preferred model from one cascading menu", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.ChatPane, {
+    activeSession: null,
+    messages: [],
+    settings: {
+      workspace_root: "E:\\Projects\\lara",
+      models: {
+        glm: { model_id: "glm-5.3-flash" },
+        "glm-mini": { model_id: "glm-5.3-mini" },
+        ds: { model_id: "DeepSeek-V4-Flash-0731" },
+      },
+      model_groups: {
+        ds: { models: ["ds"] },
+        glm: { models: ["glm", "glm-mini"] },
+      },
+      default_model_group: "ds",
+      approvals_enabled: false,
+    },
+    status: "Ready", running: false, approvals: [], projects: [], api: {},
+    pendingNewModelGroup: "glm",
+    pendingNewModelKey: "glm-mini",
+    pendingNewSessionScope: "conversation",
+    onSelectNewModel() {},
+    onSendMessage() {}, onSteering() {}, onApproval() {}, onChangePermissions() {},
+  }));
+  // One cascading trigger shows the pinned model; groups live inside the
+  // closed popup, so no duplicate 模型组/首选模型 trigger may appear.
+  assert.equal((html.match(/aria-label="模型组"/g) || []).length, 1);
+  assert.match(html, /title="悬停模型组选择其中的首选模型；模型组在对话创建后固定"/);
+  assert.match(html, /<span>glm-mini<\/span>/);
+  assert.doesNotMatch(html, /aria-label="首选模型"/);
 });
 
 test("entrance animation targets only appended messages, never history reloads", () => {

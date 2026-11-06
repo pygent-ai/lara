@@ -177,6 +177,7 @@ export function createApiClient(options = {}) {
           mode: request.mode || "chat",
           scope_id: request.scopeId || undefined,
           model_group_name: request.modelGroupName || undefined,
+          selected_model_key: request.selectedModelKey || undefined,
         },
       }),
     getSession: (sessionId, { scopeId, historyLimit, historyBeforeSequence, ...options } = {}) =>
@@ -249,11 +250,14 @@ export function createApiClient(options = {}) {
         ...options, method: "POST",
         body: { session_id: sessionId },
       }),
-    updateSessionModel: (sessionId, selectedModelKey, { scopeId, ...options } = {}) =>
+    updateSessionModel: (sessionId, selectedModelKey, { scopeId, modelGroupName, ...options } = {}) =>
       jsonRequest(`/sessions/${encodeURIComponent(sessionId)}/model${scopeQuery(scopeId)}`, {
         ...options,
         method: "PATCH",
-        body: { selected_model_key: selectedModelKey },
+        body: {
+          selected_model_key: selectedModelKey,
+          model_group_name: modelGroupName || undefined,
+        },
       }),
     compressSession: (sessionId, { scopeId, ...options } = {}) =>
       jsonRequest(`/sessions/${encodeURIComponent(sessionId)}/compress${scopeQuery(scopeId)}`, {
@@ -427,6 +431,7 @@ async function streamChatAttempt({ baseUrl, fetchImpl, request, onEvent, onActiv
       scope_id: request.scopeId || null,
       case_id: request.caseId || "chat",
       model_group_name: request.modelGroupName || null,
+      selected_model_key: request.selectedModelKey || null,
       turn_id: request.turnId || null,
       execution_id: request.executionId || null,
       // Only the first attempt resumes the session's last run; a reconnect
