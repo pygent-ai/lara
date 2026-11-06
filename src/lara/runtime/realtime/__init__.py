@@ -1,14 +1,22 @@
 """Real-time interaction harness (D-RT series, see docs/design/realtime-interaction).
 
 The agent works silently: content/thinking stay out of the user-facing stream and
-``speak`` is the only channel the user sees. Modules planned under D-RT9:
+``speak`` is the only channel the user sees. Inactive until a run config enables
+``realtime_interaction``.
 
 - ``speak``          — the user-visible channel tool + renderer/source abstraction
-- ``fork_reply``     — fork-snapshot single-call reply (tool_choice forced / fallback)
+- ``fork_reply``     — fork-snapshot request construction and speak extraction
+- ``fork_agent``     — the fork reply as a minimal managed execution graph
 - ``envelope``       — conversation-exchange injection at the next tool-result boundary
-- ``nudge``          — N-rounds-without-speak reminder
-- ``turn_finalizer`` — end-of-turn bottom-line speak check
+- ``posting``        — envelope delivery through the agent-message channel
+- ``nudge``          — N-rounds-without-speak reminder rule and text
+- ``injection``      — the tool-result boundary nudge module
+- ``turn_finalizer`` — end-of-turn bottom-line speak decision rule
 
-Wiring into the live pipeline lands after the 200-round acceptance run finishes;
-until then this package is additive-only and imported by nothing.
+Wiring: the envelope rides the existing agent-message queue (claimed by the
+runtime's reminder boundary); the nudge module composes into
+``PreparedToolModule`` behind ``realtime_interaction_enabled``; the fork reply
+runs as a pygent managed execution via ``LaraRuntimeService.send_interrupt``;
+the finalizer round is queued by the session coordinator's lane at turn
+completion.
 """
