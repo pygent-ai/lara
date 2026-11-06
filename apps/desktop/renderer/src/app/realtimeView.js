@@ -7,9 +7,11 @@
 // stream and the journal stay untouched.
 //
 // Rows follow the App transcript model: {id, role: "user"|"assistant"|...,
-// content, sections, status, speak?}. An assistant row carries `speak` when
-// its turn delivered a speak call ({text, attachments, sayNothing}), and
-// `frontWorking` marks a still-running turn in the front view.
+// content, sections, status, speaks?}. An assistant row carries `speaks` —
+// every speak call its turn delivered, in order ({text, attachments,
+// sayNothing}) — because a silent-work turn reports progress and its final
+// answer through several speak calls; `frontWorking` marks a still-running
+// turn in the front view.
 
 export const VIEW_MODES = ["front", "back"];
 const STORAGE_KEY = "lara.desktop.realtime-view-modes.v1";
@@ -84,28 +86,32 @@ export function speakArguments(raw) {
   return { text, attachments, sayNothing };
 }
 
-export function extractSpeakFromTurn(turnMessages) {
+export function extractSpeaksFromTurn(turnMessages) {
+  // Collect every speak call the turn delivered, in order: a silent-work
+  // turn reports progress and its final answer through several speak calls,
+  // and rendering only the last one would erase the earlier replies.
   const assistantMessages = (Array.isArray(turnMessages) ? turnMessages : [])
     .filter((message) => String(message?.role || "") === "assistant");
-  for (let index = assistantMessages.length - 1; index >= 0; index -= 1) {
-    const rawCalls = assistantMessages[index]?.tool_calls
-      || assistantMessages[index]?.payload?.tool_calls
+  const speaks = [];
+  for (const message of assistantMessages) {
+    const rawCalls = message?.tool_calls
+      || message?.payload?.tool_calls
       || [];
     const calls = Array.isArray(rawCalls) ? rawCalls : [];
-    for (let callIndex = calls.length - 1; callIndex >= 0; callIndex -= 1) {
-      if (isSpeakToolCall(calls[callIndex])) {
-        return speakArguments(calls[callIndex]);
-      }
+    for (const call of calls) {
+      if (!isSpeakToolCall(call)) continue;
+      const args = speakArguments(call);
+      if (args) speaks.push(args);
     }
   }
-  return null;
+  return speaks;
 }
 
 /**
  * The view filter over transcript rows.
  *
  * Front: user rows stay, internal kinds drop, an assistant row becomes
- * either a speak bubble (row.speak), a working indicator (row.status
+ * either speak bubbles (row.speaks), a working indicator (row.status
  * "running"), or disappears (finished without speaking — invisible work).
  * Back: user inputs and internal kinds drop; assistant rows pass as-is.
  */
@@ -126,7 +132,7 @@ export function displayRowsForView(items, mode) {
         output.push({ ...row, frontWorking: true });
         continue;
       }
-      if (row.speak) {
+      if (Array.isArray(row.speaks) && row.speaks.length > 0) {
         output.push({ ...row, frontSpeak: true });
       }
       continue;

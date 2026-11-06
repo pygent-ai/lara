@@ -81,7 +81,7 @@ import {
 } from "./taskbarBadge.js";
 import {
   displayRowsForView,
-  extractSpeakFromTurn,
+  extractSpeaksFromTurn,
   isLaraSaysSession,
   isSpeakToolCall,
   LARA_SAYS_SESSION_MODE,
@@ -1218,13 +1218,13 @@ export function App() {
                   role: "assistant",
                   status: "done",
                   content: "",
-                  speak: {
+                  speaks: [{
                     text: String(speakData.text || ""),
                     attachments: Array.isArray(speakData.attachments)
                       ? speakData.attachments.map((item) => String(item))
                       : [],
                     sayNothing: false,
-                  },
+                  }],
                   frontSpeak: true,
                 };
                 streamMessages = [...(streamMessages || []), speakRow];
@@ -1443,11 +1443,11 @@ export function App() {
         role: "assistant",
         status: "done",
         content: "",
-        speak: {
+        speaks: [{
           text: String(reply.text || ""),
           attachments: Array.isArray(reply.attachments) ? reply.attachments.map((item) => String(item)) : [],
           sayNothing: false,
-        },
+        }],
         frontSpeak: true,
       };
       setMessages((items) => [...items, forkRow]);
@@ -3378,8 +3378,10 @@ const MessageRow = memo(function MessageRow({ message, entering = false, activit
   }
 
   if (viewMode === "front" && message.frontSpeak) {
-    const speak = message.speak || {};
-    if (speak.sayNothing) {
+    const speaks = Array.isArray(message.speaks) ? message.speaks : [];
+    const delivered = speaks.filter((speak) => !speak.sayNothing);
+    if (delivered.length === 0) {
+      // A deliberate pure-silent decision: one muted marker, nothing delivered.
       return (
         <article className={`message assistant realtime-speak${entering ? " message-enter" : ""}`} data-message-id={message.id}>
           <div className="avatar">L</div>
@@ -3389,18 +3391,24 @@ const MessageRow = memo(function MessageRow({ message, entering = false, activit
         </article>
       );
     }
+    // A turn may deliver several speaks (progress updates then the final
+    // answer): each one is its own bubble, in delivery order.
     return (
       <article className={`message assistant realtime-speak${entering ? " message-enter" : ""}`} data-message-id={message.id}>
         <div className="avatar">L</div>
-        <div className="bubble realtime-speak-bubble">
-          {speak.text ? <div className="realtime-speak-text">{speak.text}</div> : null}
-          {Array.isArray(speak.attachments) && speak.attachments.length > 0 ? (
-            <div className="realtime-speak-attachments">
-              {speak.attachments.map((item) => (
-                <span key={item} className="realtime-speak-attachment">{item}</span>
-              ))}
+        <div className="realtime-speak-bubbles">
+          {delivered.map((speak, index) => (
+            <div className="bubble realtime-speak-bubble" key={index}>
+              {speak.text ? <div className="realtime-speak-text">{speak.text}</div> : null}
+              {Array.isArray(speak.attachments) && speak.attachments.length > 0 ? (
+                <div className="realtime-speak-attachments">
+                  {speak.attachments.map((item) => (
+                    <span key={item} className="realtime-speak-attachment">{item}</span>
+                  ))}
+                </div>
+              ) : null}
             </div>
-          ) : null}
+          ))}
         </div>
       </article>
     );
@@ -4864,12 +4872,12 @@ function renderTurnSegment(segment, idPrefix, timing = segment.find((message) =>
   const turnIds = [...new Set(segment
     .map((item) => String(item?.turn_id || ""))
     .filter(Boolean))];
-  const speak = extractSpeakFromTurn(segment);
+  const speaks = extractSpeaksFromTurn(segment);
   return [
     {
       id: `${idPrefix}-assistant`,
       role: "assistant",
-      ...(speak ? { speak } : {}),
+      ...(speaks.length ? { speaks } : {}),
       content: finalContent,
       status: "success",
       ...runTimingFields(timing),
@@ -5116,14 +5124,15 @@ export function projectLiveAssistantEvent(message, event, now = Date.now()) {
       // into a section for a row that already exists.
       return nextSections === sections ? message : { ...message, sections: nextSections };
     }
-    // A speak call carries its delivery payload on the row: the front view
-    // renders it as a bubble instead of the workbench card.
-    const speakRaw = calls.find((raw) => isSpeakToolCall(raw));
-    if (speakRaw) {
-      const speak = speakArguments(speakRaw);
-      if (speak) {
-        return { ...message, content: "", sections: appendToolCallsSection(nextSections, newCalls), speak };
-      }
+    // Speak calls carry their delivery payloads on the row: the front view
+    // renders each delivered one as a bubble instead of the workbench card.
+    const incomingSpeaks = newCalls
+      .filter((raw) => isSpeakToolCall(raw))
+      .map((raw) => speakArguments(raw))
+      .filter(Boolean);
+    if (incomingSpeaks.length > 0) {
+      const speaks = [...(Array.isArray(message.speaks) ? message.speaks : []), ...incomingSpeaks];
+      return { ...message, content: "", sections: appendToolCallsSection(nextSections, newCalls), speaks };
     }
     if (String(message.content || "").trim()) {
       nextSections = appendTextSection(nextSections, "Assistant content", message.content);
