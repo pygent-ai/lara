@@ -316,3 +316,38 @@ def test_invalid_eternal_trigger_settings_are_rejected(tmp_path: Path, content: 
     home = write_user_config(tmp_path, content)
     with patch("lara.config.loader.Path.home", return_value=home), pytest.raises(ValueError, match=message):
         load_run_config(workspace_root=tmp_path)
+
+
+def test_realtime_interaction_defaults_to_enabled(tmp_path: Path) -> None:
+    home = write_user_config(tmp_path, "")
+    with patch("lara.config.loader.Path.home", return_value=home):
+        config = load_run_config(workspace_root=tmp_path)
+    assert config.realtime_interaction.enabled is True
+    assert config.realtime_interaction.nudge_interval == 5
+    assert config.realtime_interaction.fork_deadline_seconds == 60.0
+
+
+def test_realtime_interaction_settings_are_loaded(tmp_path: Path) -> None:
+    home = write_user_config(
+        tmp_path,
+        "realtime_interaction:\n  enabled: false\n  nudge_interval: 3\n  fork_deadline_seconds: 30.5\n",
+    )
+    with patch("lara.config.loader.Path.home", return_value=home):
+        config = load_run_config(workspace_root=tmp_path)
+    assert config.realtime_interaction.enabled is False
+    assert config.realtime_interaction.nudge_interval == 3
+    assert config.realtime_interaction.fork_deadline_seconds == 30.5
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        ("realtime_interaction:\n  nudge_interval: 0\n", "nudge_interval"),
+        ("realtime_interaction:\n  fork_deadline_seconds: 0\n", "fork_deadline_seconds"),
+        ("realtime_interaction:\n  unknown_key: 1\n", "realtime_interaction"),
+    ],
+)
+def test_invalid_realtime_settings_are_rejected(tmp_path: Path, content: str, message: str) -> None:
+    home = write_user_config(tmp_path, content)
+    with patch("lara.config.loader.Path.home", return_value=home), pytest.raises(ValueError, match=message):
+        load_run_config(workspace_root=tmp_path)
