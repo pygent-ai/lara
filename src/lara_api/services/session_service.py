@@ -12,7 +12,7 @@ from lara.core.io import read_json, validate_path_id
 from lara.core.process import owner_is_foreign_and_alive
 from lara.runtime.reminders import ReminderService
 from lara.schema import AgentSession, CaseRunRef, CaseRunStatus, RunConfig
-from lara.sessions import SessionManager
+from lara.sessions import LARA_SAYS_SESSION_MODE, SessionManager
 from lara.tracing.events import EventStore
 from lara_api.container import ApiContext
 from lara_api.models.responses import (
@@ -50,7 +50,10 @@ class SessionService:
             if not (metadata_path.parent / "session.json").is_file():
                 continue
             metadata = read_json(metadata_path)
-            if metadata.get("mode") != "chat":
+            # The dedicated lara-says session is a first-class chat session:
+            # the sidebar pulls it out of these lists into its fixed entry, so
+            # excluding it here would orphan every created instance.
+            if metadata.get("mode") not in ("chat", LARA_SAYS_SESSION_MODE):
                 continue
             records.append(
                 _record_from_metadata(metadata_path.parent, metadata, scope_id=scope_id)

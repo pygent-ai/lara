@@ -630,6 +630,29 @@ def test_session_list_uses_first_user_message_as_title_when_metadata_title_is_mi
     assert records[0].title == "Build a LoRA training script with resume support"
 
 
+def test_session_list_includes_the_dedicated_lara_says_session(tmp_path: Path) -> None:
+    """The fixed sidebar entry can only find its session through this list; a
+    mode filter that drops lara-says would mint a new session on every click."""
+
+    manager = SessionManager(
+        RunConfig(
+            workspace_root=str(tmp_path),
+            lara_root=str((tmp_path / ".lara").resolve()),
+        )
+    )
+    manager.create("chat", mode="lara-says")
+    regular = manager.create("chat", mode="chat")
+
+    records = SessionService(manager).list_chat_sessions()
+
+    assert {record.mode for record in records} == {"chat", "lara-says"}
+    assert any(record.session_id == regular.session_id for record in records)
+
+    # Non-chat work sessions (e.g. automation runs) stay hidden from the sidebar.
+    manager.create("automation", mode="automation")
+    assert all(record.mode != "automation" for record in SessionService(manager).list_chat_sessions())
+
+
 def test_session_list_ignores_incomplete_metadata_only_sessions(tmp_path: Path) -> None:
     manager = SessionManager(
         RunConfig(

@@ -82,7 +82,9 @@ import {
 import {
   displayRowsForView,
   extractSpeakFromTurn,
+  isLaraSaysSession,
   isSpeakToolCall,
+  LARA_SAYS_SESSION_MODE,
   loadViewMode,
   normalizeViewMode,
   speakArguments,
@@ -108,7 +110,6 @@ const EMPTY_SETTINGS = {
   agent: "default",
   model_configuration_status: "unconfigured",
   model_configuration_error: "model_configuration_required",
-  realtime_interaction_enabled: false,
   connections: {},
   models: {},
   model_groups: {},
@@ -249,9 +250,19 @@ export function App() {
     () => flattenSessionGroups(sessionGroups).find((session) => session.session_id === activeSessionId) || null,
     [sessionGroups, activeSessionId],
   );
+  // The dedicated "Lara说" session lives outside every sidebar list: it is
+  // split out once and rendered as its own fixed entry above 最近对话.
+  const { generalGroups, laraSaysSessions } = useMemo(
+    () => splitLaraSaysSession(sessionGroups),
+    [sessionGroups],
+  );
+  const laraSays = useMemo(
+    () => laraSaysSessions.find((item) => item.scope?.scope_id === activeScopeId) || laraSaysSessions[0] || null,
+    [laraSaysSessions, activeScopeId],
+  );
   const visibleSessionGroups = useMemo(
-    () => applyRunningSessionStatus(sessionGroups, runningSessionIds),
-    [sessionGroups, runningSessionIds],
+    () => applyRunningSessionStatus(generalGroups, runningSessionIds),
+    [generalGroups, runningSessionIds],
   );
   const visibleTraceEvents = useMemo(() => [...traceEvents, ...liveEvents], [traceEvents, liveEvents]);
   const visibleActivityEvents = useMemo(
@@ -267,6 +278,7 @@ export function App() {
     () => Object.values(speakUnread).reduce((sum, item) => sum + (Number(item) || 0), 0),
     [speakUnread],
   );
+  const laraSaysUnread = laraSays ? (speakUnread[laraSays.session.session_id] || 0) : 0;
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -871,6 +883,38 @@ export function App() {
       }
     },
     [api, loadSession, refreshWorkbench, settings.workspace_root],
+  );
+
+  // Opening the dedicated entry selects the lara-says session, creating it on
+  // first use; arriving on the front view starts with a clean unread slate.
+  // The in-flight guard keeps rapid re-clicks from minting duplicate sessions
+  // while the groups poll has not caught up with the creation yet.
+  const laraSaysCreatingRef = useRef(false);
+  const handleOpenLaraSays = useCallback(
+    async () => {
+      if (laraSaysCreatingRef.current) {
+        return;
+      }
+      if (laraSays) {
+        await handleSelectSession(laraSays.session, laraSays.scope);
+        const sessionId = laraSays.session.session_id;
+        if (sessionId) {
+          setSpeakUnread((items) => ({ ...items, [sessionId]: 0 }));
+        }
+        return;
+      }
+      laraSaysCreatingRef.current = true;
+      try {
+        const created = await api.createSession({ mode: LARA_SAYS_SESSION_MODE });
+        await sessionGroupSync.refresh();
+        await handleSelectSession(created, null);
+      } catch (err) {
+        setError(readableError(err));
+      } finally {
+        laraSaysCreatingRef.current = false;
+      }
+    },
+    [api, handleSelectSession, laraSays, sessionGroupSync],
   );
 
   const handleSendMessage = useCallback(
@@ -1542,6 +1586,9 @@ export function App() {
       {!layout.traceCollapsed && <PanelDivider side="trace" width={fittedWidths.trace} max={Math.max(260, Math.min(720, workbenchWidth - fittedWidths.history - 320))} onResize={(width) => resizePanel("trace", width)} onDragging={setResizingPanel} />}
       <SessionSidebar
         speakUnreadTotal={speakUnreadTotal}
+        laraSays={laraSays}
+        laraSaysUnread={laraSaysUnread}
+        onOpenLaraSays={handleOpenLaraSays}
         collapsed={layout.historyCollapsed}
         settings={settings}
         projects={projects}
@@ -1595,7 +1642,7 @@ export function App() {
         onApproval={handleApproval}
         onCompressContext={handleCompressContext}
         liveContextUsage={liveContextUsage[activeSessionId] || null}
-        realtimeInteractionEnabled={Boolean(settings.realtime_interaction_enabled)}
+        realtimeInteractionEnabled={isLaraSaysSession(activeSession)}
         speakUnreadCount={speakUnread[activeSessionId] || 0}
         onMarkSpeakRead={(sessionId) => {
           if (!sessionId) return;
@@ -1708,6 +1755,27 @@ export const RECENT_MAX_SESSIONS = 20;
 
 // Merge every scope's sessions into the recents pool: pinned lead in their
 // pin order, the rest follows by recency, then the pool is capped.
+export function splitLaraSaysSession(sessionGroups) {
+  // Dedicated "Lara说" sessions are pulled out of every sidebar list and
+  // surfaced through the fixed entry; each scope may hold one, so all of
+  // them are collected and the entry picks the active scope's first.
+  const laraSaysSessions = [];
+  const source = Array.isArray(sessionGroups) ? sessionGroups : [];
+  const generalGroups = source.map((group) => {
+    const sessions = (group.sessions || []).filter((session) => {
+      if (isLaraSaysSession(session)) {
+        laraSaysSessions.push({ session, scope: group.scope || null });
+        return false;
+      }
+      return true;
+    });
+    return sessions.length === (group.sessions || []).length
+      ? group
+      : { ...group, sessions };
+  });
+  return { generalGroups, laraSaysSessions };
+}
+
 export function buildRecentConversations(sessionGroups, search) {
   const items = sessionGroups.flatMap((group) => (group.sessions || []).map((session) => ({ session, scope: group.scope })));
   const matches = (item) => `${item.session.title || ""} ${item.session.session_id || ""} ${item.scope?.label || ""}`.toLocaleLowerCase().includes(search);
@@ -1736,6 +1804,9 @@ export function reorderIds(ids, fromId, toId) {
 
 export const SessionSidebar = memo(function SessionSidebar({
   speakUnreadTotal = 0,
+  laraSays = null,
+  laraSaysUnread = 0,
+  onOpenLaraSays,
   collapsed,
   settings,
   projects,
@@ -1905,6 +1976,30 @@ export const SessionSidebar = memo(function SessionSidebar({
         </div>
 
         {!collapsed && <>
+          {/* The dedicated "Lara说" session: rendered exactly like a recent
+              conversation row (same classes), just pinned above the list. */}
+          <div
+            className={`session-row recent-row lara-says-row${laraSays && laraSays.session.session_id === activeSessionId ? " active" : ""}`}
+            role="button"
+            tabIndex={0}
+            onClick={onOpenLaraSays}
+            onKeyDown={(event) => {
+              if (event.target !== event.currentTarget) return;
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onOpenLaraSays();
+              }
+            }}
+          >
+            <div className="session-copy">
+              <div className="session-title" title="Lara说">
+                <span className="session-title-text">Lara说</span>
+              </div>
+            </div>
+            <div className="session-row-actions">
+              {laraSaysUnread > 0 && <span className="session-indicator" aria-label="有未读发言" />}
+            </div>
+          </div>
           <div className="section-label recent-label">最近对话</div>
           <div className="recent-list">
             {recentPool.length === 0 && <div className="empty-state compact">暂无会话</div>}
@@ -4645,6 +4740,10 @@ export function historyToMessages(history) {
         ...(message.created_at ? { createdAt: message.created_at } : {}),
         ...(message.checkpoint_sequence ? { checkpointSequence: message.checkpoint_sequence } : {}),
         ...(message.kind === "lara.user.steering" ? { steeringInputId: message.data?.input_id } : {}),
+        // Carrying the journal kind keeps internal coordination rows (the
+        // realtime finalizer reminder) visible to the view filters — without
+        // it the raw <system-reminder> text leaks into the transcript.
+        ...(message.kind ? { kind: String(message.kind) } : {}),
         ...(attachments ? { attachments } : {}),
       });
     }

@@ -13,7 +13,11 @@ from .directory import (
     SessionLocation,
     user_lara_root_for,
 )
-from .manager import SessionManager
+from .manager import (
+    LARA_SAYS_SESSION_MODE,
+    SessionManager,
+    realtime_enabled_for,
+)
 
 __all__ = [
     "AgentMessage",
@@ -21,9 +25,11 @@ __all__ = [
     "CollaborationOperation",
     "CollaborationState",
     "ItemLocation",
+    "LARA_SAYS_SESSION_MODE",
     "SessionCollaborationStore",
     "SessionDirectory",
     "SessionLocation",
     "SessionManager",
+    "realtime_enabled_for",
     "user_lara_root_for",
 ]

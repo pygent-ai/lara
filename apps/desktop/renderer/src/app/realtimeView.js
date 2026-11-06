@@ -14,6 +14,14 @@
 export const VIEW_MODES = ["front", "back"];
 const STORAGE_KEY = "lara.desktop.realtime-view-modes.v1";
 
+// The dedicated sidebar session ("Lara说") is the only one where realtime
+// interaction exists; the backend gates the feature on this session mode.
+export const LARA_SAYS_SESSION_MODE = "lara-says";
+
+export function isLaraSaysSession(session) {
+  return String(session?.mode || "") === LARA_SAYS_SESSION_MODE;
+}
+
 // Kinds that are internal coordination signals: never rendered as rows in
 // either view (envelope/nudge ride inside tool results and are naturally
 // invisible in the front view).

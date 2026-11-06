@@ -19,6 +19,7 @@ from lara.orchestration import (
 )
 from lara.runtime.attachments import resolve_attachments
 from lara.schema import CaseRunRef, CaseRunStatus
+from lara.sessions import realtime_enabled_for
 from lara_api.container import ApiContext
 from lara_api.models.events import ExecutionEvent
 from lara_api.models.requests import ChatTurnRequest
@@ -547,7 +548,7 @@ class ChatRunRegistry:
             resolve_attachments(
                 attachments, active.runtime_service.config.workspace_root
             )
-        if active.runtime_service.config.realtime_interaction.enabled:
+        if realtime_enabled_for(active.manager.load(session_id)):
             # Realtime mode: a mid-turn message forks a speak reply instead of
             # steering the running execution. The reply rides the HTTP
             # response — it is transient by design and never enters the

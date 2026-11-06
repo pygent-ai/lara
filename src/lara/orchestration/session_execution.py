@@ -9,6 +9,7 @@ from typing import Any
 
 from lara.core.io import plain_object
 from lara.schema import CaseRunRef
+from lara.sessions import realtime_enabled_for
 from lara.agents.context import system_reminder
 from lara.runtime.realtime.turn_finalizer import decide_turn_finalization
 
@@ -212,9 +213,6 @@ class SessionExecutionCoordinator:
         session lane, so it serializes behind this drive.
         """
 
-        config = turn.runtime_service.config
-        if not config.realtime_interaction.enabled:
-            return
         turn_key = (
             turn.command.turn_id
             or f"turn-{(turn.run_ref.case_run_id if turn.run_ref else '')[-8:]}"
@@ -222,6 +220,8 @@ class SessionExecutionCoordinator:
         if turn_key in self._finalized_turns or turn_key.endswith(":finalize"):
             return
         session = turn.manager.load(turn.command.session_id)
+        if not realtime_enabled_for(session):
+            return
         last = session.history[-1] if session.history else None
         if (
             not isinstance(last, dict)

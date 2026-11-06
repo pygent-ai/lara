@@ -28,7 +28,11 @@ from lara.orchestration.models import TurnCommand
 from lara.orchestration.session_execution import SessionExecutionCoordinator
 from lara.runtime.realtime.speak import SPEAK_TOOL_SPEC
 from lara.runtime.realtime.turn_finalizer import TURN_FINALIZER_REMINDER
-from lara.sessions import SessionManager
+from lara.sessions import (
+    LARA_SAYS_SESSION_MODE,
+    SessionManager,
+    realtime_enabled_for,
+)
 from tests.runtime_recovery_support import recovery_service
 
 
@@ -52,7 +56,8 @@ def _history_text(session) -> str:
 
 def _realtime_service(workspace: Path):
     config, service = recovery_service(workspace)
-    config.realtime_interaction.enabled = True
+    # Realtime interaction is session-gated now: the scenarios run in the
+    # dedicated lara-says session, so only the fork deadline stays config.
     config.realtime_interaction.fork_deadline_seconds = 30
     return config, service
 
@@ -128,7 +133,7 @@ async def test_mid_turn_interrupt_forks_reply_and_delivers_envelope() -> None:
         config, service = _realtime_service(Path(tmp))
         try:
             manager = SessionManager(config)
-            session = manager.create(case_id="chat", mode="chat")
+            session = manager.create(case_id="chat", mode=LARA_SAYS_SESSION_MODE)
             invoker = _InterruptInvoker()
             _patch_invoker(config, service, invoker)
             loop = asyncio.get_running_loop()
@@ -180,7 +185,7 @@ async def test_consecutive_interrupts_produce_two_replies_and_envelopes() -> Non
         config, service = _realtime_service(Path(tmp))
         try:
             manager = SessionManager(config)
-            session = manager.create(case_id="chat", mode="chat")
+            session = manager.create(case_id="chat", mode=LARA_SAYS_SESSION_MODE)
             invoker = _InterruptInvoker()
             _patch_invoker(config, service, invoker)
             loop = asyncio.get_running_loop()
@@ -247,7 +252,7 @@ async def test_agent_speak_delivers_stream_event_and_tool_result() -> None:
         config, service = _realtime_service(Path(tmp))
         try:
             manager = SessionManager(config)
-            session = manager.create(case_id="chat", mode="chat")
+            session = manager.create(case_id="chat", mode=LARA_SAYS_SESSION_MODE)
             invoker = _SpeakInvoker()
             _patch_invoker(config, service, invoker)
             loop = asyncio.get_running_loop()
@@ -300,7 +305,7 @@ async def test_pure_text_ending_queues_exactly_one_finalizer_round() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         config, service = _realtime_service(Path(tmp))
         manager = SessionManager(config)
-        session = manager.create(case_id="chat", mode="chat")
+        session = manager.create(case_id="chat", mode=LARA_SAYS_SESSION_MODE)
         invoker = _PureTextInvoker()
         _patch_invoker(config, service, invoker)
 
@@ -346,3 +351,13 @@ async def test_pure_text_ending_queues_exactly_one_finalizer_round() -> None:
         assert len(invoker.calls) == 3
 
 
+
+
+def test_realtime_flag_is_exclusive_to_the_lara_says_session() -> None:
+    """Regular sessions never get realtime interaction, config notwithstanding."""
+
+    assert realtime_enabled_for(
+        SimpleNamespace(metadata={"mode": LARA_SAYS_SESSION_MODE})
+    ) is True
+    assert realtime_enabled_for(SimpleNamespace(metadata={"mode": "chat"})) is False
+    assert realtime_enabled_for(SimpleNamespace(metadata={})) is False

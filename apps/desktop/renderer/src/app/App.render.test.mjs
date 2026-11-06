@@ -7,6 +7,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createServer } from "vite";
 import { activityHeaderText } from "./runTiming.js";
+import { displayRowsForView } from "./realtimeView.js";
 import { settingsPayload } from "../shared/api/client.js";
 
 const desktopRoot = fileURLToPath(new URL("../../../", import.meta.url));
@@ -273,6 +274,19 @@ test("history turns collect assistant media blocks from every round", () => {
   ]);
   const assistant = rendered.find((message) => message.role === "assistant");
   assert.deepEqual(assistant.media, [imageBlock]);
+});
+
+test("the realtime finalizer reminder carries its kind and stays internal in both views", () => {
+  const rendered = appModule.historyToMessages([
+    {
+      role: "user", kind: "lara.realtime.finalizer",
+      content: "<system-reminder>Your turn is about to end. The final text you just produced is NOT visible to the user.</system-reminder>",
+    },
+  ]);
+  assert.equal(rendered.length, 1);
+  assert.equal(rendered[0].kind, "lara.realtime.finalizer");
+  assert.deepEqual(displayRowsForView(rendered, "front"), []);
+  assert.deepEqual(displayRowsForView(rendered, "back"), []);
 });
 
 test("media-only assistant turns survive history rendering", () => {
@@ -2746,8 +2760,9 @@ test("recents lead with pinned sessions and cap at five until expanded", () => {
 
   // Pinned leads even though it is the oldest; the rest follows recency.
   // "Second" still renders in its project group below, so the cap is checked
-  // against the recent rows only.
-  const recentTitles = [...html.matchAll(/class="session-row recent-row[^"]*"[\s\S]*?title="([^"]+)"/g)].map((match) => match[1]);
+  // against the recent rows only. The dedicated Lara说 row shares the recent
+  // row styling but sits above the list, so it is excluded here.
+  const recentTitles = [...html.matchAll(/class="session-row recent-row(?! lara-says-row)[^"]*"[\s\S]*?title="([^"]+)"/g)].map((match) => match[1]);
   assert.deepEqual(recentTitles, ["Old pinned", "Seventh", "Sixth", "Fifth", "Middle"]);
   assert.match(html, /展开显示更多/);
 });
@@ -2802,6 +2817,79 @@ test("recent pool orders pinned first, then recency, across scopes", () => {
   );
   assert.equal(capped.length, appModule.RECENT_MAX_SESSIONS);
   assert.equal(capped.at(-1).session.session_id, "bulk-2");
+});
+
+test("splitLaraSaysSession pulls the dedicated session out of every list", () => {
+  const groups = [
+    { scope: { scope_id: "conversation", label: "Chat", workspace_root: null }, sessions: [
+      { session_id: "lara-1", mode: "lara-says", title: "Lara说", updated_at: "2026-01-09T00:00:00Z" },
+      { session_id: "s-1", title: "Regular", updated_at: "2026-01-08T00:00:00Z" },
+    ] },
+    { scope: { scope_id: "project:p", label: "P", workspace_root: "" }, sessions: [
+      { session_id: "lara-2", mode: "lara-says", title: "another scope", updated_at: "2026-01-07T00:00:00Z" },
+    ] },
+  ];
+  const { generalGroups, laraSaysSessions } = appModule.splitLaraSaysSession(groups);
+  assert.deepEqual(
+    laraSaysSessions.map((item) => item.session.session_id),
+    ["lara-1", "lara-2"],
+  );
+  assert.deepEqual(
+    generalGroups.map((group) => group.sessions.map((session) => session.session_id)),
+    [["s-1"], []],
+  );
+  const pool = appModule.buildRecentConversations(generalGroups, "");
+  assert.ok(!pool.some((item) => item.session.mode === "lara-says"));
+
+  // No dedicated session anywhere: the entry gets an empty pool, so the first
+  // click creates the session.
+  const empty = appModule.splitLaraSaysSession(recentTestGroups());
+  assert.equal(empty.laraSaysSessions.length, 0);
+  assert.equal(empty.generalGroups.length, 2);
+});
+
+test("sidebar renders the Lara说 entry above 最近对话 with its own unread dot", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.SessionSidebar, {
+    collapsed: false,
+    settings: {},
+    projects: [],
+    sessionGroups: recentTestGroups(),
+    laraSays: { session: { session_id: "lara-1", mode: "lara-says" }, scope: null },
+    laraSaysUnread: 2,
+    onOpenLaraSays() {},
+    activeScopeId: "",
+    activeSessionId: "",
+    onCreateSession() {}, onDeleteSession() {}, onSelectSession() {},
+    onToggleSessionPin() {}, onChooseProject() {}, onOpenSettings() {},
+    onOpenScheduled() {}, scheduledActive: false, onToggle() {},
+  }));
+  const entryIndex = html.indexOf("lara-says-row");
+  const recentIndex = html.indexOf('class="section-label recent-label"');
+  assert.ok(entryIndex !== -1 && recentIndex !== -1 && entryIndex < recentIndex,
+    "the Lara说 entry renders above the 最近对话 label");
+  // Same display style as a regular recent conversation row.
+  assert.match(html, /class="session-row recent-row lara-says-row"/);
+  assert.match(html, />Lara说<\/span>/);
+  assert.match(html, /aria-label="有未读发言"/);
+});
+
+test("Lara说 entry marks the active session and stays dotless without unread", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.SessionSidebar, {
+    collapsed: false,
+    settings: {},
+    projects: [],
+    sessionGroups: recentTestGroups(),
+    laraSays: { session: { session_id: "lara-1", mode: "lara-says" }, scope: null },
+    laraSaysUnread: 0,
+    onOpenLaraSays() {},
+    activeScopeId: "",
+    activeSessionId: "lara-1",
+    onCreateSession() {}, onDeleteSession() {}, onSelectSession() {},
+    onToggleSessionPin() {}, onChooseProject() {}, onOpenSettings() {},
+    onOpenScheduled() {}, scheduledActive: false, onToggle() {},
+  }));
+  assert.match(html, /session-row recent-row lara-says-row active/);
+  assert.doesNotMatch(html, /aria-label="有未读发言"/);
 });
 
 test("scheduled tasks render under the sidebar entry", () => {

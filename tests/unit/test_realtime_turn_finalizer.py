@@ -56,6 +56,7 @@ def _finalizer_turn(*, enabled=True, history=None, turn_id="t1"):
         run_ref=SimpleNamespace(case_run_id="cr1"),
         manager=SimpleNamespace(
             load=lambda sid: SimpleNamespace(
+                metadata={"mode": "lara-says" if enabled else "chat"},
                 history=history if history is not None else [{"role": "assistant", "content": "纯文本草稿"}]
             )
         ),
