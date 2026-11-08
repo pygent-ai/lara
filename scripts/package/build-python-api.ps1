@@ -9,6 +9,58 @@ $cliEntryPoint = Join-Path $PSScriptRoot "lara_entry.py"
 $wheelPath = Join-Path $workPath "wheel"
 $laraWheel = $null
 
+function Get-LockedGitSource {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $PackageName
+    )
+
+    $lockText = Get-Content -LiteralPath (Join-Path $repoRoot "uv.lock") -Raw
+    $pattern = 'name = "' + [regex]::Escape($PackageName) + '"\r?\nversion = "[^"\r\n]*"\r?\nsource = \{ git = "(?<url>[^"#]+)#(?<commit>[0-9a-f]{40})" \}'
+    $lockMatch = [regex]::Match($lockText, $pattern)
+    if (-not $lockMatch.Success) {
+        throw "uv.lock does not pin a git source for $PackageName"
+    }
+    [pscustomobject]@{
+        Url = $lockMatch.Groups["url"].Value
+        Commit = $lockMatch.Groups["commit"].Value
+    }
+}
+
+function Build-GitDependencyWheel {
+    # uv run --no-project resolves --with requirements against the registry
+    # only, so git-only dependencies must be shipped as wheels via --find-links.
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $PackageName,
+        [Parameter(Mandatory = $true)]
+        [string] $OutDir,
+        [Parameter(Mandatory = $true)]
+        [string] $WorkDir
+    )
+
+    $source = Get-LockedGitSource -PackageName $PackageName
+    $repoUrl = ($source.Url -split '\?')[0]
+    $clonePath = Join-Path $WorkDir $PackageName
+    if (Test-Path $clonePath) {
+        Remove-Item -LiteralPath $clonePath -Recurse -Force
+    }
+
+    & git clone --quiet $repoUrl $clonePath
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to clone $repoUrl"
+    }
+    & git -C $clonePath checkout --quiet $source.Commit
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to checkout $($source.Commit) for $PackageName"
+    }
+
+    & uv build --wheel --out-dir $OutDir $clonePath
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to build the $PackageName wheel"
+    }
+}
+
 function Invoke-PyInstaller {
     param(
         [Parameter(Mandatory = $true)]
@@ -27,6 +79,8 @@ function Invoke-PyInstaller {
         "pyinstaller",
         "--with",
         $laraWheel,
+        "--find-links",
+        $wheelPath,
         "pyinstaller",
         "--noconfirm",
         "--clean",
@@ -83,6 +137,11 @@ try {
         throw "Expected exactly one Lara wheel, found $($builtWheels.Count)"
     }
     $laraWheel = $builtWheels[0].FullName
+
+    Build-GitDependencyWheel `
+        -PackageName "dynamic-memory-cli" `
+        -OutDir $wheelPath `
+        -WorkDir $workPath
 
     Invoke-PyInstaller `
         -Name "lara-api" `
