@@ -3616,8 +3616,7 @@ input:focus,
 .realtime-view-toggle {
   display: flex;
   gap: 4px;
-  justify-content: center;
-  padding: 6px 0 2px;
+  margin-left: auto;
 }
 .realtime-view-toggle button {
   border: 1px solid var(--border, #d8d8d8);

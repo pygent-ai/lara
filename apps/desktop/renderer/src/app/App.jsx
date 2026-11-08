@@ -2746,6 +2746,12 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
           </p>
         </div>
         {/* Remounts on status change so the entrance animation marks each transition. */}
+        {realtimeInteractionEnabled && (
+          <div className="realtime-view-toggle" role="tablist" aria-label="视图切换">
+            <button type="button" className={realtimeViewMode === "front" ? "active" : ""} onClick={() => changeRealtimeViewMode("front")}>对话</button>
+            <button type="button" className={realtimeViewMode === "back" ? "active" : ""} onClick={() => changeRealtimeViewMode("back")}>后台</button>
+          </div>
+        )}
         <div key={status} className={`status-pill ${statusTone(status)}`}>{statusLabel(status)}</div>
       </header>
 
@@ -2785,12 +2791,6 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
                 ? `显示更早消息（未加载 ${historyRemaining} 条）`
                 : `显示更早消息（还有 ${hiddenMessageCount} 条）`}
           </button>
-        )}
-        {realtimeInteractionEnabled && (
-          <div className="realtime-view-toggle" role="tablist" aria-label="视图切换">
-            <button type="button" className={realtimeViewMode === "front" ? "active" : ""} onClick={() => changeRealtimeViewMode("front")}>对话</button>
-            <button type="button" className={realtimeViewMode === "back" ? "active" : ""} onClick={() => changeRealtimeViewMode("back")}>后台</button>
-          </div>
         )}
         {displayMessages.map((message) => (
           <MediaSourceScopeContext.Provider key={message.id} value={mediaScope}>
