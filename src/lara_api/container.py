@@ -44,6 +44,7 @@ class ApiContext:
     _dispatch_store: DispatchStore | None = None
     _dispatch_service: DispatchService | None = None
     _dispatch_scheduler: DispatchScheduler | None = None
+    _feishu_bridge: Any | None = None
     _stale_runs_reconciled: bool = False
     _lock: RLock = field(default_factory=RLock)
 
@@ -177,6 +178,14 @@ class ApiContext:
 
     def start_dispatch_scheduler(self) -> None:
         self.dispatch_scheduler.start()
+
+    def start_feishu_bridge(self) -> bool:
+        """Start the inbound Feishu relay when the bridge config enables it."""
+
+        from lara_api.services.feishu_bridge import FeishuBridge
+
+        self._feishu_bridge = FeishuBridge(self)
+        return self._feishu_bridge.start()
 
     def _dispatch_config(self, workspace_root: str, agent_alias: str | None) -> RunConfig:
         return load_run_config(

@@ -49,6 +49,7 @@ def create_app(
             await lease.release()
             lease = None
             context.start_dispatch_scheduler()
+            context.start_feishu_bridge()
             yield
         finally:
             if lease is not None:
