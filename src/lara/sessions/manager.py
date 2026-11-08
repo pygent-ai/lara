@@ -69,7 +69,11 @@ class SessionManager:
         if selected_model_key:
             self._require_group_model(selected_group, selected_model_key)
             selected_model = selected_model_key
-        session_id = self._new_session_id(case_id, mode)
+        session_id = (
+            LARA_SAYS_SESSION_MODE
+            if mode == LARA_SAYS_SESSION_MODE
+            else self._new_session_id(case_id, mode)
+        )
         session_dir = self.sessions_root / session_id
         session_dir.mkdir(parents=True, exist_ok=False)
         for child in ("context", "state", "logs", "cases"):

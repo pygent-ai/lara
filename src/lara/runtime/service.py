@@ -109,6 +109,7 @@ from .agent.pipeline import (
 from .realtime.fork_agent import ForkReplyModule, outcome_from_result
 from .realtime.fork_reply import build_fork_context
 from .realtime.posting import queue_exchange_envelope
+from .realtime.feishu import load_feishu_channels
 from .realtime.speak import SILENT_ACKNOWLEDGEMENT, SPEAK_TOOL_SPEC, parse_speak_args
 from .agent_collaboration import (
     AGENT_COLLABORATION_TOOL_SPECS,
@@ -188,10 +189,14 @@ class _SpeakExecutor:
     The event (``lara.realtime.speak``) is the bubble the desktop renders;
     ``say_nothing`` emits nothing and acknowledges silently. Attachments are
     validated against the workspace and reported as workspace-relative paths.
+    Configured external channels (e.g. Feishu) receive the same text
+    fire-and-forget — channel failures never affect the tool result.
     """
 
-    def __init__(self, service: "LaraRuntimeService") -> None:
+    def __init__(self, service: "LaraRuntimeService", channels: Sequence[Any] = ()) -> None:
         self.service = service
+        self.channels = tuple(channels)
+        self._delivery_tasks: set[asyncio.Task[bool]] = set()
 
     async def execute(
         self, spec: ToolSpec, call: Any, context: ToolExecutionContext
@@ -215,6 +220,16 @@ class _SpeakExecutor:
                 "attachments": attachments,
             },
         )
+        if self.channels:
+            text = args.text or ""
+            if attachments:
+                text = "\n".join([text, *attachments]) if text else "\n".join(attachments)
+            for channel in self.channels:
+                task = asyncio.create_task(
+                    asyncio.to_thread(channel.deliver, text)
+                )
+                self._delivery_tasks.add(task)
+                task.add_done_callback(self._delivery_tasks.discard)
         return "delivered"
 
 
@@ -321,7 +336,13 @@ class LaraRuntimeService:
         )
         self.runtime.register_tool(FILE_EFFECT_TOOL_SPEC, FileEffectToolExecutor())
         self.runtime.register_tool(DIFF_TOOL_SPEC, self._diff_executor)
-        self.runtime.register_tool(SPEAK_TOOL_SPEC, _SpeakExecutor(self))
+        self.runtime.register_tool(
+            SPEAK_TOOL_SPEC,
+            _SpeakExecutor(
+                self,
+                channels=load_feishu_channels(self.config.user_lara_root),
+            ),
+        )
         collaboration_executor = AgentToolExecutor(
             invoke=self._execute_agent_collaboration
         )

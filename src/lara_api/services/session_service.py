@@ -69,13 +69,26 @@ class SessionService:
         selected_model_key: str | None = None,
         eternal_memory: bool = False,
     ) -> SessionRecordResponse:
-        ref = self.manager.create(
-            case_id,
-            mode=mode,
-            model_group_name=model_group_name,
-            selected_model_key=selected_model_key,
-            eternal_memory=eternal_memory,
-        )
+        try:
+            ref = self.manager.create(
+                case_id,
+                mode=mode,
+                model_group_name=model_group_name,
+                selected_model_key=selected_model_key,
+                eternal_memory=eternal_memory,
+            )
+        except FileExistsError:
+            if mode != LARA_SAYS_SESSION_MODE:
+                raise
+            # The dedicated session has a fixed id: concurrent creators (the
+            # sidebar entry and the Feishu bridge) converge on the same one.
+            # Rebuild the record from the manager so scope_id is this scope,
+            # never None — the desktop needs it to address follow-up GETs.
+            session = self.manager.load(LARA_SAYS_SESSION_MODE)
+            metadata = read_json(Path(session.session_dir) / "metadata.json")
+            return _record_from_metadata(
+                Path(session.session_dir), metadata, scope_id=self.scope_id
+            )
         if self.reminders is not None:
             self.reminders.prewarm_session(ref.session_id)
         metadata = read_json(Path(ref.session_dir) / "metadata.json")

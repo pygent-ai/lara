@@ -231,15 +231,15 @@ def build_session_scopes(state: GuiProjectState, *, active_workspace_root: str |
 
     # The dedicated realtime scope sits with the other user-level scopes;
     # the conversation scope stays last (tests pin it as scopes[-1]).
-    says_workspace = (user_root / "lara-says" / "workspace").resolve()
+    says_root = (user_root / LARA_SAYS_SCOPE_ID).resolve()
     scopes.append(
         SessionScope(
             scope_id=LARA_SAYS_SCOPE_ID,
             label="Lara说",
             tooltip="The dedicated realtime conversation session",
             workspace_root=None,
-            runtime_workspace_root=str(says_workspace),
-            lara_root=str(project_lara_root(says_workspace)),
+            runtime_workspace_root=str(says_root / "workspace"),
+            lara_root=str(says_root),
         )
     )
     scopes.append(

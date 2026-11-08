@@ -74,12 +74,11 @@ def test_conversation_scope_can_create_and_load_a_chat(tmp_path: Path, monkeypat
 def test_lara_says_session_lives_in_its_own_user_level_scope(tmp_path: Path, monkeypatch) -> None:
     """The dedicated realtime session ignores the requested scope entirely.
 
-    Its storage derives from its own workspace path through the standard
-    project_lara_root rule, so switching the selected project can never
-    orphan or duplicate it.
+    It has the fixed id ``lara-says`` and lives under ``~/.lara/lara-says/``;
+    creating it twice converges on the same session, so the sidebar entry and
+    the Feishu bridge can never fork the conversation.
     """
 
-    from lara.core.paths import project_lara_root
     from lara_api.models.requests import CreateSessionRequest
     from lara_api.routers.sessions import create_session, get_session
     from lara_api.services.session_service import session_groups_response
@@ -91,23 +90,24 @@ def test_lara_says_session_lives_in_its_own_user_level_scope(tmp_path: Path, mon
     context = ApiContext(workspace_root=str(project), state_path=str(tmp_path / "state.json"), _config=config)
 
     created = asyncio.run(create_session(CreateSessionRequest(mode="lara-says"), context=context))
+    again = asyncio.run(create_session(CreateSessionRequest(mode="lara-says"), context=context))
 
     assert created.scope_id == "lara-says"
-    assert created.session_id.startswith("lara-says-")
-    says_workspace = tmp_path / ".lara" / "lara-says" / "workspace"
-    dedicated_root = project_lara_root(says_workspace)
-    session_dir = dedicated_root / "sessions" / created.session_id
+    assert created.session_id == "lara-says"
+    assert again.session_id == "lara-says"
+    dedicated_root = tmp_path / ".lara" / "lara-says"
+    session_dir = dedicated_root / "sessions" / "lara-says"
     assert session_dir.is_dir()
-    assert says_workspace.is_dir()
+    assert (dedicated_root / "workspace").is_dir()
 
-    loaded = get_session(created.session_id, scope_id="lara-says", context=context)
+    loaded = get_session("lara-says", scope_id="lara-says", context=context)
     assert loaded.session.mode == "lara-says"
     assert loaded.session.scope_id == "lara-says"
 
     groups = {group.scope.scope_id: group for group in asyncio.run(session_groups_response(context)).groups}
     assert groups["lara-says"].scope.label == "Lara说"
     assert groups["lara-says"].scope.workspace_root is None
-    assert [item.session_id for item in groups["lara-says"].sessions] == [created.session_id]
+    assert [item.session_id for item in groups["lara-says"].sessions] == ["lara-says"]
 
 
 def test_existing_conversation_scope_can_select_new_group_model(tmp_path: Path, monkeypatch) -> None:

@@ -36,6 +36,14 @@ from lara.sessions import (
 from tests.runtime_recovery_support import recovery_service
 
 
+@pytest.fixture(autouse=True)
+def _no_feishu_channel(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Speak deliveries must never reach the real Feishu chat from tests."""
+
+    monkeypatch.delenv("FEISHU_APP_ID", raising=False)
+    monkeypatch.delenv("FEISHU_APP_SECRET", raising=False)
+
+
 def _tool_call(call_id: str, name: str, arguments: dict) -> ToolCall:
     return ToolCall(call_id=call_id, name=name, arguments=arguments)
 

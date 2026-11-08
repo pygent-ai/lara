@@ -55,3 +55,17 @@ def lara_dispatch_store_in_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         return real_store(path, legacy_path=legacy_path)
 
     monkeypatch.setattr("lara.dispatch.DispatchStore", redirected)
+
+
+@pytest.fixture(autouse=True)
+def lara_feishu_off_in_tests(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep tests away from the real Feishu app.
+
+    App tests exercise the real lifespan, which would start the inbound
+    bridge and arm the outbound speak channel against the production chat.
+    Tests that exercise the Feishu pieces patch these references themselves.
+    """
+    monkeypatch.setattr("lara.runtime.service.load_feishu_channels", lambda root: ())
+    monkeypatch.setattr(
+        "lara_api.services.feishu_bridge.load_feishu_bridge_config", lambda root: None
+    )
