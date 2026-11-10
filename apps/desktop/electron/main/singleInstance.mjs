@@ -17,3 +17,12 @@ export function registerSingleInstance({ app, getWindow }) {
   });
   return true;
 }
+
+export function registerDevParentExit({ app, processRef = process }) {
+  if (app.isPackaged || !processRef.connected) {
+    return false;
+  }
+
+  processRef.once("disconnect", () => app.quit());
+  return true;
+}
