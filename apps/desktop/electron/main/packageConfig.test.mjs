@@ -43,6 +43,13 @@ test("production assets use file-compatible relative URLs", () => {
   assert.equal(viteConfig.base, "./");
 });
 
+test("development pre-bundles renderer dependencies without late discovery reloads", () => {
+  assert.equal(viteConfig.optimizeDeps.noDiscovery, true);
+  for (const dependency of ["react", "react-dom/client", "lucide-react", "react-markdown", "mermaid"]) {
+    assert.ok(viteConfig.optimizeDeps.include.includes(dependency));
+  }
+});
+
 test("electron-builder bundles the PyInstaller lara-api output", () => {
   const extraResources = packageJson.build.extraResources;
 

@@ -15,6 +15,7 @@ Promise.all([import("./app/App.jsx"), import("./app/app.css"), waitForDesktopBac
     );
   })
   .catch((error) => {
+    console.error("[lara] renderer startup failed", error);
     const message = document.getElementById("startup-message");
     if (message) message.textContent = `启动失败：${error.message || error}`;
     document.getElementById("startup-progress")?.remove();

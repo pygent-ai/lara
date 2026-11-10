@@ -15,7 +15,7 @@ import {
 } from "./backendProcess.mjs";
 import { applyBadgeOverlay } from "./badge.mjs";
 import { attachProcessDiagnostics, attachWindowDiagnostics } from "./diagnostics.mjs";
-import { registerSingleInstance } from "./singleInstance.mjs";
+import { registerDevParentExit, registerSingleInstance } from "./singleInstance.mjs";
 import { launchDesktop } from "./startup.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -33,6 +33,7 @@ const ownsSingleInstance = registerSingleInstance({
 });
 
 if (ownsSingleInstance) {
+  registerDevParentExit({ app });
   process.on("message", (message) => {
     if (message?.type === "lara:dev-shutdown") {
       app.quit();
