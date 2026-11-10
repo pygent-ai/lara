@@ -6,14 +6,12 @@ from typing import Any, Literal
 
 from lara.core.paths import project_lara_root as resolve_project_lara_root
 from lara.runtime.context import LaraContext
-from lara.schema import BashCliPreset
 from lara.tracing import EventStore
 
 from .common import (
     _file_lock,
     _hash_json,
     _hash_text,
-    _latest_user_input_hash,
     _now,
     _write_json_atomic,
     _write_text_atomic,
@@ -27,148 +25,36 @@ from .prompt_models import (
     RenderedPromptModule,
     StaticPromptResult,
 )
-from .prompt_sources import (
-    _prompt_render_context_payload,
-    _render_available_tools_prompt,
-    _render_system_action_safety_prompt,
-    _render_system_coding_rules_prompt,
-    _render_system_identity_prompt,
-    _render_system_injection_guard_prompt,
-    _render_system_lara_control_plane_prompt,
-    _render_system_output_style_prompt,
-    _render_system_path_policy_prompt,
-    _render_system_tool_policy_prompt,
-    _render_token_budget_prompt,
-    _render_tool_result_reminders_prompt,
-)
+from .prompt_sources import _prompt_render_context_payload
 
 
 class PromptRegistry:
     def __init__(self) -> None:
-        self._modules: list[PromptModule] = [
-            PromptModule(
-                id="system.identity",
-                phase="static",
-                type="system",
-                cache_scope="session",
-                order=10,
-                render=_render_system_identity_prompt,
-                required=True,
-            ),
-            PromptModule(
-                id="system.tool_policy",
-                phase="static",
-                type="policy",
-                cache_scope="session",
-                order=20,
-                render=_render_system_tool_policy_prompt,
-                required=True,
-            ),
-            PromptModule(
-                id="system.injection_guard",
-                phase="static",
-                type="policy",
-                cache_scope="session",
-                order=30,
-                render=_render_system_injection_guard_prompt,
-            ),
-            PromptModule(
-                id="system.action_safety",
-                phase="static",
-                type="policy",
-                cache_scope="session",
-                order=32,
-                render=_render_system_action_safety_prompt,
-            ),
-            PromptModule(
-                id="system.path_policy",
-                phase="static",
-                type="policy",
-                cache_scope="session",
-                order=35,
-                render=_render_system_path_policy_prompt,
-            ),
-            PromptModule(
-                id="system.coding_rules",
-                phase="static",
-                type="system",
-                cache_scope="session",
-                order=40,
-                render=_render_system_coding_rules_prompt,
-            ),
-            PromptModule(
-                id="system.output_style",
-                phase="static",
-                type="system",
-                cache_scope="session",
-                order=50,
-                render=_render_system_output_style_prompt,
-            ),
-            PromptModule(
-                id="system.lara_control_plane",
-                phase="request_system",
-                type="policy",
-                cache_scope="request",
-                order=110,
-                render=_render_system_lara_control_plane_prompt,
-                required=True,
-            ),
-            PromptModule(
-                id="tool.available",
-                phase="request_system",
-                type="tool",
-                cache_scope="turn",
-                order=120,
-                render=_render_available_tools_prompt,
-                required=True,
-            ),
-            PromptModule(
-                id="system.tool_result_reminders",
-                phase="request_system",
-                type="runtime",
-                cache_scope="request",
-                order=140,
-                render=_render_tool_result_reminders_prompt,
-            ),
-            PromptModule(
-                id="system.token_budget",
-                phase="request_system",
-                type="runtime",
-                cache_scope="request",
-                order=150,
-                render=_render_token_budget_prompt,
-            ),
-        ]
+        # Mechanism only: the registry ships empty. The composition root
+        # injects prompt modules on top of RunConfig.system_prompt; the
+        # kernel carries no built-in prompt content.
+        self._modules: list[PromptModule] = []
 
     def register(self, module: PromptModule) -> None:
-        if any(existing.id == module.id for existing in self._modules):
-            raise ValueError(f"Prompt module {module.id!r} already registered")
-        self._modules.append(module)
+        """Composition-root injection: add one prompt module by stable id."""
 
-    def replace(self, module: PromptModule) -> None:
-        for index, existing in enumerate(self._modules):
-            if existing.id == module.id:
-                self._modules[index] = module
-                return
-        raise KeyError(f"Prompt module {module.id!r} is not registered")
+        if any(existing.id == module.id for existing in self._modules):
+            raise ValueError(f"prompt module {module.id!r} is already registered")
+        self._modules.append(module)
 
     def resolve(
         self,
         *,
         phase: Literal["static", "request_system"] | None = None,
         include: list[str] | None = None,
-        exclude: list[str] | None = None,
         render_context: PromptRenderContext | None = None,
     ) -> list[PromptModule]:
         include_set = set(include) if include is not None else None
-        exclude_set = set(exclude or [])
         modules = []
         for module in self._modules:
             if phase is not None and module.phase != phase:
                 continue
             if include_set is not None and module.id not in include_set:
-                continue
-            if module.id in exclude_set:
                 continue
             if render_context is not None and not module.enabled(render_context):
                 continue
@@ -183,13 +69,8 @@ class PromptComposer:
     def resolve_request_system_modules(
         self,
         ctx: PromptRenderContext,
-        *,
-        include: list[str] | None = None,
-        exclude: list[str] | None = None,
     ) -> list[PromptModule]:
-        return self.registry.resolve(
-            phase="request_system", include=include, exclude=exclude, render_context=ctx
-        )
+        return self.registry.resolve(phase="request_system", render_context=ctx)
 
     def compose_static(
         self, ctx: PromptRenderContext
@@ -207,14 +88,6 @@ class PromptComposer:
             phase="request_system", include=module_ids, render_context=ctx
         )
         return self._compose_modules(ctx, modules)
-
-    def compose(self, ctx: PromptRenderContext) -> tuple[str, list[dict[str, Any]]]:
-        static_text, static_modules = self.compose_static(ctx)
-        request_system_text, request_system_modules = self.compose_request_system(ctx)
-        parts = [static_text] if static_text else []
-        if request_system_text:
-            parts.append(request_system_text)
-        return "\n\n".join(parts), [*static_modules, *request_system_modules]
 
     def _compose_modules(
         self,
@@ -277,7 +150,6 @@ class StaticPromptSessionCache:
                 tool_names=[],
                 request_id=None,
                 request_type=ctx.request_type,
-                cli_bash_presets=[],
                 user_lara_root=ctx.user_lara_root,
                 project_lara_root=ctx.project_lara_root,
                 user_skills_dir=ctx.user_skills_dir,
@@ -305,7 +177,6 @@ class StaticPromptSessionCache:
                 text=text,
                 prompt_hash=prompt_hash,
                 modules=modules,
-                metadata=metadata,
                 created=True,
             )
 
@@ -334,7 +205,6 @@ class StaticPromptSessionCache:
             text=text,
             prompt_hash=prompt_hash,
             modules=list(metadata.get("modules") or []),
-            metadata=metadata,
             created=False,
         )
 
@@ -346,49 +216,14 @@ class PromptInjectionPolicy:
         request_context: PromptRequestContext,
         dynamic_modules: list[PromptModule],
     ) -> PromptInjectionDecision:
-        if request_context.request_stage != "before_model_request":
-            return PromptInjectionDecision(
-                inject_dynamic=False,
-                module_ids=[],
-                skipped_module_ids=[module.id for module in dynamic_modules],
-                reason="not_before_model_request",
-                request_stage=request_context.request_stage,
-            )
-
-        if not dynamic_modules:
-            return PromptInjectionDecision(
-                inject_dynamic=False, module_ids=[], reason="no_dynamic_modules"
-            )
-
-        if request_context.request_type == "summary":
-            module_ids = [
-                module.id for module in dynamic_modules if module.type == "memory"
-            ]
-            return PromptInjectionDecision(
-                inject_dynamic=bool(module_ids),
-                module_ids=module_ids,
-                skipped_module_ids=[
-                    module.id
-                    for module in dynamic_modules
-                    if module.id not in module_ids
-                ],
-                reason="summary_memory_modules"
-                if module_ids
-                else "summary_no_memory_modules",
-            )
-
-        if request_context.request_type in {"agent_turn", "case_run", "evaluation"}:
-            return PromptInjectionDecision(
-                inject_dynamic=True,
-                module_ids=[module.id for module in dynamic_modules],
-                reason="before_model_request",
-            )
-
+        # Production only reaches this policy at the before-model-request
+        # stage of an agent turn, and the request-system selection is always
+        # the full registry set, so the decision is fixed.
         return PromptInjectionDecision(
-            inject_dynamic=False,
-            module_ids=[],
-            skipped_module_ids=[module.id for module in dynamic_modules],
-            reason="unsupported_request_type",
+            inject_dynamic=True,
+            module_ids=[module.id for module in dynamic_modules],
+            reason="before_model_request",
+            request_stage=request_context.request_stage,
         )
 
 
@@ -401,12 +236,15 @@ class AgentContextManager:
         store: EventStore | None = None,
         prompt_registry: PromptRegistry | None = None,
         prompt_composer: PromptComposer | None = None,
-        cli_bash_presets: list[BashCliPreset] | None = None,
+        system_prompt: str = "",
         user_lara_root: Path | None = None,
         project_lara_root: Path | None = None,
     ) -> None:
         self.session_dir = session_dir
         self.workspace_root = workspace_root
+        # The composition root's configured static system prompt; the prompt
+        # registry ships empty and only carries injected modules on top.
+        self.system_prompt = system_prompt
         self.user_lara_root = (
             (user_lara_root or Path.home() / ".lara").expanduser().resolve()
         )
@@ -428,7 +266,6 @@ class AgentContextManager:
             session_dir, self.prompt_composer
         )
         self.injection_policy = PromptInjectionPolicy()
-        self.cli_bash_presets = list(cli_bash_presets or [])
 
     def projection(
         self, history: list[dict[str, Any]], limit: int = 8
@@ -480,7 +317,6 @@ class AgentContextManager:
             tool_names=tool_names,
             request_id=request_id,
             request_type=request_type,
-            cli_bash_presets=self.cli_bash_presets,
             user_lara_root=self.user_lara_root,
             project_lara_root=self.project_lara_root,
             user_skills_dir=self.user_skills_dir,
@@ -491,19 +327,8 @@ class AgentContextManager:
             render_ctx
         )
         request_context = PromptRequestContext(
-            session_id=context.session_id,
-            case_run_id=context.case_run_id or None,
-            turn_id=context.turn_id,
-            request_id=request_id,
             request_stage="before_model_request",
             request_type=request_type,
-            history_message_count=len(context.history),
-            latest_user_input_hash=_latest_user_input_hash(context.history),
-            tool_names=tool_names,
-            file_state_hash=_hash_json(projection.get("file_status") or []),
-            projection_hash=_hash_json(projection),
-            runtime_state_hash=_hash_json({"tool_count": len(tool_names)}),
-            dynamic_input_hash=_hash_json(dynamic_inputs),
         )
         decision = self.injection_policy.decide(
             request_context=request_context,
@@ -524,22 +349,18 @@ class AgentContextManager:
                 _hash_text(request_system_text) if request_system_text else None
             )
 
-        prompt_parts = [static_prompt.text]
+        prompt_parts = [self.system_prompt, static_prompt.text]
         if request_system_text:
             prompt_parts.append(request_system_text)
         prompt = "\n\n".join(part for part in prompt_parts if part)
+        if not prompt.strip():
+            raise ValueError(
+                "system prompt is empty: configure RunConfig.system_prompt "
+                "or inject prompt modules via the composition root"
+            )
         prompt_hash = _hash_text(prompt)
         modules = [*static_prompt.modules, *request_system_rendered_modules]
-        model_prompt = ModelRequestPrompt(
-            text=prompt,
-            static_text=static_prompt.text,
-            request_system_text=request_system_text,
-            prompt_hash=prompt_hash,
-            static_prompt_hash=static_prompt.prompt_hash,
-            request_system_prompt_hash=request_system_prompt_hash,
-            modules=modules,
-            injection_decision=decision,
-        )
+        model_prompt = ModelRequestPrompt(text=prompt)
         if self.store is not None:
             self.store.append(
                 "prompt.rendered",

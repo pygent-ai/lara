@@ -288,6 +288,10 @@ class RunConfig:
     case_file: str | None = None
     max_steps: int = -1
     agent_alias: str = "default"
+    # The configured static system prompt: the composition root's text, kept
+    # as data. The prompt registry ships empty; modules are injected by the
+    # composition root on top of this base.
+    system_prompt: str = ""
     resolved_agent: ResolvedAgentConfig | None = field(
         default=None, repr=False, compare=False
     )

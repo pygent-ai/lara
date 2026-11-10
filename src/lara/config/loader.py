@@ -84,6 +84,10 @@ def load_run_config(
     # Retry policy is a property of the agent profile, independent of whether
     # the model configuration is complete enough to resolve a model group.
     model_retry = _agent_retry(model_request)
+    # Composition-root decision: every config-file RunConfig carries the
+    # stock Lara base prompt; the kernel registry only adds injected modules.
+    from lara.runtime.prompt_profile import LARA_BASE_SYSTEM_PROMPT
+
     return RunConfig(
         workspace_root=str(root),
         session_id=session_id
@@ -92,6 +96,7 @@ def load_run_config(
         case_file=resolved_case_file,
         max_steps=int(configured_max_steps),
         agent_alias=alias,
+        system_prompt=LARA_BASE_SYSTEM_PROMPT,
         resolved_agent=resolved_agent,
         model_retry=model_retry,
         model_config_mapping=model_mapping,
