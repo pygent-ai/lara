@@ -10,12 +10,12 @@ that skips registration gets a clean agent with only its own base prompt.
 
 from __future__ import annotations
 
-from lara.runtime.agent.prompt_models import PromptRenderContext
-from lara.runtime.agent.prompt_sources import (
+from pygent.lara.runtime.agent.prompt_models import PromptRenderContext
+from pygent.lara.runtime.agent.prompt_sources import (
     _ctx_project_lara_root,
     _ctx_user_lara_root,
 )
-from lara.runtime.agent.prompts import PromptModule, PromptRegistry
+from pygent.lara.runtime.agent.prompts import PromptModule, PromptRegistry
 
 # The base prompt every composed request starts from. It also covers sessions
 # whose persisted prompt predates rendered-prompt persistence (fork replies

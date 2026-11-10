@@ -10,7 +10,7 @@ from lara.evaluation import (
     TestGenerator,
 )
 from lara.repair import RepairWorkflow
-from lara.runtime.tools import ToolObserver
+from pygent.lara.runtime.tools import ToolObserver
 
 from .sessions import SessionManager
 

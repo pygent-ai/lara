@@ -34,19 +34,17 @@ from pygent.core import JsonValue
 from pygent.runtime.codec import message_to_dict
 from typing import cast
 
-from lara.agents import (
+from pygent.lara.agents import (
     AgentLimits,
     AgentRunner,
     ChildAgent,
     ChildSpec,
     ContextWindow,
     ForkAgent,
-    ForkProductSource,
     ForkSpec,
     MainAgent,
     MessageSlice,
     ReminderTransform,
-    StaticContextSource,
     SystemPromptTransform,
     ToolProfile,
     ToolRegistry,
@@ -55,6 +53,7 @@ from lara.agents import (
     messages_from_history,
     system_reminder,
 )
+from lara.runtime.fork_sources import ForkProductSource, StaticContextSource
 
 
 class _ScriptState:

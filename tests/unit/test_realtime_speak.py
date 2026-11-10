@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from lara.runtime.realtime.speak import (
+from pygent.lara.runtime.realtime.speak import (
     SPEAK_TOOL_SPEC,
     SpeakArgsError,
     execute_speak,

@@ -28,18 +28,18 @@ from pygent.runtime.codec import context_to_dict
 from pygent.tool import StandardTools, ToolSpec
 
 from lara.core.io import aclose_if_supported, plain_data
-from lara.core.redaction import redact_secrets
-from lara.runtime.context import LARA_CONTEXT_CODECS, LaraContext
-from lara.runtime.bash_tasks import BashTaskObservations
-from lara.runtime.context_compression import COMPRESSION_REQUEST_PROMPT
+from pygent.lara.core.redaction import redact_secrets
+from pygent.lara.runtime.context import LARA_CONTEXT_CODECS, LaraContext
+from pygent.lara.runtime.bash_tasks import BashTaskObservations
+from pygent.lara.runtime.context_compression import COMPRESSION_REQUEST_PROMPT
 from lara.runtime.eternal_conversation import (
     EternalConversationHarness,
     eternal_enabled_for,
 )
-from lara.runtime.file_effects import FILE_EFFECT_TOOL_SPEC
-from lara.runtime.reminders import ReminderService
+from pygent.lara.runtime.file_effects import FILE_EFFECT_TOOL_SPEC
+from pygent.lara.runtime.reminders import ReminderService
 from lara.runtime.realtime.injection import RealtimeNudgeModule
-from lara.runtime.realtime.speak import SPEAK_TOOL_SPEC
+from pygent.lara.runtime.realtime.speak import SPEAK_TOOL_SPEC
 from lara.runtime.model_configuration import (
     CredentialEnvironment,
     build_model_invoker,
@@ -50,8 +50,8 @@ from lara.sessions import SessionManager
 from lara.tracing import DIFF_TOOL_SPEC, EventStore
 
 from .common import DEFAULT_REACT_MAX_STEPS
-from .compressor import LaraCompressorModule
-from .pipeline import (
+from pygent.lara.runtime.agent.compressor import LaraCompressorModule
+from pygent.lara.runtime.agent.pipeline import (
     ConversationCheckpointModelModule,
     ConversationCheckpointToolModule,
     DynamicPromptModule,
@@ -64,7 +64,7 @@ from .pipeline import (
     _model_tool_definition,
     checkpoint_conversation_message,
 )
-from .prompts import PromptRegistry
+from pygent.lara.runtime.agent.prompts import PromptRegistry
 
 DISABLED_COMPRESSION_WINDOW_TOKENS = 1 << 60
 MAX_CONTEXT_COMPRESSIONS = 128

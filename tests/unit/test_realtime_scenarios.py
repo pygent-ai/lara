@@ -24,10 +24,10 @@ import pytest
 from pygent import AIMessage, ToolCall
 from pygent.llm import ModelExecution, ModelProviderResponse
 
-from lara.orchestration.models import TurnCommand
+from pygent.lara.orchestration.models import TurnCommand
 from lara.orchestration.session_execution import SessionExecutionCoordinator
-from lara.runtime.realtime.speak import SPEAK_TOOL_SPEC
-from lara.runtime.realtime.turn_finalizer import TURN_FINALIZER_REMINDER
+from pygent.lara.runtime.realtime.speak import SPEAK_TOOL_SPEC
+from pygent.lara.runtime.realtime.turn_finalizer import TURN_FINALIZER_REMINDER
 from lara.sessions import (
     LARA_SAYS_SESSION_MODE,
     SessionManager,

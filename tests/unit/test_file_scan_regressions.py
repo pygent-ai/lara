@@ -5,10 +5,10 @@ from unittest.mock import patch
 
 import pytest
 
-from lara.runtime.tools import FileEffectTracker, SnapshotBudgetExceeded, _bash_command_may_write
-from lara.runtime.file_effects import (FileEffectBaselineStore, process_file_effect_batch,
+from pygent.lara.runtime.tools import FileEffectTracker, SnapshotBudgetExceeded, _bash_command_may_write
+from pygent.lara.runtime.file_effects import (FileEffectBaselineStore, process_file_effect_batch,
     DeferredFileEffectBatch, DeferredFileEffectJob)
-from lara.runtime.file_effect_models import FileEffect
+from pygent.lara.runtime.file_effect_models import FileEffect
 from lara.schema import CaseRunRef
 from lara.tracing import EventStore
 
@@ -139,7 +139,7 @@ def test_deadline_checked_during_hashing(scan):
     target = workspace / "large.txt"
     target.write_bytes(b"x" * (2 * 1024 * 1024))
     # Deadline expires after the first chunk, not only between files.
-    with patch("lara.runtime.tools.time.monotonic", side_effect=[0, 0, 0, 6]):
+    with patch("pygent.lara.runtime.tools.time.monotonic", side_effect=[0, 0, 0, 6]):
         with pytest.raises(SnapshotBudgetExceeded, match="time budget"):
             tracker.snapshot_workspace(paths=[target])
 

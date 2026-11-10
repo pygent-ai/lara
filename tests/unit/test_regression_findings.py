@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from lara.config import load_mapping_file, load_run_config
-from lara.core.redaction import REDACTED, redact_secrets
+from pygent.lara.core.redaction import REDACTED, redact_secrets
 from lara.evaluation import CaseManager
 from lara.schema import CaseRunRef, ContextEvent, RunConfig
 from lara.sessions import SessionManager

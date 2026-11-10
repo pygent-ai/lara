@@ -20,7 +20,7 @@ if TYPE_CHECKING:
         SessionExecutionCoordinator,
         WorkspaceRuntimePool,
     )
-    from lara.runtime.reminders import ReminderService
+    from pygent.lara.runtime.reminders import ReminderService
 
 
 @dataclass(slots=True)
@@ -73,7 +73,7 @@ class ApiContext:
     def reminders(self) -> ReminderService:
         with self._lock:
             if self._reminders is None:
-                from lara.runtime.reminders import ReminderService
+                from pygent.lara.runtime.reminders import ReminderService
 
                 self._reminders = ReminderService(self.config)
             return self._reminders

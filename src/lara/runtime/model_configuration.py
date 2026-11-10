@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncIterator, Callable, Iterator, Mapping
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -34,8 +34,48 @@ from pygent.llm import (
 
 from lara.credentials import list_user_credential_names, lookup_credential
 
-from .attachments import MEDIA_MAX_BYTES
-from .agent.model_invoker import LaraModelInvoker
+# The host owns the credential *store*; the kernel owns the lookup protocol.
+# Callers can inject either side, so kernel-only callers may fall back to the
+# process environment while the composition root injects the store-backed
+# implementation (user file + environment + keyring).
+CredentialLookup = Callable[[str, Path], tuple[str | None, str]]
+CredentialNameLister = Callable[[Path], "Sequence[str]"]
+
+
+def environment_credential_lookup(
+    env_name: str, user_lara_root: Path
+) -> tuple[str | None, str]:
+    """Kernel fallback: resolve credentials from the process environment only."""
+
+    del user_lara_root
+    value = os.environ.get(env_name)
+    if value:
+        return value, f"env:{env_name}"
+    return None, "missing"
+
+
+def environment_credential_names(user_lara_root: Path) -> "Sequence[str]":
+    """Kernel fallback: the process environment is the only credential source."""
+
+    del user_lara_root
+    return tuple(os.environ)
+
+
+def store_credential_lookup(
+    env_name: str, user_lara_root: Path
+) -> tuple[str | None, str]:
+    """Host default: the Lara credential store plus the process environment."""
+
+    return lookup_credential(env_name, user_lara_root=user_lara_root)
+
+
+def store_credential_names(user_lara_root: Path) -> "Sequence[str]":
+    """Host default: stored credential names plus the process environment."""
+
+    return list_user_credential_names(user_lara_root)
+
+from pygent.lara.runtime.attachments import MEDIA_MAX_BYTES
+from pygent.lara.runtime.agent.model_invoker import LaraModelInvoker
 
 
 CLIENT_FACTORIES: dict[str, Any] = {
@@ -47,23 +87,32 @@ CLIENT_FACTORIES: dict[str, Any] = {
 
 
 class CredentialEnvironment(Mapping[str, str]):
-    """Resolve native environment references across Lara credential sources."""
+    """Resolve native environment references through an injected lookup.
+
+    ``lookup`` and ``name_lister`` default to the host credential store so
+    stock Lara behavior is unchanged; kernel-only callers may inject the
+    process-environment fallbacks instead.
+    """
 
     def __init__(
         self,
         user_lara_root: str | Path,
         *,
         transient: Mapping[str, str] | None = None,
+        lookup: CredentialLookup = store_credential_lookup,
+        name_lister: CredentialNameLister = store_credential_names,
     ) -> None:
         self.user_lara_root = Path(user_lara_root).expanduser().resolve()
         self.transient = {
             key: value for key, value in dict(transient or {}).items() if value
         }
+        self._lookup = lookup
+        self._name_lister = name_lister
 
     def __getitem__(self, key: str) -> str:
         if key in self.transient:
             return self.transient[key]
-        value, _ = lookup_credential(key, user_lara_root=self.user_lara_root)
+        value, _ = self._lookup(key, self.user_lara_root)
         if value is None:
             raise KeyError(key)
         return value
@@ -72,7 +121,7 @@ class CredentialEnvironment(Mapping[str, str]):
         return iter(
             set(self.transient)
             | set(os.environ)
-            | set(list_user_credential_names(self.user_lara_root))
+            | set(self._name_lister(self.user_lara_root))
         )
 
     def __len__(self) -> int:
@@ -310,9 +359,13 @@ def builtin_model_catalogs() -> dict[str, Any]:
 __all__ = [
     "CLIENT_FACTORIES",
     "CredentialEnvironment",
+    "CredentialLookup",
+    "CredentialNameLister",
     "build_model_invoker",
     "builtin_model_catalogs",
     "discover_models",
+    "environment_credential_lookup",
+    "environment_credential_names",
     "preferred_models",
     "preferred_profile_name",
 ]

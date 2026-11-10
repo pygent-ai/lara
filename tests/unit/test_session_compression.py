@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from pygent.runtime.codec import context_from_dict
 
-from lara.runtime.context import LARA_CONTEXT_CODECS, LaraContext
+from pygent.lara.runtime.context import LARA_CONTEXT_CODECS, LaraContext
 from lara.runtime.service import SessionCompressionUnavailable
 from lara.sessions import SessionManager
 from tests.runtime_recovery_support import recovery_service

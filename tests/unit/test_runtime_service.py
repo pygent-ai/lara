@@ -19,10 +19,10 @@ from pygent.llm import ModelConfig
 from pygent.runtime import ExecutionOptions
 from pygent.tool import AgentToolExecutor
 
-from lara.runtime.agent.prompt_models import PromptRenderContext
+from pygent.lara.runtime.agent.prompt_models import PromptRenderContext
 from lara.runtime.prompt_profile import _render_available_tools_prompt
-from lara.runtime.context import LaraContext
-from lara.runtime.file_effects import FileEffectBaselineStore
+from pygent.lara.runtime.context import LaraContext
+from pygent.lara.runtime.file_effects import FileEffectBaselineStore
 from lara.runtime.service import (
     PROJECTION_OPERATION_METADATA_KEY,
     LaraRuntimeService,
@@ -82,7 +82,7 @@ async def test_prepare_turn_waits_for_initial_reminder_before_model_start(
     session = manager.create("chat", mode="chat")
     run_ref = manager.start_case_run(session.session_id, "chat", run_config=config)
     service = LaraRuntimeService.__new__(LaraRuntimeService)
-    from lara.runtime.reminders import ReminderService
+    from pygent.lara.runtime.reminders import ReminderService
 
     service.reminders = ReminderService(config)
 

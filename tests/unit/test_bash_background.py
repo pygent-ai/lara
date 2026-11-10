@@ -14,10 +14,10 @@ from pygent.tool import ToolTask, ToolTaskState
 from lara.config import load_run_config
 from tests.unit.test_model_configuration import native_runtime_config
 from lara.core.io import plain_object, write_json_atomic
-from lara.runtime.bash_tasks import BashTaskObservations
-from lara.runtime.context import LaraContext
+from pygent.lara.runtime.bash_tasks import BashTaskObservations
+from pygent.lara.runtime.context import LaraContext
 from lara.runtime.service import LaraRuntimeService
-from lara.runtime.tools import ToolObserver
+from pygent.lara.runtime.tools import ToolObserver
 from lara.schema import CaseRunRef
 from lara.tracing import EventStore
 from lara.sessions import SessionManager
@@ -113,8 +113,8 @@ async def test_managed_bash_background_can_be_queried_stopped_and_read_after_res
 @pytest.mark.asyncio
 @pytest.mark.parametrize("finish", ["complete", "cancel", "shutdown", "restore"])
 async def test_background_completion_finalizes_audit_and_late_file_writes(tmp_path: Path, finish: str) -> None:
-    from lara.runtime.agent.pipeline import ToolAuditModule
-    from lara.runtime.bash_tasks import BashTaskObservations
+    from pygent.lara.runtime.agent.pipeline import ToolAuditModule
+    from pygent.lara.runtime.bash_tasks import BashTaskObservations
 
     config = native_runtime_config(tmp_path)
     manager = SessionManager(config)

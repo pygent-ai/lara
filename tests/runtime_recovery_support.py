@@ -116,7 +116,7 @@ async def crash_at_boundary(
         run_config=config,
     )
     import lara.runtime.agent.core as core_module
-    import lara.runtime.agent.pipeline as pipeline_module
+    import pygent.lara.runtime.agent.pipeline as pipeline_module
 
     original = pipeline_module.checkpoint_conversation_message
 

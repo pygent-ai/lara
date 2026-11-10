@@ -16,8 +16,8 @@ from pygent.runtime.codec import message_to_dict
 
 from lara.config import load_run_config
 from tests.unit.test_model_configuration import native_runtime_config
-from lara.runtime.agent.pipeline import checkpoint_conversation_message
-from lara.runtime.context import LaraContext
+from pygent.lara.runtime.agent.pipeline import checkpoint_conversation_message
+from pygent.lara.runtime.context import LaraContext
 from lara.runtime.service import LaraRuntimeService
 from lara.schema import AgentSession, CaseDefinition
 from lara.sessions import SessionManager

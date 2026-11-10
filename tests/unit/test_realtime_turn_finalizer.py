@@ -1,6 +1,6 @@
 """Tests for the end-of-turn bottom-line decision (D-RT11)."""
 
-from lara.runtime.realtime.turn_finalizer import (
+from pygent.lara.runtime.realtime.turn_finalizer import (
     TURN_FINALIZER_REMINDER,
     decide_turn_finalization,
 )
@@ -42,7 +42,7 @@ def test_decision_is_deterministic() -> None:
 from types import SimpleNamespace
 
 from lara.orchestration.session_execution import SessionExecutionCoordinator
-from lara.runtime.realtime.turn_finalizer import TURN_FINALIZER_REMINDER
+from pygent.lara.runtime.realtime.turn_finalizer import TURN_FINALIZER_REMINDER
 
 
 def _finalizer_turn(*, enabled=True, history=None, turn_id="t1"):

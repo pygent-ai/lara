@@ -7,7 +7,7 @@ from typing import Any, Literal
 from pygent.llm import ModelConfig
 
 from lara.core.io import non_empty_string as _non_empty
-from lara.core.paths import user_lara_root
+from pygent.lara.core.paths import user_lara_root
 from lara.credentials import load_credentials
 from lara.schema import (
     BashCliPreset,

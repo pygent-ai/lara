@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lara.core.paths import project_lara_root
+from pygent.lara.core.paths import project_lara_root
 from tests.native_config_support import native_model_config_yaml
 
 

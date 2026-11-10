@@ -12,7 +12,7 @@ from lara.config import load_run_config
 from lara.core.io import plain_data
 from lara.dispatch import DispatchItem, DispatchItemState
 from tests.unit.test_model_configuration import native_runtime_config
-from lara.runtime.agent_collaboration import AGENT_WAIT_TOOL_SPEC
+from pygent.lara.runtime.agent_collaboration import AGENT_WAIT_TOOL_SPEC
 from lara.runtime.service import LaraRuntimeService
 from lara.sessions import (
     AgentMessage,

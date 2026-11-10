@@ -6,12 +6,12 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from lara.runtime.service import LaraRuntimeService
-from lara.runtime.agent.prompts import PromptRegistry
+from pygent.lara.runtime.agent.prompts import PromptRegistry
 from lara.schema import RunConfig
 from lara.sessions import SessionManager
 
-from .runtime_keys import RuntimeGenerationKey, RuntimeScopeKey
-from .runtime_lease import RuntimeLease, SessionRuntime
+from pygent.lara.orchestration.runtime_keys import RuntimeGenerationKey, RuntimeScopeKey
+from pygent.lara.orchestration.runtime_lease import RuntimeLease, SessionRuntime
 
 
 @dataclass(slots=True)

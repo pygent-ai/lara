@@ -25,7 +25,7 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
-from ..attachments import MEDIA_MAX_BYTES
+from pygent.lara.runtime.attachments import MEDIA_MAX_BYTES
 
 UPLOADS_SUBDIR = Path(".lara") / "uploads"
 

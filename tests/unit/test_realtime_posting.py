@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from lara.runtime.realtime.envelope import render_exchange_envelope
-from lara.runtime.realtime.posting import queue_exchange_envelope
+from pygent.lara.runtime.realtime.envelope import render_exchange_envelope
+from pygent.lara.runtime.realtime.posting import queue_exchange_envelope
 from lara.sessions import AgentMessageState, SessionCollaborationStore
 
 SESSION_ID = "chat-realtime-posting-test"

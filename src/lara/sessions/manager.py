@@ -18,7 +18,7 @@ from lara.core.io import (
     write_json_atomic,
 )
 from lara.core.process import current_owner
-from lara.core.redaction import redact_secrets
+from pygent.lara.core.redaction import redact_secrets
 from lara.schema import (
     AgentSession,
     CaseRunRef,
@@ -27,7 +27,7 @@ from lara.schema import (
     SessionRef,
     SessionSpec,
 )
-from lara.sessions.directory import SessionDirectory, user_lara_root_for
+from pygent.lara.sessions.directory import SessionDirectory, user_lara_root_for
 
 # The dedicated session where realtime silent-work interaction lives: the
 # agent works silently and ``speak`` is the only user-visible channel.

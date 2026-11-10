@@ -12,9 +12,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from lara.agents.context import system_reminder
+from pygent.lara.agents.context import system_reminder
 from lara.core.io import append_jsonl, read_json, utc_now, write_json
-from lara.core.redaction import redact_secrets
+from pygent.lara.core.redaction import redact_secrets
 from lara.schema import AgentSession, EternalConversationConfig, RunConfig
 
 MAX_MEMORY_JOB_ATTEMPTS = 3
@@ -320,10 +320,17 @@ def estimate_context_tokens(
 
 class EternalConversationHarness:
     def __init__(
-        self, config: EternalConversationConfig, *, run_memory_job: MemoryJobRunner
+        self,
+        config: EternalConversationConfig,
+        *,
+        run_memory_job: MemoryJobRunner,
+        foreground_system_prompt: str | None = None,
     ) -> None:
         self.config = config
         self.run_memory_job = run_memory_job
+        # The composition root's configured base prompt; it covers sessions
+        # whose persisted prompt predates rendered-prompt persistence.
+        self._foreground_system_prompt = (foreground_system_prompt or "").strip()
         self._workers: dict[str, asyncio.Task[None]] = {}
         self._builders: dict[str, asyncio.Task[None]] = {}
         self._closed = False
@@ -531,6 +538,7 @@ class EternalConversationHarness:
                 label=f"lara-fork.extractor:{covered + 1}-{target}",
                 system_prompt=(
                     str(session.get("system_prompt") or "").strip()
+                    or self._foreground_system_prompt
                     or MEMORY_JOB_FALLBACK_FOREGROUND_PROMPT
                 ),
                 history_range=tuple(history),

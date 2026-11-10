@@ -8,7 +8,7 @@ from lara.sessions import SessionManager
 from .runtime_pool import WorkspaceRuntimePool
 from .session_collaboration import SessionCollaborationService
 from .session_execution import SessionExecutionCoordinator
-from .session_turns import SessionTurnService
+from pygent.lara.orchestration.session_turns import SessionTurnService
 
 
 class LocalExecutionHost:

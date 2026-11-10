@@ -4,7 +4,7 @@ from pathlib import Path
 
 from lara.config import load_run_config
 from lara.core.io import append_jsonl
-from lara.runtime.context_compression import (
+from pygent.lara.runtime.context_compression import (
     collect_recent_file_reads,
     parse_summary,
     render_file_read_block,

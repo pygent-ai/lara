@@ -6,7 +6,7 @@ import pytest
 from pygent import AIMessage, ModelContinuation, freeze_json_object
 from pygent.llm import DefaultModelInvoker, ModelExecution, ModelProviderResponse
 
-from lara.runtime.agent.model_invoker import LaraModelInvoker
+from pygent.lara.runtime.agent.model_invoker import LaraModelInvoker
 
 
 @pytest.mark.asyncio

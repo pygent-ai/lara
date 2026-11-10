@@ -1,6 +1,6 @@
 """Tests for envelope rendering (D-RT1) and the nudge rule."""
 
-from lara.runtime.realtime.envelope import render_exchange_envelope
+from pygent.lara.runtime.realtime.envelope import render_exchange_envelope
 from lara.runtime.realtime.nudge import (
     DEFAULT_NUDGE_INTERVAL,
     nudge_reminder,

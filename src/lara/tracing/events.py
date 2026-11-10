@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from lara.core.io import append_jsonl, utc_now, write_json, write_text
-from lara.core.redaction import redact_secrets
+from pygent.lara.core.redaction import redact_secrets
 from lara.schema import CaseRunRef, ContextEvent
 
 

@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from lara.core.paths import project_lara_root, user_lara_root
+from pygent.lara.core.paths import project_lara_root, user_lara_root
 
 
 def default_state_path() -> Path:

@@ -15,7 +15,7 @@ from pygent import (
 from pygent.tool import ToolSideEffect
 
 from lara.config import load_run_config
-from lara.runtime.agent.pipeline import LaraToolAuthorization
+from pygent.lara.runtime.agent.pipeline import LaraToolAuthorization
 from lara.runtime.service import LaraRuntimeService
 
 

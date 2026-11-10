@@ -56,14 +56,13 @@ from pygent.tool.executors import ToolExecutionContext
 from pygent.tool.mcp import MCPClientPool
 
 from lara.config import load_run_config
-from lara.agents import (
+from pygent.lara.agents import (
     AgentLimits,
     AgentRunner,
     ChildAgent,
     ChildSpec,
     ForkAgent,
     ForkSpec,
-    StaticContextSource,
     ToolProfile,
     ToolRegistry,
     ToolkitToolSurface,
@@ -71,15 +70,16 @@ from lara.agents import (
     messages_from_history,
 )
 from lara.core.io import aclose_if_supported, plain_object, read_json, write_json
-from lara.runtime.attachments import (
+from lara.runtime.fork_sources import ForkProductSource, StaticContextSource
+from pygent.lara.runtime.attachments import (
     ResolvedAttachment,
     build_media_blocks,
     render_attachments_xml,
     resolve_attachments,
 )
-from lara.runtime.bash_tasks import BashTaskObservations
-from lara.runtime.mcp import ReadinessRetryingTransport
-from lara.runtime.reminders import ReminderService
+from pygent.lara.runtime.bash_tasks import BashTaskObservations
+from pygent.lara.runtime.mcp import ReadinessRetryingTransport
+from pygent.lara.runtime.reminders import ReminderService
 from lara.dispatch import DispatchOperationView, DispatchService, DispatchStore
 from lara.schema import AgentSession, CaseRunRef, RunConfig
 from lara.sessions import (
@@ -102,22 +102,22 @@ from .agent.core import (
     SessionCompressionModule,
     model_retry_policy,
 )
-from .agent.pipeline import (
+from pygent.lara.runtime.agent.pipeline import (
     checkpoint_conversation_message,
     render_model_request_text,
 )
-from .agent.prompts import PromptRegistry
-from .realtime.fork_agent import ForkReplyModule, outcome_from_result
-from .realtime.fork_reply import build_fork_context
-from .realtime.posting import queue_exchange_envelope
+from pygent.lara.runtime.agent.prompts import PromptRegistry
+from pygent.lara.runtime.realtime.fork_agent import ForkReplyModule, outcome_from_result
+from pygent.lara.runtime.realtime.fork_reply import build_fork_context
+from pygent.lara.runtime.realtime.posting import queue_exchange_envelope
 from .realtime.feishu import load_feishu_channels
-from .realtime.speak import SILENT_ACKNOWLEDGEMENT, SPEAK_TOOL_SPEC, parse_speak_args
-from .agent_collaboration import (
+from pygent.lara.runtime.realtime.speak import SILENT_ACKNOWLEDGEMENT, SPEAK_TOOL_SPEC, parse_speak_args
+from pygent.lara.runtime.agent_collaboration import (
     AGENT_COLLABORATION_TOOL_SPECS,
     visible_agent_collaboration_specs,
 )
-from .context import LARA_CONTEXT_CODEC, LARA_CONTEXT_CODECS, LaraContext
-from .deployment import (
+from pygent.lara.runtime.context import LARA_CONTEXT_CODEC, LARA_CONTEXT_CODECS, LaraContext
+from pygent.lara.runtime.deployment import (
     LaraModelResourceResolver,
     WorkspaceToolExecutor,
 )
@@ -128,7 +128,7 @@ from .eternal_conversation import (
     load_projection,
     render_memory_snapshot,
 )
-from .file_effects import FILE_EFFECT_TOOL_SPEC, FileEffectToolExecutor
+from pygent.lara.runtime.file_effects import FILE_EFFECT_TOOL_SPEC, FileEffectToolExecutor
 from .model_configuration import preferred_models, preferred_profile_name
 
 if TYPE_CHECKING:
@@ -420,6 +420,7 @@ class LaraRuntimeService:
         self.memory_harness = EternalConversationHarness(
             config.eternal_conversation,
             run_memory_job=self._run_memory_job,
+            foreground_system_prompt=config.system_prompt,
         )
         template = (
             LaraAgent(

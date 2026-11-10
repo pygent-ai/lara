@@ -7,7 +7,7 @@ from .collaboration import (
     CollaborationState,
     SessionCollaborationStore,
 )
-from .directory import (
+from pygent.lara.sessions.directory import (
     ItemLocation,
     SessionDirectory,
     SessionLocation,

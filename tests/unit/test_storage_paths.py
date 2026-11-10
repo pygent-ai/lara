@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from lara.config import load_run_config
-from lara.core.paths import project_lara_root
+from pygent.lara.core.paths import project_lara_root
 from lara.schema import RunConfig
 from lara.sessions import SessionManager
 from lara_api.services.project_state import GuiProjectState, build_session_scopes

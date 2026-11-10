@@ -1,14 +1,13 @@
-from .models import (
+"""Schema boundary: kernel types from pygent.lara, host types alongside."""
+
+from pygent.lara.schema.models import (
     AgentSession,
     BashCliPreset,
-    CaseDefinition,
     CaseRunRef,
-    CaseRunResult,
     CaseRunStatus,
     ContextEvent,
     DelegationConfig,
     EternalConversationConfig,
-    EvaluationResult,
     MCPServerConfig,
     ModelRetryConfig,
     ResolvedAgentConfig,
@@ -17,11 +16,18 @@ from .models import (
     RuntimeCapacityConfig,
     RuntimeDurabilityConfig,
     RuntimeSteeringConfig,
-    SessionRef,
     SessionSpec,
-    WorkspaceRef,
+    build_run_config,
     default_cli_bash_presets,
     native_model_config_complete,
+)
+
+from .host_models import (
+    CaseDefinition,
+    CaseRunResult,
+    EvaluationResult,
+    SessionRef,
+    WorkspaceRef,
 )
 
 __all__ = [
@@ -32,20 +38,21 @@ __all__ = [
     "CaseRunResult",
     "CaseRunStatus",
     "ContextEvent",
-    "EvaluationResult",
     "DelegationConfig",
     "EternalConversationConfig",
+    "EvaluationResult",
     "MCPServerConfig",
     "ModelRetryConfig",
     "ResolvedAgentConfig",
+    "RunConfig",
     "RuntimeApprovalConfig",
     "RuntimeCapacityConfig",
     "RuntimeDurabilityConfig",
     "RuntimeSteeringConfig",
-    "RunConfig",
     "SessionRef",
     "SessionSpec",
     "WorkspaceRef",
+    "build_run_config",
     "default_cli_bash_presets",
     "native_model_config_complete",
 ]

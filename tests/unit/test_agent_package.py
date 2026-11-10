@@ -25,7 +25,7 @@ from pygent.llm import (
 )
 
 from lara.runtime.agent.common import DEFAULT_REACT_MAX_STEPS
-from lara.runtime.agent.compressor import LaraCompressorModule
+from pygent.lara.runtime.agent.compressor import LaraCompressorModule
 from lara.runtime.agent.core import (
     MODEL_RETRYABLE_ERROR_KINDS,
     LaraAgent,
@@ -33,14 +33,14 @@ from lara.runtime.agent.core import (
     _error_trace_payload,
     _model_trace_payload,
 )
-from lara.runtime.agent.prompt_models import PromptRenderContext
-from lara.runtime.context import LaraContext
+from pygent.lara.runtime.agent.prompt_models import PromptRenderContext
+from pygent.lara.runtime.context import LaraContext
 from tests.unit.test_model_usage_defaults import model_agent
 
 
 def test_agent_runtime_is_split_by_responsibility() -> None:
     assert LaraAgent.__module__ == "lara.runtime.agent.core"
-    assert PromptRenderContext.__module__ == "lara.runtime.agent.prompt_models"
+    assert PromptRenderContext.__module__ == "pygent.lara.runtime.agent.prompt_models"
 
 
 def test_runtime_packages_do_not_reexport_implementation_symbols() -> None:

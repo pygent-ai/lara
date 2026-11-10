@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from pygent import ToolKit, thaw_json
 from pygent import ToolResult as PygentToolResult
 
-from lara.runtime.tools import ToolObserver
+from pygent.lara.runtime.tools import ToolObserver
 from lara.schema import CaseRunRef
 from lara.tracing import DiffTool, EventStore
 
@@ -382,7 +382,7 @@ class ToolTests(unittest.IsolatedAsyncioTestCase):
             ctx = "turn-0001"
 
             with unittest.mock.patch(
-                "lara.runtime.tools.FileEffectTracker.snapshot_workspace",
+                "pygent.lara.runtime.tools.FileEffectTracker.snapshot_workspace",
                 side_effect=AssertionError("snapshot should be deferred"),
             ):
                 result = await _call_and_record(
@@ -1214,7 +1214,7 @@ async def _call_and_record(
 
 
 def _file_effect_tracker_class():
-    import lara.runtime.tools as tools
+    import pygent.lara.runtime.tools as tools
 
     try:
         return tools.FileEffectTracker

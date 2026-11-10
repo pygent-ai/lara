@@ -10,7 +10,7 @@ from lara.core.io import (
     validate_path_id,
     write_json,
 )
-from lara.core.redaction import REDACTED, redact_secrets
+from pygent.lara.core.redaction import REDACTED, redact_secrets
 
 __all__ = [
     "REDACTED",

@@ -312,7 +312,7 @@ async def test_native_react_preserves_skill_cli_and_file_detection(
             return None
         return real_which(name)
 
-    monkeypatch.setattr("lara.runtime.reminders.cli_context.shutil.which", staged_which)
+    monkeypatch.setattr("pygent.lara.runtime.reminders.cli_context.shutil.which", staged_which)
     assert config.resolved_agent is not None
 
     manager = SessionManager(config)

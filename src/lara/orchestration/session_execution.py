@@ -10,11 +10,11 @@ from typing import Any
 from lara.core.io import plain_object
 from lara.schema import CaseRunRef
 from lara.sessions import realtime_enabled_for
-from lara.agents.context import system_reminder
-from lara.runtime.realtime.turn_finalizer import decide_turn_finalization
+from pygent.lara.agents.context import system_reminder
+from pygent.lara.runtime.realtime.turn_finalizer import decide_turn_finalization
 
-from .managed_turn import ManagedSessionTurn
-from .models import TurnCommand, TurnState
+from pygent.lara.orchestration.managed_turn import ManagedSessionTurn
+from pygent.lara.orchestration.models import TurnCommand, TurnState
 
 
 @dataclass(frozen=True, slots=True)

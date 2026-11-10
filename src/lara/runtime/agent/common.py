@@ -12,7 +12,7 @@ from typing import Any, cast
 from pygent import Message as PygentMessage
 from pygent.runtime.codec import context_from_dict, message_from_dict
 
-from lara.runtime.context import LARA_CONTEXT_CODECS, LaraContext
+from pygent.lara.runtime.context import LARA_CONTEXT_CODECS, LaraContext
 
 DEFAULT_REACT_MAX_STEPS = 500
 

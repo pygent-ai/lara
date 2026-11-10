@@ -1,5 +1,5 @@
-from lara.runtime.agent.prompt_models import PromptRenderContext
-from lara.runtime.agent.prompts import (
+from pygent.lara.runtime.agent.prompt_models import PromptRenderContext
+from pygent.lara.runtime.agent.prompts import (
     PromptComposer,
     PromptRegistry,
     StaticPromptSessionCache,

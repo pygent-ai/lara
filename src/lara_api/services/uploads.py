@@ -1,6 +1,6 @@
 """Clipboard/file uploads: raw bytes into the workspace for the attachment pipeline.
 
-The chat attachment pipeline (lara.runtime.attachments) only accepts paths
+The chat attachment pipeline (pygent.lara.runtime.attachments) only accepts paths
 inside the workspace, so pasted or picked files that are not workspace files
 are stored under ``<workspace_root>/.lara/uploads`` first and referenced by
 their returned relative path afterwards. Stored uploads can be served back

@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from lara.runtime.realtime.feishu import FeishuChannel, load_feishu_channels
-from lara.runtime.realtime.speak import SILENT_ACKNOWLEDGEMENT, SPEAK_TOOL_SPEC
+from pygent.lara.runtime.realtime.speak import SILENT_ACKNOWLEDGEMENT, SPEAK_TOOL_SPEC
 from lara.runtime.service import _SpeakExecutor
 
 

@@ -11,8 +11,8 @@ from pygent.llm._stream_accumulator import ModelStreamAccumulator
 from pygent.llm.layer import _message_effect_value, _message_from_effect
 
 from lara.runtime.agent.core import LaraAgent
-from lara.runtime.agent.pipeline import checkpoint_conversation_message
-from lara.runtime.context import LaraContext
+from pygent.lara.runtime.agent.pipeline import checkpoint_conversation_message
+from pygent.lara.runtime.context import LaraContext
 from lara.runtime.service import LaraRuntimeService
 from lara.sessions import SessionManager
 from lara.schema import ResolvedAgentConfig, RunConfig

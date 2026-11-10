@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from httpx import ASGITransport, AsyncClient
 
 from lara.core.io import read_json, write_json
-from lara.runtime.reminders import BootstrapStatus
+from pygent.lara.runtime.reminders import BootstrapStatus
 from lara.tracing import EventStore
 from lara_api.app import create_app
 from lara_api.dependencies import ApiContext

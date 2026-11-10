@@ -6,10 +6,10 @@ import threading
 
 import pytest
 
-from lara.runtime.reminders import BootstrapStatus, ReminderSection, ReminderService
-from lara.runtime.reminders.agent_messages import render_agent_message
-from lara.runtime.reminders.git_context import adaptive_check_interval
-from lara.runtime.reminders.rendering import render_context_body
+from pygent.lara.runtime.reminders import BootstrapStatus, ReminderSection, ReminderService
+from pygent.lara.runtime.reminders.agent_messages import render_agent_message
+from pygent.lara.runtime.reminders.git_context import adaptive_check_interval
+from pygent.lara.runtime.reminders.rendering import render_context_body
 from lara.schema import RunConfig
 from lara.sessions import AgentMessage, AgentMessageState, SessionManager
 
@@ -72,7 +72,7 @@ async def test_first_turn_waits_for_complete_snapshot_and_consumes_once(
 ) -> None:
     # Exercise delivery, not the production best-effort Git timeout.
     monkeypatch.setattr(
-        "lara.runtime.reminders.git_context.GIT_STATUS_TIMEOUT_SECONDS", 5.0
+        "pygent.lara.runtime.reminders.git_context.GIT_STATUS_TIMEOUT_SECONDS", 5.0
     )
     config, session = _create(tmp_path)
     service = ReminderService(config)
@@ -112,7 +112,7 @@ async def test_git_observation_reports_only_changed_item(tmp_path, monkeypatch) 
     await service.acknowledge_initial(session.session_id, "turn-1", "execution-1")
     (tmp_path / "changed.txt").write_text("changed", encoding="utf-8")
     monkeypatch.setattr(
-        "lara.runtime.reminders.git_context.adaptive_check_interval",
+        "pygent.lara.runtime.reminders.git_context.adaptive_check_interval",
         lambda _state: 0.0,
     )
     immediate = await service.observe_after_tools(

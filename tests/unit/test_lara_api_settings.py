@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from pygent.llm import ModelInfo
 from lara.config.yaml_subset import parse_yaml_subset
 from lara.core.io import read_json
-from lara.core.paths import project_lara_root
+from pygent.lara.core.paths import project_lara_root
 from lara_api.dependencies import ApiContext
 from tests.unit.test_model_configuration import native_mapping
 

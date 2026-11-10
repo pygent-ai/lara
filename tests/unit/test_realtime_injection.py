@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pygent import AIMessage, ToolCall, ToolMessage, ToolResult
 
-from lara.runtime.context import LaraContext
+from pygent.lara.runtime.context import LaraContext
 from lara.runtime.realtime.injection import RealtimeNudgeModule
 from lara.runtime.realtime.nudge import NUDGE_REMINDER
 

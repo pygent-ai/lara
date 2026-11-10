@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from lara.core.paths import project_lara_root, user_lara_root
+from pygent.lara.core.paths import project_lara_root, user_lara_root
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +29,7 @@ def lara_project_data_in_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
             return project_lara_root(workspace_root, tmp_path / "lara-home")
         return project_lara_root(workspace_root, user_root)
 
-    monkeypatch.setattr("lara.schema.models.project_lara_root", redirected)
+    monkeypatch.setattr("pygent.lara.schema.models.project_lara_root", redirected)
 
 
 @pytest.fixture(autouse=True)

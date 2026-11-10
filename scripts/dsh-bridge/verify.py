@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 from typing import Any, cast
 
-from lara.runtime.mcp import ReadinessRetryingTransport
+from pygent.lara.runtime.mcp import ReadinessRetryingTransport
 from pygent.tool.mcp import MCPClientPool
 
 BRIDGE_DIR = Path(__file__).resolve().parent

@@ -10,8 +10,9 @@ from uuid import uuid4
 
 from lara.core.io import read_json, validate_path_id
 from lara.core.process import owner_is_foreign_and_alive
-from lara.runtime.reminders import ReminderService
+from pygent.lara.runtime.reminders import ReminderService
 from lara.schema import AgentSession, CaseRunRef, CaseRunStatus, RunConfig
+from lara.schema.host_models import status_resumable
 from lara.sessions import LARA_SAYS_SESSION_MODE, SessionManager
 from lara.tracing.events import EventStore
 from lara_api.container import ApiContext
@@ -512,7 +513,7 @@ def _record_from_metadata(
         title=title,
         last_case_run_id=_optional_str(metadata.get("last_case_run_id")),
         last_case_run_status=_optional_str(metadata.get("last_case_run_status")),
-        resumable=status.resumable if status is not None else False,
+        resumable=status_resumable(status),
         model_group_name=str(metadata.get("model_group_name") or ""),
         selected_model_key=str(metadata.get("selected_model_key") or ""),
     )

@@ -14,10 +14,10 @@ from dataclasses import replace
 
 from pygent import AIMessage, Module, ToolMessage
 
-from lara.runtime.context import LaraContext
+from pygent.lara.runtime.context import LaraContext
 
 from .nudge import DEFAULT_NUDGE_INTERVAL, nudge_reminder
-from .speak import SPEAK_TOOL_NAME
+from pygent.lara.runtime.realtime.speak import SPEAK_TOOL_NAME
 
 
 class _NudgeCounter:
