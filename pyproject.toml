@@ -5,10 +5,9 @@ description = "Local agent development and evaluation workbench"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "dynamic-memory-cli",
     "fastapi>=0.115.0",
     "lark-oapi>=1.7.5",
-    "pygent-ai[video]==0.3.33",
+    "pygent-ai[video]==0.3.34",
     "python-dateutil>=2.9.0",
     "tzdata>=2025.2",
     "tzlocal>=5.2",
@@ -26,11 +25,10 @@ credentials = [
 ]
 
 [tool.uv.sources]
-# The packaging lives on the codex/dynamic-memory-cli branch until it merges
-# to main (or the package is published); uv.lock pins the resolved commit.
-dynamic-memory-cli = { git = "https://github.com/pygent-ai/memory-cli", branch = "codex/dynamic-memory-cli" }
 # 0.3.32 was tagged but never reached PyPI (ruff gate); 0.3.33 supersedes it
 # and publishes from PyPI, so the temporary local-path override is gone.
+# 0.3.34 sinks the lara runtime as pygent.lara and vendors the dynamic-memory
+# CLI, so the memory-cli git dependency is no longer needed.
 
 [project.scripts]
 lara = "lara.cli:main"
