@@ -328,7 +328,7 @@ def _context_manager(
         workspace_root=Path(config.workspace_root),
         store=EventStore(context.case_run_ref),
         prompt_registry=prompt_registry,
-        cli_bash_presets=config.cli_bash_presets,
+        system_prompt=config.system_prompt,
         project_lara_root=Path(config.lara_root),
         user_lara_root=Path(config.user_lara_root or Path.home() / ".lara"),
     )
