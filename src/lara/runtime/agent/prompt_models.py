@@ -5,12 +5,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from lara.schema import BashCliPreset
-
 from .common import _hash_json
 
 
-def _always_enabled(ctx: "PromptRenderContext") -> bool:
+def _always_enabled(ctx: PromptRenderContext) -> bool:
     return True
 
 
@@ -21,10 +19,10 @@ class PromptModule:
     type: Literal["system", "project", "runtime", "tool", "memory", "policy"]
     cache_scope: Literal["session", "request", "turn", "none"]
     order: int
-    render: Callable[["PromptRenderContext"], str | None]
+    render: Callable[[PromptRenderContext], str | None]
     required: bool = False
     depends_on: tuple[str, ...] = ()
-    enabled: Callable[["PromptRenderContext"], bool] = _always_enabled
+    enabled: Callable[[PromptRenderContext], bool] = _always_enabled
 
     @property
     def version_hash(self) -> str:
@@ -78,7 +76,6 @@ class PromptRenderContext:
     tool_names: list[str]
     request_id: str | None = None
     request_type: str = "agent_turn"
-    cli_bash_presets: list[BashCliPreset] = field(default_factory=list)
     user_lara_root: Path | None = None
     project_lara_root: Path | None = None
     user_skills_dir: Path | None = None
@@ -90,25 +87,13 @@ class StaticPromptResult:
     text: str
     prompt_hash: str
     modules: list[dict[str, Any]]
-    metadata: dict[str, Any]
     created: bool = False
 
 
 @dataclass(slots=True)
 class PromptRequestContext:
-    session_id: str
-    case_run_id: str | None
-    turn_id: str | None
-    request_id: str
     request_stage: Literal["before_model_request", "other"]
     request_type: Literal["agent_turn", "case_run", "summary", "evaluation"]
-    history_message_count: int
-    latest_user_input_hash: str | None
-    tool_names: list[str]
-    file_state_hash: str | None
-    projection_hash: str | None
-    runtime_state_hash: str | None
-    dynamic_input_hash: str | None
 
 
 @dataclass(slots=True)
@@ -145,11 +130,6 @@ class PromptInjectionDecision:
 
 @dataclass(slots=True)
 class ModelRequestPrompt:
+    """The rendered model-request prompt; consumers read only ``text``."""
+
     text: str
-    static_text: str
-    request_system_text: str | None
-    prompt_hash: str
-    static_prompt_hash: str
-    request_system_prompt_hash: str | None
-    modules: list[dict[str, Any]]
-    injection_decision: PromptInjectionDecision
