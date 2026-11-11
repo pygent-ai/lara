@@ -106,6 +106,7 @@ from .agent.pipeline import (
     checkpoint_conversation_message,
     render_model_request_text,
 )
+from .agent.prompts import PromptRegistry
 from .realtime.fork_agent import ForkReplyModule, outcome_from_result
 from .realtime.fork_reply import build_fork_context
 from .realtime.posting import queue_exchange_envelope
@@ -275,10 +276,12 @@ class LaraRuntimeService:
         own_reminders: bool | None = None,
         collaboration: SessionCollaborationService | None = None,
         dispatch: DispatchService | None = None,
+        prompt_registry: PromptRegistry | None = None,
     ) -> None:
         self.config = config
         self.collaboration = collaboration
         self._dispatch = dispatch
+        self._prompt_registry = prompt_registry
         self.reminders = reminders or ReminderService(config)
         self._owns_reminders = (
             reminders is None if own_reminders is None else own_reminders
@@ -427,6 +430,7 @@ class LaraRuntimeService:
                 memory_harness=self.memory_harness,
                 reminders=self.reminders,
                 bash_tasks=self.bash_tasks,
+                prompt_registry=self._prompt_registry,
             )
             if config.resolved_agent is not None and config.model_config is not None
             else None
@@ -811,6 +815,7 @@ class LaraRuntimeService:
             selected_model_key=selected_model_key,
             eternal_memory_enabled=eternal_memory,
             realtime_interaction_enabled=realtime_interaction,
+            prompt_registry=self._prompt_registry,
         )
         if resolved is not None and agent.llm is not None:
             self._model_invokers.setdefault(resolved.alias, agent.llm)
@@ -1176,7 +1181,9 @@ class LaraRuntimeService:
             config=config,
             carry_context=True,
         )
-        system_prompt = render_model_request_text(config, fork_context, None)
+        system_prompt = render_model_request_text(
+            config, fork_context, self._prompt_registry
+        )
         request = build_fork_context(
             system_prompt=system_prompt,
             messages=tuple(fork_context.messages),

@@ -20,7 +20,7 @@ from pygent.runtime import ExecutionOptions
 from pygent.tool import AgentToolExecutor
 
 from lara.runtime.agent.prompt_models import PromptRenderContext
-from lara.runtime.agent.prompt_sources import _render_available_tools_prompt
+from lara.runtime.prompt_profile import _render_available_tools_prompt
 from lara.runtime.context import LaraContext
 from lara.runtime.file_effects import FileEffectBaselineStore
 from lara.runtime.service import (
