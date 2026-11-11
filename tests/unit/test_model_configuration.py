@@ -9,6 +9,7 @@ import pytest
 from pygent.llm import ConnectionConfig, ModelConfig, ModelInfo
 
 from lara.schema import ResolvedAgentConfig, RunConfig
+from lara.runtime.prompt_profile import LARA_BASE_SYSTEM_PROMPT
 from lara.runtime.model_configuration import (
     CLIENT_FACTORIES,
     CredentialEnvironment,
@@ -62,6 +63,9 @@ def native_runtime_config(root, *, group: tuple[str, ...] = ("main", "backup")):
     config = RunConfig(
         workspace_root=str(root),
         lara_root=str(root / ".lara"),
+        # Test composition root: the kernel raises on an empty prompt, so
+        # directly-built configs carry the stock Lara base prompt.
+        system_prompt=LARA_BASE_SYSTEM_PROMPT,
         model_config_mapping=mapping,
         resolved_agent=ResolvedAgentConfig(
             alias="default", default_model_group="coding"
