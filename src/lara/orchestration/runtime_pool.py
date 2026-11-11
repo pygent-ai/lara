@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from lara.runtime.service import LaraRuntimeService
+from lara.runtime.agent.prompts import PromptRegistry
 from lara.schema import RunConfig
 from lara.sessions import SessionManager
 
@@ -30,9 +31,11 @@ class WorkspaceRuntimePool:
         *,
         runtime_factory: Callable[..., Any] = LaraRuntimeService,
         collaboration: Any | None = None,
+        prompt_registry: PromptRegistry | None = None,
     ) -> None:
         self._runtime_factory = runtime_factory
         self._collaboration = collaboration
+        self._prompt_registry = prompt_registry
         self._entries: dict[str, _RuntimeEntry] = {}
         self._active: dict[RuntimeScopeKey, str] = {}
         self._lock = asyncio.Lock()
@@ -77,6 +80,7 @@ class WorkspaceRuntimePool:
                     reminders=reminders,
                     own_reminders=reminders is None,
                     collaboration=self._collaboration,
+                    prompt_registry=self._prompt_registry,
                 )
                 runtime = SessionRuntime(
                     generation_key=generation,

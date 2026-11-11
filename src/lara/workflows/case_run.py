@@ -36,7 +36,9 @@ def execute_case_run(
     case_manager.prepare_workspace(case, ref)
 
     async def managed_case() -> CaseRunResult:
-        runtime = LaraRuntimeService(config)
+        from lara.runtime.prompt_profile import build_prompt_registry
+
+        runtime = LaraRuntimeService(config, prompt_registry=build_prompt_registry())
         try:
             payload = await runtime.execute_case(
                 manager=manager,
