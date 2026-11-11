@@ -580,7 +580,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "lark-oapi", specifier = ">=1.7.5" },
-    { name = "pygent-ai", extras = ["video"], specifier = "==0.5.0" },
+    { name = "pygent-ai", extras = ["video"], specifier = "==0.4.1" },
     { name = "python-dateutil", specifier = ">=2.9.0" },
     { name = "tzdata", specifier = ">=2025.2" },
     { name = "tzlocal", specifier = ">=5.2" },
@@ -867,7 +867,7 @@ wheels = [
 
 [[package]]
 name = "pygent-ai"
-version = "0.5.0"
+version = "0.4.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiosqlite" },
@@ -885,13 +885,13 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "uvicorn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6c/63/8859feb3380822b42a75d86e7208e20abe3ebbe564ab5dfd3b4e6adec25c/pygent_ai-0.5.0.tar.gz", hash = "sha256:51419d9aa2d9093f344734714fffcd56ec16cc44350400bb04e0811d8a03bac3", size = 1370734, upload-time = "2026-11-11T04:54:53.963Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/28/89/a0e19b3948b876fd997a25c05eac530f6e66f743edf2f01e4dab9d7991ef/pygent_ai-0.4.1.tar.gz", hash = "sha256:56dc709a9b34d0422a86546b11629089170bf29a3fec1253a23a438ed5dc43da", size = 1370779, upload-time = "2026-11-11T05:36:31.744Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4c/41/2b7c31f8f49f2d6fd2fde444ec8b1f1079ede0c5fd9406c6cac386de1c86/pygent_ai-0.5.0-cp311-abi3-macosx_10_12_x86_64.whl", hash = "sha256:6eaabee0b019ad37293cd4858deb95e4667c6ca5def35e0f3b43497778da977e", size = 2864476, upload-time = "2026-11-11T04:54:45.951Z" },
-    { url = "https://files.pythonhosted.org/packages/e2/28/dbd1f99beb8aeb43d5d2965a65844d189c0635c38656a76e59711b437c52/pygent_ai-0.5.0-cp311-abi3-macosx_11_0_arm64.whl", hash = "sha256:1b3dc2287e641e186dd89dea2bf8c747a81a3f70405c4bf2cebd3a336e0e550f", size = 2802478, upload-time = "2026-11-11T04:54:47.645Z" },
-    { url = "https://files.pythonhosted.org/packages/e4/17/21abd7a1da510b7f6a8869feb0f81096b7f15c56d2a1e4103a2523cb7a4b/pygent_ai-0.5.0-cp311-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:153ed474a46051cf11e23fa92e7da9066542325ab8ca18802f4487ad385ff867", size = 3107268, upload-time = "2026-11-11T04:54:49.256Z" },
-    { url = "https://files.pythonhosted.org/packages/6c/fa/e918cfad5905173244b42a8b3856d630d543f9ba609922548272b172238f/pygent_ai-0.5.0-cp311-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:a14ea3cca3ff17e569217a5471eea90c50ca230dfe001da133aba29e02dec85a", size = 3043057, upload-time = "2026-11-11T04:54:50.979Z" },
-    { url = "https://files.pythonhosted.org/packages/4d/47/6c6f37b73b5b8f846c5a06ecce7dbffe06e95ddef7ad4f1f4f72f506589a/pygent_ai-0.5.0-cp311-abi3-win_amd64.whl", hash = "sha256:0f3cf4d537fa6918b7d90cfe4c1e06ee6c40206b79a3f7018ae48cae65d81be0", size = 2653904, upload-time = "2026-11-11T04:54:52.531Z" },
+    { url = "https://files.pythonhosted.org/packages/11/78/54be04a6ea3aac94afac3737eda6461b81693b67c9775f798a3f81333b8e/pygent_ai-0.4.1-cp311-abi3-macosx_10_12_x86_64.whl", hash = "sha256:8c652236cd5179153d9c2b7c07348dca7ebcd9218d52a40e71a6d92a35d3c72d", size = 2864611, upload-time = "2026-11-11T05:36:21.586Z" },
+    { url = "https://files.pythonhosted.org/packages/90/11/51af4ac81e493b855ef5a1a37f70ac9d5a3e410c2b9e57badb54100c5e57/pygent_ai-0.4.1-cp311-abi3-macosx_11_0_arm64.whl", hash = "sha256:8a85e59bc78453fa7a2ee3d95f1ddf7ae2c95b5b0b2b460889b368b9b16cb22b", size = 2802610, upload-time = "2026-11-11T05:36:23.792Z" },
+    { url = "https://files.pythonhosted.org/packages/76/81/531904b14efddc13107a739de826ecac7ea22645b8b6a7b24366a8eced6d/pygent_ai-0.4.1-cp311-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:e2f1c2fdf6e96c7866df4d6547923c1f1b8ea5f58c8a261bf6845909212d461c", size = 3107402, upload-time = "2026-11-11T05:36:25.698Z" },
+    { url = "https://files.pythonhosted.org/packages/41/1a/8a3e36ae5ee09873d6cd87f4211fdcfa58b4e73ac68bd70057b492459c0f/pygent_ai-0.4.1-cp311-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:a4ed641d67ea4a0a176a13e83327969e9546eef793fff995b25378b3a78ee5bc", size = 3043190, upload-time = "2026-11-11T05:36:27.702Z" },
+    { url = "https://files.pythonhosted.org/packages/ea/8e/1b93df89d494b8ff37a957a09351af582d05ce1fc33fd7365d3835be006d/pygent_ai-0.4.1-cp311-abi3-win_amd64.whl", hash = "sha256:579c72b7a36f7652460d489df694492d3bb61232f707a17df8ede1b4ab4c6131", size = 2654055, upload-time = "2026-11-11T05:36:29.356Z" },
 ]
 
 [package.optional-dependencies]
