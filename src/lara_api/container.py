@@ -100,7 +100,13 @@ class ApiContext:
             if self._runtime_pool is None:
                 from lara.orchestration import WorkspaceRuntimePool
 
-                self._runtime_pool = WorkspaceRuntimePool()
+                # API composition root: register the stock Lara prompt
+                # profile so the kernel's empty registry serves full prompts.
+                from lara.runtime.prompt_profile import build_prompt_registry
+
+                self._runtime_pool = WorkspaceRuntimePool(
+                    prompt_registry=build_prompt_registry()
+                )
             return self._runtime_pool
 
     @property
@@ -272,6 +278,7 @@ class ApiContext:
                 workspace_root=scope.runtime_workspace_root,
                 lara_root=scope.lara_root,
                 agent_alias=self.agent_alias or self.config.agent_alias,
+                system_prompt=self.config.system_prompt,
                 resolved_agent=self.config.resolved_agent,
                 model_retry=self.config.model_retry,
                 model_config_mapping=deepcopy(self.config.model_config_mapping),

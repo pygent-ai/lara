@@ -19,8 +19,11 @@ class LocalExecutionHost:
         *,
         runtime_pool: WorkspaceRuntimePool | None = None,
         coordinator: SessionExecutionCoordinator | None = None,
+        prompt_registry: Any | None = None,
     ) -> None:
-        self.runtime_pool = runtime_pool or WorkspaceRuntimePool()
+        self.runtime_pool = runtime_pool or WorkspaceRuntimePool(
+            prompt_registry=prompt_registry
+        )
         self.coordinator = coordinator or SessionExecutionCoordinator()
         self.turns = SessionTurnService(
             coordinator=self.coordinator,
