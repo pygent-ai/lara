@@ -27,7 +27,7 @@ from pygent import (
     ModelErrorKind,
     Module,
     ModelGroup,
-    PygentAgent,
+    ReActAgent,
     RetryPolicy,
     ToolAuthorizationDecision,
     ToolAuthorizationRequest,
@@ -199,7 +199,7 @@ class AgentRunner:
 
     Each run is isolated: the runner resolves the tool profile, builds the
     model layer from the resolved definitions, and assembles a fresh
-    ``PygentAgent`` so concurrent runs never share mutable state.
+    ``ReActAgent`` so concurrent runs never share mutable state.
     """
 
     def __init__(
@@ -260,7 +260,7 @@ class AgentRunner:
         )
         assert effective_system_prompt is not None
         model = self._model_factory(definitions)
-        agent = PygentAgent(
+        agent = ReActAgent(
             system_prompt=effective_system_prompt,
             compression_prompt=self._compression_prompt,
             model=model,

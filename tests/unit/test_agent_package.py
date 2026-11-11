@@ -10,8 +10,8 @@ from pygent import (
     ModelEntry,
     ModelErrorKind,
     ModelSpec,
-    PygentAgent,
-    PygentAgentContext,
+    ReActAgent,
+    ReActAgentContext,
     UserMessage,
     freeze_json_object,
 )
@@ -58,8 +58,8 @@ def test_lara_foreground_uses_pygent_030_native_agent_and_compressor(
 ) -> None:
     agent = model_agent(tmp_path)
 
-    assert issubclass(LaraContext, PygentAgentContext)
-    assert isinstance(agent.foreground, PygentAgent)
+    assert issubclass(LaraContext, ReActAgentContext)
+    assert isinstance(agent.foreground, ReActAgent)
     assert isinstance(
         agent.foreground.react.model.compressor, LaraCompressorModule
     )
