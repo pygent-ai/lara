@@ -6,7 +6,7 @@ from typing import Any, ClassVar
 from pygent import (
     ContextCodec,
     FrozenJsonObject,
-    PygentAgentContext,
+    ReActAgentContext,
     freeze_json_object,
 )
 from pygent.runtime.codec import message_to_dict
@@ -19,7 +19,7 @@ from .file_effect_models import DeferredFileEffectJob
 
 
 @dataclass(frozen=True, slots=True)
-class LaraContext(PygentAgentContext):
+class LaraContext(ReActAgentContext):
     """Portable Lara agent state carried through one Pygent execution."""
 
     context_schema: ClassVar[str] = "lara.agent-context"

@@ -15,7 +15,7 @@ from pygent import (
     ModelErrorKind,
     ModelGroup,
     Module,
-    PygentAgent,
+    ReActAgent,
     RetryPolicy,
     ToolCallLayer,
     ToolDefinition,
@@ -154,7 +154,7 @@ def _sanitized_model_failure(failure: Any) -> dict[str, Any]:
     return payload
 
 
-class LaraForegroundAgent(PygentAgent):
+class LaraForegroundAgent(ReActAgent):
     """Pygent foreground Agent with Lara's verified recovery declaration."""
 
     execution_requirements = ExecutionRequirements(
