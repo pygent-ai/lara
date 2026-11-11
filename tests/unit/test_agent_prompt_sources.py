@@ -1,5 +1,10 @@
 from lara.runtime.agent.prompt_models import PromptRenderContext
-from lara.runtime.agent.prompt_sources import (
+from lara.runtime.agent.prompts import (
+    PromptComposer,
+    PromptRegistry,
+    StaticPromptSessionCache,
+)
+from lara.runtime.prompt_profile import (
     _render_available_tools_prompt,
     _render_system_action_safety_prompt,
     _render_system_coding_rules_prompt,
@@ -7,11 +12,7 @@ from lara.runtime.agent.prompt_sources import (
     _render_system_path_policy_prompt,
     _render_system_tool_policy_prompt,
     _render_token_budget_prompt,
-)
-from lara.runtime.agent.prompts import (
-    PromptComposer,
-    PromptRegistry,
-    StaticPromptSessionCache,
+    build_prompt_registry,
 )
 
 
@@ -28,6 +29,18 @@ def _context(tmp_path, *, tool_names=None) -> PromptRenderContext:
         user_skills_dir=tmp_path / "user-lara" / "skills",
         project_skills_dir=tmp_path / ".lara" / "skills",
     )
+
+
+def test_default_registry_ships_empty_and_injection_restores_profile(tmp_path) -> None:
+    # Kernel contract: the registry ships empty; prompt content exists only
+    # through composition-root injection.
+    assert PromptRegistry().resolve() == []
+    registry = build_prompt_registry()
+    static_ids = [module.id for module in registry.resolve(phase="static")]
+    assert static_ids[0] == "system.identity"
+    assert "system.coding_rules" in static_ids
+    request_ids = [module.id for module in registry.resolve(phase="request_system")]
+    assert "tool.available" in request_ids
 
 
 def test_path_policy_separates_host_and_sandbox_paths(tmp_path) -> None:
@@ -82,7 +95,7 @@ def test_new_sessions_receive_regression_policy(tmp_path) -> None:
     for name in ("session-one", "session-two"):
         context = _context(tmp_path / name)
         result = StaticPromptSessionCache(
-            context.session_dir, PromptComposer()
+            context.session_dir, PromptComposer(build_prompt_registry())
         ).get_or_create(context)
         assert result.created
         assert (
@@ -94,7 +107,7 @@ def test_new_sessions_receive_regression_policy(tmp_path) -> None:
 
 def test_existing_session_keeps_original_static_prompt(tmp_path, monkeypatch) -> None:
     context = _context(tmp_path)
-    original_composer = PromptComposer()
+    original_composer = PromptComposer(build_prompt_registry())
     monkeypatch.setattr(
         original_composer, "compose_static", lambda _ctx: ("Original session rules", [])
     )
@@ -102,7 +115,7 @@ def test_existing_session_keeps_original_static_prompt(tmp_path, monkeypatch) ->
         context.session_dir, original_composer
     ).get_or_create(context)
     resumed = StaticPromptSessionCache(
-        context.session_dir, PromptComposer()
+        context.session_dir, PromptComposer(build_prompt_registry())
     ).get_or_create(context)
     assert not resumed.created
     assert resumed.text == original.text == "Original session rules"
@@ -122,7 +135,8 @@ def test_tool_and_action_policies_cover_denials_parallelism_and_irreversible_act
     )
     assert "Do not commit, amend, push, force" in action_safety
     static_module_ids = [
-        module.id for module in PromptRegistry().resolve(phase="static")
+        module.id
+        for module in build_prompt_registry().resolve(phase="static")
     ]
     assert static_module_ids.index("system.injection_guard") < static_module_ids.index(
         "system.action_safety"
@@ -141,7 +155,7 @@ def test_dynamic_tools_and_context_rules_are_capability_aware(tmp_path) -> None:
 
 def test_lara_control_plane_routes_scheduled_tasks_through_lara(tmp_path) -> None:
     context = _context(tmp_path)
-    prompt, _ = PromptComposer().compose_request_system(context)
+    prompt, _ = PromptComposer(build_prompt_registry()).compose_request_system(context)
 
     assert "unqualified scheduled or recurring task" in prompt
     assert "Lara automation" in prompt
@@ -149,7 +163,7 @@ def test_lara_control_plane_routes_scheduled_tasks_through_lara(tmp_path) -> Non
     assert "explicitly requests an operating-system scheduler" in prompt
     assert "list or show command" in prompt
 
-    modules = PromptRegistry().resolve(phase="request_system")
+    modules = build_prompt_registry().resolve(phase="request_system")
     assert "system.lara_control_plane" in [item.id for item in modules]
     module = next(item for item in modules if item.id == "system.lara_control_plane")
     assert module.type == "policy"
