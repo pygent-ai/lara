@@ -2956,3 +2956,6 @@ test("add-model id field uses a scrollable combobox instead of a datalist", () =
 test("sidebar is memoized so chat streaming cannot re-render it", () => {
   assert.equal(appModule.SessionSidebar?.$$typeof, Symbol.for("react.memo"));
 });
+  // The summary row also carries the delete action; the only endpoint (and
+  // one still referenced by a model) renders it disabled.
+  assert.match(editorHtml, /class="route-remove" disabled="" type="button" aria-label="Remove openai_responses"/);

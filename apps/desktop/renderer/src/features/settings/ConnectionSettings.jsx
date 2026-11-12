@@ -352,6 +352,28 @@ export function ConnectionEditor({ connectionKey, previousKey, connection, model
     if (!open) onToggle();
   }
 
+  // Endpoint deletion is reachable from the summary row as well as the inline
+  // editor, so an endpoint added by mistake never needs a second edit step.
+  // The last endpoint and endpoints still referenced by a model stay.
+  function removeEndpointButton(protocol) {
+    const last = protocols.length === 1;
+    const referenced = Object.values(buffer.models).some((model) => model.protocol === protocol);
+    return <button
+      className="route-remove"
+      disabled={last || referenced}
+      type="button"
+      onClick={() => {
+        setEditingEndpoint((current) => (current === protocol ? null : current));
+        setBuffer((current) => {
+          const { [protocol]: _removed, ...nextProtocols } = current.connection.protocols || {};
+          return { ...current, connection: { ...current.connection, protocols: nextProtocols } };
+        });
+      }}
+      aria-label={`Remove ${protocol}`}
+      title={last ? "至少保留一个接口" : referenced ? "先修改引用此接口的模型" : "删除接口"}
+    ><Trash2 aria-hidden="true" /></button>;
+  }
+
   function protocolSelect(protocol) {
     return <label>
       <span>协议名称</span>
@@ -445,26 +467,16 @@ export function ConnectionEditor({ connectionKey, previousKey, connection, model
                 <div className="protocol-interface-row" key={protocol}>
                   {protocolSelect(protocol)}
                   <label><span>Base URL</span><input placeholder="https://api.example.com/v1" value={endpoint?.base_url || ""} onChange={(event) => setBuffer((current) => ({ ...current, connection: { ...current.connection, protocols: { ...current.connection.protocols, [protocol]: { base_url: event.target.value } } } }))} /></label>
-                  <button
-                    className="route-remove"
-                    disabled={protocols.length === 1 || Object.values(buffer.models).some((model) => model.protocol === protocol)}
-                    type="button"
-                    onClick={() => {
-                      setEditingEndpoint(null);
-                      setBuffer((current) => {
-                        const { [protocol]: _removed, ...nextProtocols } = current.connection.protocols || {};
-                        return { ...current, connection: { ...current.connection, protocols: nextProtocols } };
-                      });
-                    }}
-                    aria-label={`Remove ${protocol}`}
-                    title={protocols.length === 1 ? "至少保留一个接口" : "删除接口"}
-                  ><Trash2 aria-hidden="true" /></button>
+                  {removeEndpointButton(protocol)}
                   <button type="button" className="row-edit-action" aria-label="完成接口编辑" title="完成" onClick={() => setEditingEndpoint(null)}><Check size={14} aria-hidden="true" /></button>
                 </div>
               ) : (
                 <div className="protocol-summary-row" key={protocol} onDoubleClick={() => setEditingEndpoint(protocol)}>
                   <span className="protocol-summary-text">{protocolLabel(protocol)} · {endpoint?.base_url}</span>
-                  <button type="button" className="row-edit-action" aria-label={`编辑接口 ${protocolLabel(protocol)}`} title="编辑" onClick={() => setEditingEndpoint(protocol)}><Pencil size={14} aria-hidden="true" /></button>
+                  <span className="protocol-summary-actions">
+                    <button type="button" className="row-edit-action" aria-label={`编辑接口 ${protocolLabel(protocol)}`} title="编辑" onClick={() => setEditingEndpoint(protocol)}><Pencil size={14} aria-hidden="true" /></button>
+                    {removeEndpointButton(protocol)}
+                  </span>
                 </div>
               ))}
             </div>
