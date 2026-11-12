@@ -235,6 +235,11 @@
 .protocol-summary-row { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:30px; padding:2px 8px; border-radius:8px; }
 .protocol-summary-row:hover { background:var(--surface-2); }
 .protocol-summary-text { min-width:0; overflow-wrap:anywhere; font-size:14px; }
+.protocol-summary-actions { display:flex; align-items:center; gap:4px; flex:0 0 auto; }
+/* The summary row's trash matches the pencil: borderless, same size, and
+   visibly disabled when the endpoint is the last one or still referenced. */
+.settings-page .protocol-summary-actions .route-remove { width:26px; height:26px; border:0; background:none; color:var(--soft); border-radius:6px; }
+.settings-page .protocol-summary-actions .route-remove:hover:not(:disabled) { color:var(--text); background:var(--surface-2); }
 .settings-page .connection-section-heading { display:flex; align-items:baseline; gap:10px; margin-bottom:8px; }
 .settings-page .connection-section-heading strong { font-size:12px; }
 .settings-page .connection-section-heading span { color:var(--muted); font-size:11px; }
