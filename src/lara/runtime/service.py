@@ -9,6 +9,7 @@ import, delegating everything else to the SDK service.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 import time
 from pathlib import Path
 from typing import Any, Sequence, cast
@@ -24,7 +25,7 @@ from pygent.agent.pygent_v1.runtime.service import (
     PygentRuntimeService,
 )
 from pygent.runtime import ExecutionOptions
-from pygent.runtime.codec import invocation_from_dict, message_to_dict
+from pygent.runtime.codec import context_to_dict, invocation_from_dict, message_to_dict
 from pygent.tool.executors import ToolExecutionContext
 from pygent import UserMessage
 
@@ -37,7 +38,7 @@ from pygent.agent.pygent_v1.graph.common import DEFAULT_REACT_MAX_STEPS
 from pygent.agent.pygent_v1.runtime.eternal_conversation import eternal_enabled_for
 from pygent.agent.pygent_v1.runtime.realtime.speak import SILENT_ACKNOWLEDGEMENT, parse_speak_args
 from lara.tracing import DiffTool, EventStore
-from lara.runtime.context import LaraContext
+from lara.runtime.context import LARA_CONTEXT_CODECS, LaraContext
 from lara.sessions import SessionManager, realtime_enabled_for
 from pygent.tool import ToolSpec
 from lara.core.io import plain_object
@@ -278,12 +279,20 @@ class LaraRuntimeService(PygentRuntimeService):
                 deadline=deadline or (time.monotonic() + TURN_DEADLINE_SECONDS),
             ),
         )
-        output, _ = await handle.result()
-        compressed = output.data
+        _, compressed = await handle.result()
+
+        # The compressed projection has not been measured by a foreground call
+        # yet; the next turn recalibrates the gauge through its real usage.
+        session = manager.load(session_id)
+        session.metadata["agent_context"] = context_to_dict(
+            replace(compressed, last_input_tokens=0),
+            registry=LARA_CONTEXT_CODECS,
+        )
+        session.metadata["agent_context_history_count"] = len(session.history)
+        manager.save(session)
         return {
-            "status": "compressed",
-            "compression_count": compressed["compression_count"],
-            "message_count": len(compressed["messages"]),
+            "compression_count": compressed.compression_count,
+            "message_count": len(compressed.messages),
         }
 
     async def execute_case(

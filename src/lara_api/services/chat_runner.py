@@ -18,7 +18,7 @@ from lara.orchestration import (
     SessionTurnService,
 )
 from pygent.agent.pygent_v1.runtime.attachments import resolve_attachments
-from lara.schema import CaseRunRef, CaseRunStatus
+from lara.schema import case_run_resumable, CaseRunRef, CaseRunStatus
 from lara.sessions import realtime_enabled_for
 from lara_api.container import ApiContext
 from lara_api.models.events import ExecutionEvent
@@ -381,7 +381,7 @@ class ChatRunRegistry:
             return await self._reattach_running_run(
                 context, request, manager, run_id
             )
-        if not status.resumable:
+        if not case_run_resumable(status):
             raise LookupError("上次运行已正常完成，无需恢复。")
         return None
 

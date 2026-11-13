@@ -81,7 +81,7 @@ class SchemaTests(unittest.TestCase):
         session = SessionRef(session_id="s1", session_dir=".", workspace_root=".")
         run = CaseRunRef(session_id="s1", case_id="c1", case_run_id="r1", run_dir=".")
 
-        self.assertEqual(SessionRef.from_dict(session.to_dict()).session_id, "s1")
+        self.assertEqual(SessionRef(**session.to_dict()).session_id, "s1")
         self.assertEqual(CaseRunRef.from_dict(run.to_dict()).case_run_id, "r1")
 
     def test_event_validates_actor_and_payload(self) -> None:

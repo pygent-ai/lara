@@ -32,135 +32,6 @@ def native_model_config_complete(mapping: dict[str, Any]) -> bool:
 
 
 @dataclass(slots=True)
-class ModelRetryConfig:
-    max_attempts_per_model: int = 2
-    attempt_idle_timeout_seconds: float = 60.0
-    backoff_initial: float = 0.5
-    backoff_maximum: float = 4.0
-    backoff_multiplier: float = 2.0
-
-    def __post_init__(self) -> None:
-        self.max_attempts_per_model = int(self.max_attempts_per_model)
-        self.attempt_idle_timeout_seconds = float(self.attempt_idle_timeout_seconds)
-        self.backoff_initial = float(self.backoff_initial)
-        self.backoff_maximum = float(self.backoff_maximum)
-        self.backoff_multiplier = float(self.backoff_multiplier)
-        if self.max_attempts_per_model < 1:
-            raise ValueError("max_attempts_per_model must be at least one")
-        if self.attempt_idle_timeout_seconds <= 0:
-            raise ValueError("attempt_idle_timeout_seconds must be greater than zero")
-        if not 0 <= self.backoff_initial <= self.backoff_maximum:
-            raise ValueError("backoff requires 0 <= initial <= maximum")
-        if self.backoff_multiplier < 1:
-            raise ValueError("backoff_multiplier must be at least one")
-
-
-@dataclass(slots=True)
-class ResolvedAgentConfig:
-    alias: str
-    default_model_group: str
-
-    def __post_init__(self) -> None:
-        self.alias = _require(self.alias, "alias")
-        self.default_model_group = _require(
-            self.default_model_group, "default_model_group"
-        )
-
-    def safe_dict(self) -> dict[str, Any]:
-        return {
-            "alias": self.alias,
-            "default_model_group": self.default_model_group,
-        }
-
-
-@dataclass(slots=True)
-class RuntimeDurabilityConfig:
-    mode: Literal["disabled", "preferred", "required"] = "preferred"
-    history_path: str = "runtime/executions-v1.sqlite3"
-
-    def __post_init__(self) -> None:
-        if self.mode not in {"disabled", "preferred", "required"}:
-            raise ValueError("runtime durability mode is invalid")
-        self.history_path = _require(self.history_path, "runtime history_path")
-
-
-@dataclass(slots=True)
-class RuntimeSteeringConfig:
-    """Steering delivery mode for interactive agent turns.
-
-    ``immediate`` lets a steering message interrupt the in-flight model or
-    tool step so it becomes the next model input as soon as possible; since
-    pygent 0.3.33 the interrupt also cooperatively cancels the in-flight
-    step on durable executions, so turns keep per-turn crash recovery and
-    the journal that feeds the trace Context inspector. ``wait`` keeps the
-    same durable turns but delivers steering only at the next processing
-    boundary without interrupting.
-    """
-
-    mode: Literal["wait", "immediate"] = "immediate"
-
-    def __post_init__(self) -> None:
-        if self.mode not in {"wait", "immediate"}:
-            raise ValueError("runtime steering mode is invalid")
-
-
-@dataclass(slots=True)
-class RuntimeCapacityConfig:
-    scope: Literal["runtime_instance", "deployment"] = "runtime_instance"
-    coordinator_path: str = "runtime/capacity-v1.sqlite3"
-
-    def __post_init__(self) -> None:
-        if self.scope not in {"runtime_instance", "deployment"}:
-            raise ValueError("runtime capacity scope is invalid")
-        self.coordinator_path = _require(
-            self.coordinator_path, "capacity coordinator_path"
-        )
-
-
-@dataclass(slots=True)
-class RuntimeApprovalConfig:
-    enabled: bool = True
-    timeout_seconds: float = 300.0
-    preauthorized_tools: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:
-        self.timeout_seconds = float(self.timeout_seconds)
-        if self.timeout_seconds <= 0:
-            raise ValueError("approval timeout_seconds must be greater than zero")
-        self.preauthorized_tools = tuple(
-            _require(item, "preauthorized tool") for item in self.preauthorized_tools
-        )
-
-
-@dataclass(slots=True)
-class MCPServerConfig:
-    name: str
-    transport: Literal["stdio", "sse"] = "stdio"
-    command: str | None = None
-    args: tuple[str, ...] = ()
-    cwd: str | None = None
-    env_from: tuple[str, ...] = ()
-    url: str | None = None
-    headers_env: dict[str, str] = field(default_factory=dict)
-    timeout: float = 30.0
-    required: bool = False
-
-    def __post_init__(self) -> None:
-        self.name = _require(self.name, "MCP server name")
-        self.args = tuple(str(item) for item in self.args)
-        self.env_from = tuple(
-            _require(item, "MCP env_from item") for item in self.env_from
-        )
-        self.timeout = float(self.timeout)
-        if self.timeout <= 0:
-            raise ValueError("MCP timeout must be greater than zero")
-        if self.transport == "stdio" and not self.command:
-            raise ValueError("stdio MCP server requires command")
-        if self.transport == "sse" and not self.url:
-            raise ValueError("sse MCP server requires url")
-
-
-@dataclass(slots=True)
 class DelegationConfig:
     allowed_agents: tuple[str, ...] = ()
     max_depth: int = 4
@@ -177,67 +48,31 @@ class DelegationConfig:
             raise ValueError("delegation limits must be positive")
 
 
-@dataclass(slots=True)
-class RealtimeInteractionConfig:
-    """Silent-work interaction (speak, fork replies, nudges) — off by default."""
-
-    enabled: bool = False
-    nudge_interval: int = 5
-    fork_deadline_seconds: float = 60.0
-    fork_reasoning_effort: str | None = "low"
-
-    def __post_init__(self) -> None:
-        self.enabled = bool(self.enabled)
-        if isinstance(self.nudge_interval, bool) or not isinstance(
-            self.nudge_interval, int
-        ) or self.nudge_interval < 1:
-            raise ValueError("nudge_interval must be a positive integer")
-        if (
-            isinstance(self.fork_deadline_seconds, bool)
-            or not isinstance(self.fork_deadline_seconds, (int, float))
-            or self.fork_deadline_seconds <= 0
-        ):
-            raise ValueError("fork_deadline_seconds must be positive")
-        if self.fork_reasoning_effort is not None:
-            self.fork_reasoning_effort = _require(
-                self.fork_reasoning_effort, "fork_reasoning_effort"
-            )
+# 与 SDK schema 同构的类型直接复用（dataclass 相等性 / isinstance 需要同一类）。
+from pygent.agent.pygent_v1.schema.models import (  # noqa: E402
+    AgentSession,
+    BashCliPreset,
+    CaseRunRef,
+    CaseRunStatus,
+    ContextEvent,
+    EternalConversationConfig,
+    MCPServerConfig,
+    ModelRetryConfig,
+    RealtimeInteractionConfig,
+    ResolvedAgentConfig,
+    RuntimeApprovalConfig,
+    RuntimeCapacityConfig,
+    RuntimeDurabilityConfig,
+    RuntimeSteeringConfig,
+    SessionRef,
+    SessionSpec,
+)
 
 
-@dataclass(slots=True)
-class EternalConversationConfig:
-    enabled: bool = False
-    extractor_agent_alias: str | None = None
-    builder_agent_alias: str | None = None
-    dynamic_memory_cli_path: str | None = None
-    extraction_trigger: str = "turn"
-    extraction_trigger_ratio: float = 0.7
+def case_run_resumable(status: CaseRunStatus | None) -> bool:
+    """lora 的会话恢复规则：这些状态下用户没拿到结果，新一轮可继续对话。"""
 
-    def __post_init__(self) -> None:
-        self.enabled = bool(self.enabled)
-        for name in ("extractor_agent_alias", "builder_agent_alias"):
-            value = getattr(self, name)
-            if value is not None:
-                setattr(self, name, _require(value, name))
-        if self.dynamic_memory_cli_path is not None:
-            self.dynamic_memory_cli_path = _abs_path(self.dynamic_memory_cli_path)
-        if self.extraction_trigger not in ("turn", "context_ratio"):
-            raise ValueError(
-                "extraction_trigger must be 'turn' or 'context_ratio'"
-            )
-        if isinstance(self.extraction_trigger_ratio, bool) or not isinstance(
-            self.extraction_trigger_ratio, (int, float)
-        ):
-            raise ValueError("extraction_trigger_ratio must be a number")
-        self.extraction_trigger_ratio = float(self.extraction_trigger_ratio)
-        if not 0 < self.extraction_trigger_ratio < 1:
-            raise ValueError(
-                "extraction_trigger_ratio must be between zero and one"
-            )
-
-
-# BashCliPreset 与 SDK schema 完全同构，直接复用 pygent_v1 的定义（isinstance 需同一类）。
-from pygent.agent.pygent_v1.schema import BashCliPreset  # noqa: E402
+    return status in {CaseRunStatus.FAILED, CaseRunStatus.ERROR, CaseRunStatus.SKIPPED}
 
 
 def default_cli_bash_presets() -> list[BashCliPreset]:
@@ -460,80 +295,6 @@ def _plain_dataclass_value(value: Any) -> Any:
 
 
 @dataclass(slots=True)
-class SessionRef:
-    session_id: str
-    session_dir: str
-    workspace_root: str
-
-    def __post_init__(self) -> None:
-        self.session_id = _require(self.session_id, "session_id")
-        self.session_dir = _abs_path(self.session_dir)
-        self.workspace_root = _abs_path(self.workspace_root)
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "SessionRef":
-        return cls(**data)
-
-
-@dataclass(slots=True)
-class CaseRunRef:
-    session_id: str
-    case_id: str
-    case_run_id: str
-    run_dir: str
-
-    def __post_init__(self) -> None:
-        self.session_id = _require(self.session_id, "session_id")
-        self.case_id = _require(self.case_id, "case_id")
-        self.case_run_id = _require(self.case_run_id, "case_run_id")
-        self.run_dir = _abs_path(self.run_dir)
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "CaseRunRef":
-        return cls(**data)
-
-
-class CaseRunStatus(StrEnum):
-    """Durable verdict of one case run, shared by every layer.
-
-    Sessions materialize this value in metadata for cheap listing; the
-    resumable set drives session recovery: these runs ended before the user
-    got their outcome, so a fresh turn may continue the conversation.
-    """
-
-    RUNNING = "running"
-    PASSED = "passed"
-    FAILED = "failed"
-    ERROR = "error"
-    SKIPPED = "skipped"
-
-    @property
-    def terminal(self) -> bool:
-        return self is not CaseRunStatus.RUNNING
-
-    @property
-    def resumable(self) -> bool:
-        return self in {
-            CaseRunStatus.FAILED,
-            CaseRunStatus.ERROR,
-            CaseRunStatus.SKIPPED,
-        }
-
-    @classmethod
-    def from_value(cls, value: Any) -> "CaseRunStatus | None":
-        try:
-            return cls(str(value))
-        except ValueError:
-            return None
-
-
-@dataclass(slots=True)
 class CaseRunResult:
     session_id: str
     case_id: str
@@ -596,36 +357,6 @@ class EvaluationResult:
 
 
 @dataclass(slots=True)
-class ContextEvent:
-    id: str
-    session_id: str
-    case_id: str | None
-    case_run_id: str | None
-    turn_id: str | None
-    type: str
-    timestamp: str
-    actor: Literal["user", "assistant", "tool", "system"]
-    payload: dict[str, Any] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        self.id = _require(self.id, "id")
-        self.session_id = _require(self.session_id, "session_id")
-        self.type = _require(self.type, "type")
-        self.timestamp = _require(self.timestamp, "timestamp")
-        if self.actor not in {"user", "assistant", "tool", "system"}:
-            raise ValueError("actor must be one of user, assistant, tool, system")
-        if not isinstance(self.payload, dict):
-            raise ValueError("payload must be a dict")
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ContextEvent":
-        return cls(**data)
-
-
-@dataclass(slots=True)
 class CaseDefinition:
     id: str
     title: str
@@ -661,60 +392,3 @@ class CaseDefinition:
         )
 
 
-@dataclass(slots=True)
-class SessionSpec:
-    case_id: str
-    mode: str = "new"
-    session_id: str | None = None
-    source_session_id: str | None = None
-
-    def __post_init__(self) -> None:
-        self.case_id = _require(self.case_id, "case_id")
-        if self.mode not in {"new", "resume", "fork", "shared"}:
-            raise ValueError("mode must be one of new, resume, fork, shared")
-
-
-@dataclass(slots=True)
-class AgentSession:
-    session_id: str
-    workspace_root: str
-    session_dir: str
-    created_at: str
-    updated_at: str
-    model_group_name: str = ""
-    selected_model_key: str = ""
-    system_prompt: str = ""
-    status: str = "normal"
-    token_usage: dict[str, Any] = field(default_factory=dict)
-    history: list[dict[str, Any]] = field(default_factory=list)
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        self.session_id = _require(self.session_id, "session_id")
-        self.workspace_root = _abs_path(self.workspace_root)
-        self.session_dir = _abs_path(self.session_dir)
-
-    def to_dict(self) -> dict[str, Any]:
-        data = asdict(self)
-        data["version"] = "1.0"
-        return data
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "AgentSession":
-        version = str(data.get("version") or "1.0")
-        if version != "1.0":
-            raise ValueError(f"unsupported AgentSession version: {version}")
-        return cls(
-            session_id=data["session_id"],
-            workspace_root=data["workspace_root"],
-            session_dir=data.get("session_dir", ""),
-            created_at=data["created_at"],
-            updated_at=data["updated_at"],
-            model_group_name=data.get("model_group_name", ""),
-            selected_model_key=data.get("selected_model_key", ""),
-            system_prompt=data.get("system_prompt", ""),
-            status=data.get("status", "normal"),
-            token_usage=dict(data.get("token_usage") or {}),
-            history=list(data.get("history") or []),
-            metadata=dict(data.get("metadata") or {}),
-        )

@@ -108,6 +108,9 @@ async def test_start_turn_admits_persisted_session_preference(tmp_path):
     service.bind = AsyncMock(return_value=object())
     service._start_agent_execution = AsyncMock(return_value=handle)
     service.reminders = SimpleNamespace(
+        # pygent 0.6.0 start_turn claims the turn-opening agent messages.
+        turn_opening_claim_id=lambda session_id, turn_id: f"{session_id}:{turn_id}",
+        claim_turn_opening=AsyncMock(return_value=()),
         acknowledge_initial=AsyncMock(),
         release_initial=AsyncMock(),
     )
@@ -124,7 +127,7 @@ async def test_start_turn_admits_persisted_session_preference(tmp_path):
     options = service._start_agent_execution.await_args.kwargs["execution"]
     assert returned is handle
     assert options.model_calls.to_dict() == {
-        "lara:coding": {"profile": "preferred:backup"}
+        "pygent.v1:coding": {"profile": "preferred:backup"}
     }
 
 

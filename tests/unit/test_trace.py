@@ -207,11 +207,16 @@ class EventStoreTests(unittest.TestCase):
             store.append("case.started", actor="system", payload={}, turn_id="turn-0001")
             store.append("case.finished", actor="system", payload={"status": "passed"}, turn_id="turn-0002")
 
-            self.assertEqual(len(store.list_by_session("s1")), 2)
-            self.assertEqual(len(store.list_by_case("c1")), 2)
+            # The SDK store keeps run-scoped queries only; session/case/turn
+            # filters are projections over list_events().
             self.assertEqual(len(store.list_by_run("s1", "r1")), 2)
-            self.assertEqual([event.type for event in store.list_by_turn("turn-0002")], ["case.finished"])
             self.assertEqual(store.list_by_run("s1", "missing"), [])
+            events = store.list_events()
+            self.assertEqual([event.session_id for event in events], ["s1", "s1"])
+            self.assertEqual(
+                [event.type for event in events if event.turn_id == "turn-0002"],
+                ["case.finished"],
+            )
 
     def test_append_error_records_replayable_error_event(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
