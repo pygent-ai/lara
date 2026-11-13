@@ -3677,6 +3677,12 @@ input:focus,
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* Speak text renders through the shared markdown view: reset the bubble's
+   pre-wrap so markdown blocks lay out like the chat transcript bubbles. */
+.realtime-speak-text .markdown-content {
+  white-space: normal;
+}
 .realtime-speak-attachments {
   display: flex;
   flex-wrap: wrap;

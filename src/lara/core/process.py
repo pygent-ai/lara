@@ -1,30 +1,20 @@
-"""Cross-process ownership identity for artifacts shared by several hosts.
-
-Lara hosts (CLI, desktop API) share one project's sessions root, so a case run
-created by one process is visible to the others. The owner stamp lets a host
-tell "the run's own process is gone" apart from "the run lives in another live
-process" before it reconciles metadata on the owner's behalf.
-"""
+"""lora 产品层补充；基础实现全部来自 SDK ``pygent.agent.pygent_v1.core.process``。"""
 
 from __future__ import annotations
+
+
 
 import ctypes
 import os
 import uuid
 from typing import Any
 
-from lara.core.io import utc_now
+from pygent.agent.pygent_v1.core.process import PROCESS_TOKEN, current_owner  # noqa: F401
 
 # Stable for the lifetime of this process; a restarted host gets a new token.
 PROCESS_TOKEN = uuid.uuid4().hex
 
-
-def current_owner() -> dict[str, Any]:
-    return {
-        "pid": os.getpid(),
-        "process_token": PROCESS_TOKEN,
-        "recorded_at": utc_now(),
-    }
+from pygent.agent.pygent_v1.core.process import PROCESS_TOKEN, current_owner  # noqa: F401
 
 
 def owner_is_foreign_and_alive(owner: Any) -> bool:

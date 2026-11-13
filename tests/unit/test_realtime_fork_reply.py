@@ -5,12 +5,12 @@ from __future__ import annotations
 import pytest
 from pygent import AIMessage, Context, ToolCall, ToolDefinition, UserMessage
 
-from lara.runtime.realtime.fork_agent import (
+from pygent.agent.pygent_v1.runtime.realtime.fork_agent import (
     FORK_RESULT_KIND,
     ForkReplyModule,
     outcome_from_result,
 )
-from lara.runtime.realtime.fork_reply import (
+from pygent.agent.pygent_v1.runtime.realtime.fork_reply import (
     build_fork_context,
     extract_speak_args,
 )
@@ -144,4 +144,4 @@ async def test_fork_module_say_nothing_roundtrip() -> None:
 
 def test_outcome_from_result_rejects_foreign_kind() -> None:
     with pytest.raises(ValueError):
-        outcome_from_result(AIMessage(content="x", kind="lara.chat.result"))
+        outcome_from_result(AIMessage(content="x", kind="pygent.v1.chat.result"))

@@ -66,7 +66,7 @@ class RepairWorkflow:
         self.config = config
         self.session_manager = session_manager
         self.workspace_root = Path(config.workspace_root)
-        self.lara_root = Path(config.lara_root)
+        self.pygent_root = Path(config.pygent_root)
 
     def plan(self, session_id: str, case_run_id: str) -> dict[str, Any]:
         ref = self.find_case_run(session_id, case_run_id)
@@ -103,7 +103,7 @@ class RepairWorkflow:
             recommended_checks=_recommended_checks(
                 verdict, analysis, self.workspace_root
             ),
-            gate=_gate_config(self.workspace_root, self.lara_root),
+            gate=_gate_config(self.workspace_root, self.pygent_root),
         )
         plan.plan_path = str(repair_dir / "repair_plan.json")
         write_json(repair_dir / "repair_plan.json", plan.to_dict())
@@ -169,7 +169,7 @@ class RepairWorkflow:
         ref = self.find_case_run(plan.session_id, plan.case_run_id)
 
         commands = _normalise_commands(plan.gate.get("commands"))
-        regression_manifest = self.lara_root / "regression.json"
+        regression_manifest = self.pygent_root / "regression.json"
         results: list[dict[str, Any]] = []
         if commands:
             for command in commands:
@@ -223,7 +223,7 @@ class RepairWorkflow:
 
     def find_attempt_dir(self, attempt_id: str) -> Path:
         matches = list(
-            (self.lara_root / "sessions").glob(f"*/repairs/*/attempts/{attempt_id}")
+            (self.pygent_root / "sessions").glob(f"*/repairs/*/attempts/{attempt_id}")
         )
         if not matches:
             raise FileNotFoundError(f"Repair attempt {attempt_id!r} does not exist")
@@ -314,13 +314,13 @@ def _recommended_checks(
     return checks
 
 
-def _gate_config(workspace_root: Path, lara_root: Path) -> dict[str, Any]:
-    repair_manifest = lara_root / "repair.json"
+def _gate_config(workspace_root: Path, pygent_root: Path) -> dict[str, Any]:
+    repair_manifest = pygent_root / "repair.json"
     if repair_manifest.exists():
         data = read_json(repair_manifest)
         return {"commands": data.get("commands", [])}
-    if (lara_root / "regression.json").exists():
-        return {"regression_manifest": str(lara_root / "regression.json")}
+    if (pygent_root / "regression.json").exists():
+        return {"regression_manifest": str(pygent_root / "regression.json")}
     if (workspace_root / "tests").exists():
         return {"commands": [[sys.executable, "-m", "pytest", "tests", "-q"]]}
     return {"commands": []}

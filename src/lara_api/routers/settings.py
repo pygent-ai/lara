@@ -10,7 +10,7 @@ from lara.config import replace_user_model_config, update_user_approvals
 from lara.core.io import non_empty_string
 from lara.credentials import set_user_credential
 from lara.runtime.model_configuration import (
-    CredentialEnvironment,
+    lara_credential_environment,
     builtin_model_catalogs,
     discover_models,
 )
@@ -43,14 +43,14 @@ async def update_settings(
                 status_code=400,
                 detail="Project folder does not exist or is not accessible. Choose an existing folder.",
             )
-    user_lara_root = context.config.user_lara_root or ""
+    user_pygent_root = context.config.user_pygent_root or ""
     agent_alias = str(
         overrides.get("agent_alias", context.agent_alias or context.config.agent_alias)
     )
     if request.native_model_config is not None:
         _replace_native_model_settings(
             request,
-            user_lara_root=user_lara_root,
+            user_pygent_root=user_pygent_root,
             agent_alias=agent_alias,
             context=context,
         )
@@ -64,7 +64,7 @@ async def update_settings(
             },
         )
     if request.approvals_enabled is not None:
-        update_user_approvals(user_lara_root, enabled=request.approvals_enabled)
+        update_user_approvals(user_pygent_root, enabled=request.approvals_enabled)
     config = await context.areload(overrides)
     context.remember_project(config.workspace_root)
     return config_response(config)
@@ -93,8 +93,8 @@ async def discover_connection_models(
             connection_name="discovery",
             protocol=request.protocol,
             connection=connection,
-            credential_environ=CredentialEnvironment(
-                context.config.user_lara_root or "", transient=transient
+            credential_environ=lara_credential_environment(
+                context.config.user_pygent_root or "", transient=transient
             ),
             timeout=request.timeout_seconds,
         )
@@ -114,7 +114,7 @@ async def discover_connection_models(
 def _replace_native_model_settings(
     request: UpdateSettingsRequest,
     *,
-    user_lara_root: str,
+    user_pygent_root: str,
     agent_alias: str,
     context: ApiContext,
 ) -> None:
@@ -184,12 +184,12 @@ def _replace_native_model_settings(
         for env_name, value in request.credential_values.items():
             secret = non_empty_string(value)
             if secret:
-                set_user_credential(user_lara_root, env_name, secret)
+                set_user_credential(user_pygent_root, env_name, secret)
         # Migrate before the config replacement: sessions then never reference
         # keys that are missing from whichever configuration is on disk.
         _migrate_model_key_renames(context, renames)
         replace_user_model_config(
-            user_lara_root,
+            user_pygent_root,
             model_config=native,
             agents=agents,
         )
@@ -317,13 +317,13 @@ def _session_managers(context: ApiContext) -> list[Any]:
     from lara_api.project_state import build_session_scopes
 
     managers: list[Any] = [context.manager]
-    active_root = Path(context.config.lara_root).resolve()
+    active_root = Path(context.config.pygent_root).resolve()
     seen_roots = {active_root}
     for scope in build_session_scopes(
         context.project_state,
         active_workspace_root=context.config.workspace_root,
     ):
-        scope_root = Path(scope.lara_root).resolve()
+        scope_root = Path(scope.pygent_root).resolve()
         if scope_root in seen_roots:
             continue
         seen_roots.add(scope_root)
@@ -346,9 +346,9 @@ def _guard_persisted_session_selections(
 ) -> None:
     from lara_api.project_state import build_session_scopes
 
-    roots = [Path(context.config.lara_root) / "sessions"]
+    roots = [Path(context.config.pygent_root) / "sessions"]
     roots.extend(
-        Path(scope.lara_root) / "sessions"
+        Path(scope.pygent_root) / "sessions"
         for scope in build_session_scopes(
             context.project_state,
             active_workspace_root=context.config.workspace_root,

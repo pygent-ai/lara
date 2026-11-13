@@ -6,10 +6,10 @@ from pathlib import Path
 from lara.schema import RunConfig
 from lara.sessions import SessionManager
 
-from .managed_turn import ManagedSessionTurn
-from .models import TurnCommand
-from .runtime_lease import RuntimeLease
-from .session_execution import SessionExecutionCoordinator
+from pygent.agent.pygent_v1.orchestration.managed_turn import ManagedSessionTurn
+from pygent.agent.pygent_v1.orchestration.models import TurnCommand
+from pygent.agent.pygent_v1.orchestration.runtime_lease import RuntimeLease
+from pygent.agent.pygent_v1.orchestration.session_execution import SessionExecutionCoordinator
 
 RuntimeAcquirer = Callable[..., Awaitable[RuntimeLease]]
 
@@ -37,7 +37,7 @@ class SessionTurnService:
         turn_id: str | None = None,
         submission_id: str | None = None,
         interactive_approvals: bool = True,
-        message_kind: str = "lara.chat.turn",
+        message_kind: str = "pygent.v1.chat.turn",
         message_data: dict[str, object] | None = None,
         session_title: str | None = None,
         model_group_name: str | None = None,
@@ -58,7 +58,7 @@ class SessionTurnService:
             lease.runtime.reminders.prewarm_session(active_session_id)
             if session_title:
                 manager.save_title(active_session_id, session_title)
-            elif message_kind == "lara.chat.turn":
+            elif message_kind == "pygent.v1.chat.turn":
                 manager.save_title_from_user_input(active_session_id, message)
             return await self.coordinator.submit_turn(
                 lease=lease,

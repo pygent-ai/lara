@@ -14,7 +14,7 @@ from lara.tracing import DESIGN_EVENT_TYPES, EventStore
 class TraceEventStoreScenarioTests(unittest.TestCase):
     def test_case_run_trace_is_append_only_and_replayable_in_order(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            config = RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
+            config = RunConfig(workspace_root=tmp, pygent_root=Path(tmp) / ".lara")
             manager = SessionManager(config)
             session = manager.create("trace-case")
             run = manager.start_case_run(session.session_id, "trace-case")
@@ -104,7 +104,7 @@ class TraceEventStoreScenarioTests(unittest.TestCase):
             (root / ".lara").mkdir()
             manifest = root / ".lara" / "regression.json"
             manifest.write_text('{"version": "1.0", "cases": []}', encoding="utf-8")
-            config = RunConfig(workspace_root=root, lara_root=root / ".lara")
+            config = RunConfig(workspace_root=root, pygent_root=root / ".lara")
 
             result = RegressionRunner(
                 config=config,
@@ -142,7 +142,7 @@ def _payload_for(event_type: str) -> dict[str, object]:
     if event_type == "conversation.automation_trigger":
         return {
             "role": "user",
-            "kind": "lara.automation.trigger",
+            "kind": "pygent.v1.automation.trigger",
             "content": "run the scheduled check",
             "origin": "automation",
         }

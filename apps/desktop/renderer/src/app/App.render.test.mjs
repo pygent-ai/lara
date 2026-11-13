@@ -65,6 +65,19 @@ test("assistant markdown keeps identifiers literal and renders fenced code", () 
   assert.match(html, /def f\(\):/);
 });
 
+test("assistant markdown keeps envelope tags quoted inside code spans intact", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.MarkdownContent, {
+    content: "`_prepare_turn` 在拼 `<user-message>` 时做了 `escape(message, quote=False)`（`src/lara/runtime/service.py:1406`，stdlib `html.escape`）。你打的所有尖括号都会变成实体：`</user-context>` → `&lt;/user-context&gt;`，`</user-message>` 同理。",
+  }));
+
+  // The code spans pair exactly as written: quoting the envelope tag must not
+  // shift the backtick pairing onto the surrounding prose.
+  assert.match(html, /<code>_prepare_turn<\/code> 在拼 <code>&lt;user-message&gt;<\/code> 时做了 <code>escape\(message, quote=False\)<\/code>/);
+  assert.match(html, /<code>&lt;\/user-context&gt;<\/code> → <code>&amp;lt;\/user-context&amp;gt;<\/code>/);
+  assert.doesNotMatch(html, /<code>时做了<\/code>/);
+  assert.doesNotMatch(html, /<code>）。你打的所有尖括号都会变成实体：<\/code>/);
+});
+
 test("assistant markdown supports gfm tables, tilde fences, and safe links", () => {
   const html = renderToStaticMarkup(React.createElement(appModule.MarkdownContent, {
     content: [
@@ -169,6 +182,23 @@ test("mermaid fences stay a plain code block until the client renders the diagra
   // The diagram only appears after the client-side mermaid render resolves;
   // SSR must neither crash nor import mermaid.
   assert.doesNotMatch(html, /markdown-mermaid/);
+});
+
+test("lara-says speak bubbles render markdown like chat bubbles", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.ChatPane, {
+    activeSession: { session_id: "lara-says-1", scope_id: "conversation", mode: "pygent.v1-says" },
+    messages: [{
+      id: "assistant-1", role: "assistant", content: "", status: "success",
+      sections: [],
+      speaks: [{ text: "**重点**已修复：\n\n```python\nprint(1)\n```", attachments: [], sayNothing: false }],
+    }],
+    settings: {}, status: "Ready", running: false, approvals: [],
+    realtimeInteractionEnabled: true,
+  }));
+
+  assert.match(html, /realtime-speak-bubble/);
+  assert.match(html, /<strong>重点<\/strong>/);
+  assert.match(html, /markdown-code-language">python</);
 });
 
 test("message footers show time, token usage, and copy; running turns wait", () => {
@@ -279,12 +309,12 @@ test("history turns collect assistant media blocks from every round", () => {
 test("the realtime finalizer reminder carries its kind and stays internal in both views", () => {
   const rendered = appModule.historyToMessages([
     {
-      role: "user", kind: "lara.realtime.finalizer",
+      role: "user", kind: "pygent.v1.realtime.finalizer",
       content: "<system-reminder>Your turn is about to end. The final text you just produced is NOT visible to the user.</system-reminder>",
     },
   ]);
   assert.equal(rendered.length, 1);
-  assert.equal(rendered[0].kind, "lara.realtime.finalizer");
+  assert.equal(rendered[0].kind, "pygent.v1.realtime.finalizer");
   assert.deepEqual(displayRowsForView(rendered, "front"), []);
   assert.deepEqual(displayRowsForView(rendered, "back"), []);
 });
@@ -675,7 +705,7 @@ test("a grown session keeps its first user input reachable across tail rebuilds"
 
 test("a steering boundary already rendered from history does not split twice", () => {
   const restored = appModule.historyToMessages([
-    { role: "user", content: "focus on tests", kind: "lara.user.steering", data: { input_id: "input-1" } },
+    { role: "user", content: "focus on tests", kind: "pygent.v1.user.steering", data: { input_id: "input-1" } },
     { role: "assistant", content: "working on tests" },
   ]);
   assert.equal(restored[0].steeringInputId, "input-1");
@@ -745,7 +775,7 @@ test("attachment-only user turns survive history reload", () => {
   const restored = appModule.historyToMessages([
     { role: "user", content: "<user-context><user-message></user-message></user-context>", data: { raw_content: "", attachments: ["shots/a.png"] } },
     { role: "assistant", content: "done" },
-    { role: "user", content: "", kind: "lara.user.steering", data: { input_id: "input-1", attachments: [".lara/uploads/b.png"] } },
+    { role: "user", content: "", kind: "pygent.v1.user.steering", data: { input_id: "input-1", attachments: [".lara/uploads/b.png"] } },
   ]);
   const userTurn = restored.find((item) => item.role === "user" && !item.steeringInputId);
   assert.deepEqual(userTurn.attachments, ["shots/a.png"]);
@@ -1371,7 +1401,7 @@ test("live tool calls appear before results and update the same inspector row", 
   assert.equal(pending.payload.has_result, false);
   assert.equal(pending.payload.tool_name, "bash");
   assert.match(pending.payload.arguments, /long-command/);
-  const result = { type: "lara.runtime.message", payload: { role: "tool", tool_call_id: "live-1", content: "command output" } };
+  const result = { type: "pygent.v1.runtime.message", payload: { role: "tool", tool_call_id: "live-1", content: "command output" } };
   const done = { type: "tool.completed", payload: { call_id: "live-1" } };
   const tools = appModule.traceToolEvents([call, started, result, done]);
   assert.equal(tools.length, 1);
@@ -1413,7 +1443,7 @@ test("background chat results remain running through turn completion and history
   const toolMessage = { role: "tool", tool_call_id: "bg", content: JSON.stringify(payload) };
   const initial = { role: "assistant", content: "", status: "running", sections: [] };
   const live = appModule.projectLiveAssistantEvent(initial, { kind: "tool.result", data: payload });
-  const runtime = appModule.projectLiveAssistantEvent(initial, { kind: "lara.runtime.message", data: toolMessage });
+  const runtime = appModule.projectLiveAssistantEvent(initial, { kind: "pygent.v1.runtime.message", data: toolMessage });
   const [, replay] = appModule.historyToMessages([
     { role: "user", content: "Start background work" },
     { role: "assistant", content: "", tool_calls: [{ id: "bg", function: { name: "bash", arguments: "{}" } }] },
@@ -1437,8 +1467,18 @@ test("background chat results remain running through turn completion and history
       assert.equal(final.sections[0].status, "done");
     }
   }
-  const [trace] = appModule.traceToolEvents([{ type: "lara.runtime.message", payload: toolMessage }]);
+  const [trace] = appModule.traceToolEvents([{ type: "pygent.v1.runtime.message", payload: toolMessage }]);
   assert.equal(trace.payload.status, "running");
+});
+
+test("live completion keeps assistant content that quotes the envelope verbatim", () => {
+  const reply = "闭合标签由 `Prompt.wrap` 统一补上：`</user-message>` 之后是 reminder 信封。";
+  const completed = appModule.projectLiveAssistantEvent(
+    { role: "assistant", content: reply, status: "running", startedAt: 1, sections: [] },
+    { kind: "execution.completed", data: {} },
+  );
+  assert.equal(completed.status, "success");
+  assert.equal(completed.content, reply);
 });
 
 test("a cancelled turn keeps the streamed answer instead of a cancel notice", () => {
@@ -1559,7 +1599,7 @@ test("internal runtime bookkeeping calls never render as chat tool rows", () => 
     { kind: "model.tool_call.completed", data: { call_id: "call-edit", name: "edit", arguments: { file_path: "standard/_files.py" } } },
     { kind: "tool.started", data: { call_id: "call-edit", tool_id: "lara.tool.edit" } },
     { kind: "tool.completed", data: { call_id: "call-edit" } },
-    { kind: "tool.started", data: { call_id: "batch-1", tool_id: "lara.internal.persist_file_effects" } },
+    { kind: "tool.started", data: { call_id: "batch-1", tool_id: "pygent.v1.internal.persist_file_effects" } },
     { kind: "tool.completed", data: { call_id: "batch-1" } },
     { kind: "tool.failed", data: { call_id: "batch-1", error_kind: "executor_error" } },
   ];
@@ -1618,7 +1658,7 @@ test("trace tools hide runtime internal bookkeeping calls", () => {
   const tools = appModule.traceToolEvents([
     { id: "evt-call", type: "tool.call", payload: { model_tool_call_id: "call-edit", tool_name: "edit", args: { file_path: "standard/_files.py" } } },
     { id: "evt-result", type: "tool.result", payload: { model_tool_call_id: "call-edit", tool_call_id: "evt-call", status: "success", result: "ok" } },
-    { id: "evt-batch", type: "tool.started", payload: { call_id: "batch-1", tool_id: "lara.internal.persist_file_effects" } },
+    { id: "evt-batch", type: "tool.started", payload: { call_id: "batch-1", tool_id: "pygent.v1.internal.persist_file_effects" } },
     { id: "evt-batch-done", type: "tool.completed", payload: { call_id: "batch-1" } },
   ]);
   assert.equal(tools.length, 1);
@@ -1862,7 +1902,7 @@ test("native Pygent events project to the same completed turn as persisted histo
     },
     { kind: "tool.completed", data: { call_id: "call-1" } },
     {
-      kind: "lara.runtime.message",
+      kind: "pygent.v1.runtime.message",
       data: {
         role: "tool",
         content: toolResult,
@@ -1951,6 +1991,46 @@ test("sequential tool calls merge when no assistant text separates them", () => 
     assert.deepEqual(toolSections[0].calls.map((call) => call.id), ["call-a", "call-b"]);
     assert.equal(toolSections[0].status, "done");
   }
+});
+
+test("whitespace-only reasoning between tool rounds does not split the tool group", () => {
+  const initial = { role: "assistant", content: "", status: "running", sections: [] };
+  const events = [
+    { kind: "model.reasoning.delta", data: { text: "\n" } },
+    { kind: "model.tool_call.completed", data: { call_id: "call-a", name: "read", arguments: {} } },
+    { kind: "tool.completed", data: { call_id: "call-a" } },
+    { kind: "model.reasoning.delta", data: { text: "\n" } },
+    { kind: "model.tool_call.completed", data: { call_id: "call-b", name: "glob", arguments: {} } },
+    { kind: "tool.completed", data: { call_id: "call-b" } },
+  ];
+  const live = events.reduce(
+    (message, event) => appModule.projectLiveAssistantEvent(message, event, 2),
+    initial,
+  );
+  const [, history] = appModule.historyToMessages([
+    { role: "user", content: "Inspect." },
+    { role: "assistant", content: "", reasoning_content: "\n", tool_calls: [{ id: "call-a", function: { name: "read", arguments: {} } }] },
+    { role: "tool", content: "result-a", tool_call_id: "call-a", name: "read" },
+    { role: "assistant", content: "", reasoning_content: "\n", tool_calls: [{ id: "call-b", function: { name: "glob", arguments: {} } }] },
+    { role: "tool", content: "result-b", tool_call_id: "call-b", name: "glob" },
+  ]);
+
+  for (const message of [live, history]) {
+    assert.equal(message.sections.length, 1);
+    assert.equal(message.sections[0].type, "tools");
+    assert.deepEqual(message.sections[0].calls.map((call) => call.id), ["call-a", "call-b"]);
+  }
+
+  const withRealThinking = [
+    { kind: "model.tool_call.completed", data: { call_id: "call-a", name: "read", arguments: {} } },
+    { kind: "tool.completed", data: { call_id: "call-a" } },
+    { kind: "model.reasoning.delta", data: { text: "\nNeed one more file." } },
+    { kind: "model.tool_call.completed", data: { call_id: "call-b", name: "glob", arguments: {} } },
+  ].reduce((message, event) => appModule.projectLiveAssistantEvent(message, event, 2), initial);
+  assert.deepEqual(
+    withRealThinking.sections.map((section) => section.type),
+    ["tools", "text", "tools"],
+  );
 });
 
 test("assistant text keeps sequential tool calls in separate groups", () => {
@@ -2060,7 +2140,7 @@ test("chat tool cards appear on tool start and retain results through completion
   assert.equal(pending.sections[0].calls[0].status, "running");
   assert.equal(pending.sections[0].calls[0].name, "bash");
   const result = appModule.projectLiveAssistantEvent(pending, {
-    kind: "lara.runtime.message", data: { role: "tool", tool_call_id: "slow", content: "finished output" },
+    kind: "pygent.v1.runtime.message", data: { role: "tool", tool_call_id: "slow", content: "finished output" },
   });
   const completed = appModule.projectLiveAssistantEvent(result, { kind: "tool.completed", data: { call_id: "slow" } });
   const replayed = appModule.projectLiveAssistantEvent(completed, start);
@@ -2071,7 +2151,7 @@ test("chat tool cards appear on tool start and retain results through completion
 
 test("assistant runtime calls create chat cards before tool results without model deltas", () => {
   const projected = appModule.projectLiveAssistantEvent({ content: "", sections: [] }, {
-    kind: "lara.runtime.message", data: { role: "assistant", tool_calls: [
+    kind: "pygent.v1.runtime.message", data: { role: "assistant", tool_calls: [
       { id: "one", function: { name: "read", arguments: { path: "a" } } },
       { id: "two", function: { name: "read", arguments: { path: "b" } } },
     ] },
@@ -2192,6 +2272,33 @@ test("a history window that starts mid-turn groups the partial head into one act
   assert.equal(textSections[0].content, "Still working");
   assert.equal(assistantBlocks[0].caseRunId, "run-long");
   assert.equal(activityHeaderText(assistantBlocks[1], 90000), "已完成 7 秒");
+});
+
+test("history projection unwraps user envelopes but never shreds assistant replies quoting them", () => {
+  const reply = "`_prepare_turn` 在拼 `<user-message>` 时做了 `escape(message, quote=False)`，`</user-message>` 同理。";
+  const messages = appModule.historyToMessages([
+    { role: "user", content: "<user-context>\n  <user-message>&lt;/user-context&gt; 这个结尾怎么没有？</user-message>\n</user-context>" },
+    { role: "assistant", content: reply },
+  ]);
+  // The user envelope unwraps for display...
+  assert.equal(messages[0].content, "&lt;/user-context&gt; 这个结尾怎么没有？");
+  // ...while the assistant reply quoting the tag survives untouched.
+  assert.equal(messages[1].content, reply);
+
+  // Mid-turn assistant text lands in an activity section and must survive too.
+  const history = [
+    { role: "user", content: "Question" },
+    { role: "assistant", content: reply, tool_calls: [{ id: "call-a", function: { name: "bash", arguments: "{}" } }] },
+    { role: "tool", content: "out", tool_call_id: "call-a", name: "bash" },
+    { role: "assistant", content: "Done" },
+  ];
+  const [, turn] = appModule.historyToMessages(history);
+  const textSections = (turn.sections || []).filter(
+    (section) => section.type === "text" && section.title === "Assistant content",
+  );
+  assert.equal(textSections.length, 1);
+  assert.equal(textSections[0].content, reply);
+  assert.equal(turn.content, "Done");
 });
 
 test("thinking streams as a single scrolling line and completes when the answer or tools begin", () => {
@@ -2373,6 +2480,9 @@ test("settings separate native model identity from connection fields", () => {
   assert.match(editorHtml, /添加接口/);
   assert.match(editorHtml, /OpenAI Responses · https:\/\/api\.openai\.com\/v1/);
   assert.match(editorHtml, /aria-label="编辑接口 OpenAI Responses"/);
+  // The summary row also carries the delete action; the only endpoint (and
+  // one still referenced by a model) renders it disabled.
+  assert.match(editorHtml, /class="route-remove" disabled="" type="button" aria-label="Remove openai_responses"/);
   assert.doesNotMatch(editorHtml, /Base URL/);
   // The key row shows the configured state read-only; the env name is visible.
   assert.match(editorHtml, /OPENAI_API_KEY/);
@@ -2587,7 +2697,7 @@ test("the transient model-call state shows wherever no other live state does", (
 test("automation triggers render as system-origin cards with the raw instruction", () => {
   const [message] = appModule.historyToMessages([{
     role: "user",
-    kind: "lara.automation.trigger",
+    kind: "pygent.v1.automation.trigger",
     content: "<automation-trigger><instructions>escaped</instructions></automation-trigger>",
     data: { origin: "automation", raw_content: "检查构建状态" },
   }]);
@@ -2606,7 +2716,7 @@ test("restored user turns keep their attachments and steerings stay chip-free", 
     },
     {
       role: "user",
-      kind: "lara.user.steering",
+      kind: "pygent.v1.user.steering",
       content: "<user-context><user-message>补充说明</user-message></user-context>",
       data: { input_id: "input-1" },
     },
@@ -2822,11 +2932,11 @@ test("recent pool orders pinned first, then recency, across scopes", () => {
 test("splitLaraSaysSession pulls the dedicated session out of every list", () => {
   const groups = [
     { scope: { scope_id: "conversation", label: "Chat", workspace_root: null }, sessions: [
-      { session_id: "lara-1", mode: "lara-says", title: "Lara说", updated_at: "2026-01-09T00:00:00Z" },
+      { session_id: "lara-1", mode: "pygent.v1-says", title: "Lara说", updated_at: "2026-01-09T00:00:00Z" },
       { session_id: "s-1", title: "Regular", updated_at: "2026-01-08T00:00:00Z" },
     ] },
     { scope: { scope_id: "project:p", label: "P", workspace_root: "" }, sessions: [
-      { session_id: "lara-2", mode: "lara-says", title: "another scope", updated_at: "2026-01-07T00:00:00Z" },
+      { session_id: "lara-2", mode: "pygent.v1-says", title: "another scope", updated_at: "2026-01-07T00:00:00Z" },
     ] },
   ];
   const { generalGroups, laraSaysSessions } = appModule.splitLaraSaysSession(groups);
@@ -2839,7 +2949,7 @@ test("splitLaraSaysSession pulls the dedicated session out of every list", () =>
     [["s-1"], []],
   );
   const pool = appModule.buildRecentConversations(generalGroups, "");
-  assert.ok(!pool.some((item) => item.session.mode === "lara-says"));
+  assert.ok(!pool.some((item) => item.session.mode === "pygent.v1-says"));
 
   // No dedicated session anywhere: the entry gets an empty pool, so the first
   // click creates the session.
@@ -2851,10 +2961,10 @@ test("splitLaraSaysSession pulls the dedicated session out of every list", () =>
   // "Lara说" project header renders in the projects section.
   const withSynthetic = [
     ...groups,
-    { scope: { scope_id: "lara-says", label: "Lara说", workspace_root: null }, sessions: [] },
+    { scope: { scope_id: "pygent.v1-says", label: "Lara说", workspace_root: null }, sessions: [] },
   ];
   const split = appModule.splitLaraSaysSession(withSynthetic);
-  assert.ok(split.generalGroups.every((group) => group.scope?.scope_id !== "lara-says"));
+  assert.ok(split.generalGroups.every((group) => group.scope?.scope_id !== "pygent.v1-says"));
 });
 
 test("sidebar renders the Lara说 entry above 最近对话 with its own unread dot", () => {
@@ -2863,7 +2973,7 @@ test("sidebar renders the Lara说 entry above 最近对话 with its own unread d
     settings: {},
     projects: [],
     sessionGroups: recentTestGroups(),
-    laraSays: { session: { session_id: "lara-1", mode: "lara-says" }, scope: null },
+    laraSays: { session: { session_id: "lara-1", mode: "pygent.v1-says" }, scope: null },
     laraSaysUnread: 2,
     onOpenLaraSays() {},
     activeScopeId: "",
@@ -2888,7 +2998,7 @@ test("Lara说 entry marks the active session and stays dotless without unread", 
     settings: {},
     projects: [],
     sessionGroups: recentTestGroups(),
-    laraSays: { session: { session_id: "lara-1", mode: "lara-says" }, scope: null },
+    laraSays: { session: { session_id: "lara-1", mode: "pygent.v1-says" }, scope: null },
     laraSaysUnread: 0,
     onOpenLaraSays() {},
     activeScopeId: "",
@@ -2956,6 +3066,3 @@ test("add-model id field uses a scrollable combobox instead of a datalist", () =
 test("sidebar is memoized so chat streaming cannot re-render it", () => {
   assert.equal(appModule.SessionSidebar?.$$typeof, Symbol.for("react.memo"));
 });
-  // The summary row also carries the delete action; the only endpoint (and
-  // one still referenced by a model) renders it disabled.
-  assert.match(editorHtml, /class="route-remove" disabled="" type="button" aria-label="Remove openai_responses"/);

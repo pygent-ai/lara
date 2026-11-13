@@ -17,7 +17,7 @@ from lara.sessions import (
     SessionCollaborationStore,
     SessionDirectory,
     SessionManager,
-    user_lara_root_for,
+    user_pygent_root_for,
 )
 
 Item = AgentMessage | CollaborationOperation | DispatchOperationView
@@ -94,7 +94,7 @@ class SessionCollaborationService:
             self._directory_for_root(target_root).register_item,
             item_id=queued.message_id,
             kind="message",
-            lara_root=target_root,
+            pygent_root=target_root,
             source_session_id=source_session_id,
             target_session_id=target_session_id,
         )
@@ -125,11 +125,11 @@ class SessionCollaborationService:
         the directory routes lookups from any project.
         """
         location = await asyncio.to_thread(
-            self._directory_for_root(config.lara_root).locate_item, collaboration_id
+            self._directory_for_root(config.pygent_root).locate_item, collaboration_id
         )
         if location is None:
             return None
-        return self._store_for_root(location.lara_root)
+        return self._store_for_root(location.pygent_root)
 
     async def _resolve_session_root(
         self,
@@ -145,15 +145,15 @@ class SessionCollaborationService:
         """
         try:
             manager.load(session_id)
-            return str(manager.lara_root)
+            return str(manager.pygent_root)
         except FileNotFoundError:
             location = await asyncio.to_thread(
-                self._directory_for_root(config.lara_root).locate_session,
+                self._directory_for_root(config.pygent_root).locate_session,
                 session_id,
             )
             if location is None:
                 raise
-            return location.lara_root
+            return location.pygent_root
 
     async def list_operations(
         self,
@@ -289,18 +289,18 @@ class SessionCollaborationService:
 
     def _dispatch_store(self, config: RunConfig) -> DispatchStore:
         if self._dispatch is None:
-            root = user_lara_root_for(config.lara_root)
+            root = user_pygent_root_for(config.pygent_root)
             self._dispatch = DispatchStore(Path(root) / "dispatch-v1.sqlite3")
         return self._dispatch
 
-    def _store_for_root(self, lara_root: str | Path) -> SessionCollaborationStore:
-        return SessionCollaborationStore(lara_root)
+    def _store_for_root(self, pygent_root: str | Path) -> SessionCollaborationStore:
+        return SessionCollaborationStore(pygent_root)
 
     def _store(self, config: RunConfig) -> SessionCollaborationStore:
-        return self._store_for_root(config.lara_root)
+        return self._store_for_root(config.pygent_root)
 
-    def _directory_for_root(self, lara_root: str | Path) -> SessionDirectory:
-        key = str(user_lara_root_for(lara_root))
+    def _directory_for_root(self, pygent_root: str | Path) -> SessionDirectory:
+        key = str(user_pygent_root_for(pygent_root))
         return self._directories.setdefault(key, SessionDirectory(key))
 
 

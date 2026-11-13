@@ -11,7 +11,7 @@ from .directory import (
     ItemLocation,
     SessionDirectory,
     SessionLocation,
-    user_lara_root_for,
+    user_pygent_root_for,
 )
 from .manager import (
     LARA_SAYS_SESSION_MODE,
@@ -31,5 +31,5 @@ __all__ = [
     "SessionLocation",
     "SessionManager",
     "realtime_enabled_for",
-    "user_lara_root_for",
+    "user_pygent_root_for",
 ]

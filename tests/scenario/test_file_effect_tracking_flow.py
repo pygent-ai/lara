@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 from pygent import ToolResult as PygentToolResult
 
-from lara.runtime.tools import ToolObserver
+from pygent.agent.pygent_v1.runtime.tools import ToolObserver
 from lara.schema import CaseRunRef
 from lara.tracing import EventStore
 
@@ -177,12 +177,12 @@ class FileEffectTrackingScenarioTests(unittest.IsolatedAsyncioTestCase):
                 session_id="s1", case_id="c1", case_run_id="r1", run_dir=run_dir
             )
 
-            from lara.runtime.file_effects import (
+            from pygent.agent.pygent_v1.runtime.file_effects import (
                 DeferredFileEffectBatch,
                 FileEffectBaselineStore,
                 process_file_effect_batch,
             )
-            from lara.runtime.tools import FileEffectTracker
+            from pygent.agent.pygent_v1.runtime.tools import FileEffectTracker
 
             store = EventStore(run)
             tracker = FileEffectTracker(workspace_root=workspace, store=store)
@@ -247,7 +247,7 @@ async def _call_and_record(
 ) -> SimpleNamespace:
     """Drive the current Pygent-result -> durable Lara diff projection flow."""
 
-    from lara.runtime.file_effects import (
+    from pygent.agent.pygent_v1.runtime.file_effects import (
         DeferredFileEffectBatch,
         FileEffectBaselineStore,
         process_file_effect_batch,

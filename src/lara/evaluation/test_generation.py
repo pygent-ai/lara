@@ -113,7 +113,7 @@ class TestGenerator:
 class RegressionRegistrar:
     def __init__(self, *, config: RunConfig) -> None:
         self.config = config
-        self.manifest_path = Path(config.lara_root) / "regression.json"
+        self.manifest_path = Path(config.pygent_root) / "regression.json"
 
     def register(self, case_file: str | Path) -> dict[str, Any]:
         case_path = Path(case_file).expanduser()

@@ -4,7 +4,7 @@ import argparse
 from typing import Any
 
 from lara.config import load_run_config
-from lara.sessions import SessionDirectory, user_lara_root_for
+from lara.sessions import SessionDirectory, user_pygent_root_for
 
 
 def register_projects_parser(subparsers: Any) -> None:
@@ -21,7 +21,7 @@ def register_projects_parser(subparsers: Any) -> None:
 
 def _projects_list(args: argparse.Namespace) -> dict[str, Any]:
     config = load_run_config(workspace_root=args.workspace_root)
-    directory = SessionDirectory(user_lara_root_for(config.lara_root))
+    directory = SessionDirectory(user_pygent_root_for(config.pygent_root))
     return {"projects": directory.list_projects()}
 
 

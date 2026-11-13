@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from lara.runtime.eternal_conversation import eternal_enabled_for
+from pygent.agent.pygent_v1.runtime.eternal_conversation import eternal_enabled_for
 from lara.sessions import SessionManager
 from lara_api.app import create_app
 

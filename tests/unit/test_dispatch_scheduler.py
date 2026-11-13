@@ -132,7 +132,7 @@ async def test_scheduler_submits_unattended_standalone_trigger(tmp_path: Path) -
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     config = RunConfig(
-        workspace_root=str(workspace), lara_root=str(workspace / ".lara")
+        workspace_root=str(workspace), pygent_root=str(workspace / ".lara")
     )
     store = _make_store(tmp_path)
     task = store.create(
@@ -186,7 +186,7 @@ async def test_scheduler_cancel_stops_running_item(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     config = RunConfig(
-        workspace_root=str(workspace), lara_root=str(workspace / ".lara")
+        workspace_root=str(workspace), pygent_root=str(workspace / ".lara")
     )
     store = _make_store(tmp_path)
     task = store.create(
@@ -234,7 +234,7 @@ async def test_scheduler_cancel_finalizes_never_started_item(tmp_path: Path) -> 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     config = RunConfig(
-        workspace_root=str(workspace), lara_root=str(workspace / ".lara")
+        workspace_root=str(workspace), pygent_root=str(workspace / ".lara")
     )
     store = _make_store(tmp_path)
     task = store.create(
@@ -277,7 +277,7 @@ def test_materializes_due_one_shot_task_once(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     config = RunConfig(
-        workspace_root=str(workspace), lara_root=str(workspace / ".lara")
+        workspace_root=str(workspace), pygent_root=str(workspace / ".lara")
     )
     store = _make_store(tmp_path)
     task = store.create(
@@ -314,7 +314,7 @@ def test_materializes_overdue_rrule_catch_up_once(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     config = RunConfig(
-        workspace_root=str(workspace), lara_root=str(workspace / ".lara")
+        workspace_root=str(workspace), pygent_root=str(workspace / ".lara")
     )
     store = _make_store(tmp_path)
     task = store.create(
@@ -360,7 +360,7 @@ def test_materializes_overdue_rrule_catch_up_once(tmp_path: Path) -> None:
 async def test_scheduler_executes_start_item_and_notifies_source(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    config = RunConfig(workspace_root=str(workspace), lara_root=str(tmp_path / ".lara"))
+    config = RunConfig(workspace_root=str(workspace), pygent_root=str(tmp_path / ".lara"))
     store = _make_store(tmp_path)
     item = store.submit_item(
         kind="start",
@@ -400,7 +400,7 @@ async def test_scheduler_executes_start_item_and_notifies_source(tmp_path: Path)
     SessionManager(config).load(completed.target_session_id)
 
     # Legacy worker parity: the source session receives a completion message.
-    inbox = Path(config.lara_root) / "runtime" / "session-collaboration-v1.sqlite3"
+    inbox = Path(config.pygent_root) / "runtime" / "session-collaboration-v1.sqlite3"
     with sqlite3.connect(inbox) as connection:
         row = connection.execute(
             """SELECT content, source_session_id, target_session_id
@@ -426,7 +426,7 @@ async def test_scheduler_executes_start_item_and_notifies_source(tmp_path: Path)
 
 @pytest.mark.asyncio
 async def test_scheduler_executes_fork_item(tmp_path: Path) -> None:
-    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
+    config = RunConfig(workspace_root=str(tmp_path), pygent_root=str(tmp_path / ".lara"))
     manager = SessionManager(config)
     source = manager.create("chat", mode="chat").session_id
     run = manager.start_case_run(source, "chat")

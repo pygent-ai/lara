@@ -71,7 +71,7 @@ def config_response(config: RunConfig) -> RuntimeConfigResponse:
         env_name = credential.get("env") if isinstance(credential, dict) else None
         if isinstance(env_name, str):
             _, source = lookup_credential(
-                env_name, user_lara_root=config.user_lara_root
+                env_name, user_pygent_root=config.user_pygent_root
             )
             connection["credential_source"] = source
         else:
@@ -93,7 +93,7 @@ def config_response(config: RunConfig) -> RuntimeConfigResponse:
         approvals_enabled=config.runtime_approvals.enabled,
         realtime_interaction_enabled=bool(config.realtime_interaction.enabled),
         workspace_root=config.workspace_root,
-        lara_root=config.lara_root,
+        pygent_root=config.pygent_root,
         agent=config.agent_alias,
         model_configuration_status=config.model_configuration_status,
         model_configuration_error=config.model_configuration_error,
@@ -112,7 +112,7 @@ def config_response(config: RunConfig) -> RuntimeConfigResponse:
             "backoff_maximum": retry.backoff_maximum if retry else 4.0,
             "backoff_multiplier": retry.backoff_multiplier if retry else 2.0,
         },
-        user_lara_root=config.user_lara_root or "",
+        user_pygent_root=config.user_pygent_root or "",
         max_steps=config.max_steps,
         context_window=config.context_window,
         context_compression_trigger_ratio=config.context_compression_trigger_ratio,
@@ -124,6 +124,6 @@ def _project_response(scope: SessionScope) -> ProjectResponse:
         scope_id=scope.scope_id,
         label=scope.label,
         workspace_root=scope.workspace_root,
-        lara_root=scope.lara_root,
+        pygent_root=scope.pygent_root,
         tooltip=scope.tooltip,
     )

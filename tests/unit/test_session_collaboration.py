@@ -23,7 +23,7 @@ from lara.sessions import (
 
 
 def _setup(tmp_path):
-    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
+    config = RunConfig(workspace_root=str(tmp_path), pygent_root=str(tmp_path / ".lara"))
     manager = SessionManager(config)
     source = manager.create("chat", mode="chat").session_id
     target = manager.create("chat", mode="chat").session_id
@@ -212,7 +212,7 @@ async def test_agent_messages_are_claimed_fifo_and_acknowledged(tmp_path) -> Non
         message="second",
         submission_id="submission-second",
     )
-    store = SessionCollaborationStore(config.lara_root)
+    store = SessionCollaborationStore(config.pygent_root)
     claimed = store.claim_messages(target, claim_id="delivery-1", lease_seconds=30)
     assert [item.message_id for item in claimed] == [
         first.message_id,
@@ -256,7 +256,7 @@ async def test_status_prefers_the_dispatch_store(tmp_path) -> None:
     assert view.state is item.state
     assert view.done is False
     # The legacy project table is still consulted as a fallback.
-    legacy_store = SessionCollaborationStore(config.lara_root)
+    legacy_store = SessionCollaborationStore(config.pygent_root)
     legacy = legacy_store.reserve(
         submission_id="submission-legacy",
         fingerprint="submission-legacy",
@@ -352,7 +352,7 @@ async def test_list_operations_includes_dispatched_items(tmp_path) -> None:
         source_session_id=source,
         submission_id="submission-dispatch",
     )
-    SessionCollaborationStore(config.lara_root).reserve(
+    SessionCollaborationStore(config.pygent_root).reserve(
         submission_id="submission-legacy",
         fingerprint="submission-legacy",
         source_session_id=source,
@@ -380,11 +380,11 @@ def _cross_project_setup(tmp_path):
     user_root = tmp_path / "home"
     config_a = RunConfig(
         workspace_root=str(tmp_path / "workspace-a"),
-        lara_root=str(user_root / "projects" / "a"),
+        pygent_root=str(user_root / "projects" / "a"),
     )
     config_b = RunConfig(
         workspace_root=str(tmp_path / "workspace-b"),
-        lara_root=str(user_root / "projects" / "b"),
+        pygent_root=str(user_root / "projects" / "b"),
     )
     manager_a = SessionManager(config_a)
     manager_b = SessionManager(config_b)
@@ -422,7 +422,7 @@ async def test_send_delivers_cross_project_messages_into_the_target_store(
     assert [message.message_id for message in claimed] == [queued.message_id]
     located = SessionDirectory(user_root).locate_session(target)
     assert located is not None
-    assert located.lara_root == str((user_root / "projects" / "b").resolve())
+    assert located.pygent_root == str((user_root / "projects" / "b").resolve())
     await service.aclose()
 
 
@@ -441,7 +441,7 @@ async def test_status_routes_cross_project_items_through_the_directory(tmp_path)
 
     # A legacy operation registered in the user-level directory stays reachable
     # from any project through the fallback route.
-    store_a = SessionCollaborationStore(config_a.lara_root)
+    store_a = SessionCollaborationStore(config_a.pygent_root)
     operation = store_a.reserve(
         submission_id="submission-op",
         fingerprint="submission-op",
@@ -454,7 +454,7 @@ async def test_status_routes_cross_project_items_through_the_directory(tmp_path)
     SessionDirectory(user_root).register_item(
         item_id=operation.operation_id,
         kind="operation",
-        lara_root=str(config_a.lara_root),
+        pygent_root=str(config_a.pygent_root),
         source_session_id=source,
         target_session_id=None,
     )

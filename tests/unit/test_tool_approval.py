@@ -15,7 +15,7 @@ from pygent import (
 from pygent.tool import ToolSideEffect
 
 from lara.config import load_run_config
-from lara.runtime.agent.pipeline import LaraToolAuthorization
+from pygent.agent.pygent_v1.graph.pipeline import PygentToolAuthorization as LaraToolAuthorization
 from lara.runtime.service import LaraRuntimeService
 
 
@@ -54,7 +54,7 @@ async def test_approval_waiter_exists_when_request_event_is_published(
 
         async with handle.subscribe() as events:
             async for event in events:
-                if event.kind == "lara.approval.requested":
+                if event.kind == "pygent.v1.approval.requested":
                     approval_id = str(thaw_json(event.data)["approval_id"])
                     assert await service.deliver_approval(
                         approval_id,

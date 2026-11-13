@@ -10,7 +10,7 @@ from pygent.llm import ModelConfig, OpenAICompatibleClient
 from pygent.runtime.codec import message_from_dict, message_to_dict
 
 from lara.runtime import model_configuration
-from lara.runtime.attachments import (
+from pygent.agent.pygent_v1.runtime.attachments import (
     MAX_ATTACHMENTS,
     build_media_blocks,
     render_attachments_xml,
@@ -87,7 +87,7 @@ def test_rejects_too_many_attachments(workspace, tmp_path):
 def test_oversized_media_falls_back_to_reference(workspace):
     big = workspace / "shots" / "big.png"
     big.write_bytes(b"\x89PNG" + b"\x00" * 64)
-    from lara.runtime import attachments as attachments_module
+    from pygent.agent.pygent_v1.runtime import attachments as attachments_module
 
     original = attachments_module.MEDIA_MAX_BYTES
     try:

@@ -9,7 +9,7 @@ from lara_api.services.workspace_service import list_workspace_entries, read_wor
 
 def _context(project: Path, state_path: Path) -> ApiContext:
     project.mkdir()
-    config = RunConfig(workspace_root=str(project), lara_root=str(project / ".lara"))
+    config = RunConfig(workspace_root=str(project), pygent_root=str(project / ".lara"))
     return ApiContext(workspace_root=str(project), state_path=str(state_path), _config=config)
 
 

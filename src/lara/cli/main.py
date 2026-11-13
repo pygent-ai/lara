@@ -202,7 +202,7 @@ def _case_analyze(args: argparse.Namespace) -> dict[str, Any]:
 
 def _regression_run(args: argparse.Namespace) -> dict[str, Any]:
     manager = _manager(args)
-    manifest = Path(manager.config.lara_root) / "regression.json"
+    manifest = Path(manager.config.pygent_root) / "regression.json"
     if not manifest.exists():
         return {
             "status": "skipped",

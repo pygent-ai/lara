@@ -4,14 +4,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lara.runtime.file_effect_models import FileEffect
-from lara.runtime.file_effects import (
+from pygent.agent.pygent_v1.runtime.file_effect_models import FileEffect
+from pygent.agent.pygent_v1.runtime.file_effects import (
     DeferredFileEffectBatch,
     DeferredFileEffectJob,
     FileEffectBaselineStore,
     process_file_effect_batch,
 )
-from lara.runtime.tools import FileEffectTracker, FileSnapshot
+from pygent.agent.pygent_v1.runtime.tools import FileEffectTracker, FileSnapshot
 from lara.schema import CaseRunRef
 from lara.tracing import EventStore
 
@@ -61,7 +61,9 @@ class FileEffectStateTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(batch.case_run_ref.case_run_id, "r1")
             self.assertEqual(batch.turn_id, "turn-0001")
-            self.assertEqual(batch.tool_call_ids, ["tool-1"])
+            self.assertEqual(
+            [job.tool_call_id for job in batch.jobs], ["tool-1"]
+        )
 
     def test_process_declared_only_batch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -75,7 +77,7 @@ class FileEffectStateTests(unittest.IsolatedAsyncioTestCase):
                 session_id="s1", case_id="chat", case_run_id="r1", run_dir=run_dir
             )
 
-            from lara.runtime.file_effects import process_file_effect_batch
+            from pygent.agent.pygent_v1.runtime.file_effects import process_file_effect_batch
 
             job = DeferredFileEffectJob(
                 tool_call_id="tool-read",

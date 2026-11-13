@@ -98,14 +98,24 @@ class ApiContext:
     def runtime_pool(self) -> WorkspaceRuntimePool:
         with self._lock:
             if self._runtime_pool is None:
+                from functools import partial
+
                 from lara.orchestration import WorkspaceRuntimePool
+                from lara.runtime.service import LaraRuntimeService
 
                 # API composition root: register the stock Lara prompt
                 # profile so the kernel's empty registry serves full prompts.
                 from lara.runtime.prompt_profile import build_prompt_registry
 
+                # The SDK pool defaults to PygentRuntimeService, which lacks
+                # the steering/cancel/compress entries lara_api drives, and it
+                # no longer carries a collaboration slot; bind both here.
                 self._runtime_pool = WorkspaceRuntimePool(
-                    prompt_registry=build_prompt_registry()
+                    runtime_factory=partial(
+                        LaraRuntimeService,
+                        collaboration=self.session_collaboration,
+                    ),
+                    prompt_registry=build_prompt_registry(),
                 )
             return self._runtime_pool
 
@@ -116,7 +126,6 @@ class ApiContext:
                 from lara.orchestration import SessionCollaborationService
 
                 self._session_collaboration = SessionCollaborationService()
-                self.runtime_pool.attach_collaboration(self._session_collaboration)
             return self._session_collaboration
 
     @property
@@ -134,6 +143,15 @@ class ApiContext:
     ) -> RuntimeLease:
         _ = self.session_collaboration
         effective_config = config or self.config
+        # The SDK pool falls back to its base SessionManager and pins it to
+        # the runtime generation; later callers passing lara's subclass then
+        # get the base one back, so always hand it a lara manager.
+        if manager is None:
+            manager = (
+                self.manager
+                if effective_config is self.config
+                else SessionManager(effective_config)
+            )
         return await self.runtime_pool.acquire(
             config=effective_config,
             manager=manager,
@@ -155,7 +173,7 @@ class ApiContext:
                 from lara.dispatch import DispatchStore
 
                 self._dispatch_store = DispatchStore(
-                    Path(self.config.user_lara_root) / "dispatch-v1.sqlite3"
+                    Path(self.config.user_pygent_root) / "dispatch-v1.sqlite3"
                 )
             return self._dispatch_store
 
@@ -276,7 +294,7 @@ class ApiContext:
             Path(scope.runtime_workspace_root).mkdir(parents=True, exist_ok=True)
             return RunConfig(
                 workspace_root=scope.runtime_workspace_root,
-                lara_root=scope.lara_root,
+                pygent_root=scope.pygent_root,
                 agent_alias=self.agent_alias or self.config.agent_alias,
                 system_prompt=self.config.system_prompt,
                 resolved_agent=self.config.resolved_agent,
@@ -284,7 +302,7 @@ class ApiContext:
                 model_config_mapping=deepcopy(self.config.model_config_mapping),
                 model_configuration_status=self.config.model_configuration_status,
                 model_configuration_error=self.config.model_configuration_error,
-                user_lara_root=self.config.user_lara_root,
+                user_pygent_root=self.config.user_pygent_root,
                 runtime_approvals=self.config.runtime_approvals,
                 max_steps=self.max_steps if self.max_steps is not None else -1,
                 context_window=self.context_window,

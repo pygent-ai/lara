@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import json
 
-from lara.sessions import SessionDirectory, user_lara_root_for
+from lara.sessions import SessionDirectory, user_pygent_root_for
 
 
-def test_user_lara_root_follows_the_project_layout(tmp_path) -> None:
+def test_user_pygent_root_follows_the_project_layout(tmp_path) -> None:
     project_root = tmp_path / "home" / "projects" / "abc123"
-    assert user_lara_root_for(project_root) == (tmp_path / "home").resolve()
+    assert user_pygent_root_for(project_root) == (tmp_path / "home").resolve()
     custom_root = tmp_path / "custom" / ".lara"
-    assert user_lara_root_for(custom_root) == (tmp_path / "custom").resolve()
+    assert user_pygent_root_for(custom_root) == (tmp_path / "custom").resolve()
 
 
 def test_sessions_register_and_resolve(tmp_path) -> None:
@@ -18,7 +18,7 @@ def test_sessions_register_and_resolve(tmp_path) -> None:
 
     directory.register_session(
         session_id="chat-chat-20260101-000000-aaaaaaaa",
-        lara_root=project_root,
+        pygent_root=project_root,
         workspace_root=tmp_path / "workspace-a",
         case_id="chat",
         mode="chat",
@@ -26,7 +26,7 @@ def test_sessions_register_and_resolve(tmp_path) -> None:
 
     located = directory.locate_session("chat-chat-20260101-000000-aaaaaaaa")
     assert located is not None
-    assert located.lara_root == str(project_root.resolve())
+    assert located.pygent_root == str(project_root.resolve())
     assert located.case_id == "chat"
     assert directory.locate_session("chat-chat-20260101-000000-bbbbbbbb") is None
 
@@ -52,7 +52,7 @@ def test_locate_session_adopts_legacy_sessions_from_disk(tmp_path) -> None:
     located = directory.locate_session("chat-chat-20260101-000000-cccccccc")
 
     assert located is not None
-    assert located.lara_root == str(project_root.resolve())
+    assert located.pygent_root == str(project_root.resolve())
     assert located.case_id == "chat"
     assert located.mode == "chat"
     assert located.workspace_root == str((tmp_path / "workspace-legacy").resolve())
@@ -68,7 +68,7 @@ def test_items_register_and_resolve(tmp_path) -> None:
     directory.register_item(
         item_id="msg-abcdef",
         kind="message",
-        lara_root=project_root,
+        pygent_root=project_root,
         source_session_id="chat-chat-20260101-000000-aaaaaaaa",
         target_session_id="chat-chat-20260101-000000-bbbbbbbb",
     )
@@ -76,7 +76,7 @@ def test_items_register_and_resolve(tmp_path) -> None:
     located = directory.locate_item("msg-abcdef")
     assert located is not None
     assert located.kind == "message"
-    assert located.lara_root == str(project_root.resolve())
+    assert located.pygent_root == str(project_root.resolve())
     assert directory.locate_item("msg-missing") is None
 
 
@@ -86,7 +86,7 @@ def test_register_item_rejects_unknown_kinds(tmp_path) -> None:
         directory.register_item(
             item_id="msg-abcdef",
             kind="task",
-            lara_root=tmp_path / "home" / "projects" / "a",
+            pygent_root=tmp_path / "home" / "projects" / "a",
             source_session_id=None,
             target_session_id=None,
         )
@@ -104,21 +104,21 @@ def test_projects_list_aggregates_session_counts(tmp_path) -> None:
     for suffix in ("aaaaaaaa", "bbbbbbbb"):
         directory.register_session(
             session_id=f"chat-chat-20260101-000000-{suffix}",
-            lara_root=project_a,
+            pygent_root=project_a,
             workspace_root=tmp_path / "workspace-a",
             case_id="chat",
             mode="chat",
         )
     directory.register_session(
         session_id="chat-chat-20260101-000000-cccccccc",
-        lara_root=project_b,
+        pygent_root=project_b,
         workspace_root=tmp_path / "workspace-b",
         case_id="chat",
         mode="chat",
     )
 
     projects = directory.list_projects()
-    counts = {project["lara_root"]: project["session_count"] for project in projects}
+    counts = {project["pygent_root"]: project["session_count"] for project in projects}
     assert counts == {
         str(project_a.resolve()): 2,
         str(project_b.resolve()): 1,

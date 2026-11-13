@@ -82,7 +82,7 @@ def _add_schedule(parser: argparse.ArgumentParser, *, required: bool) -> None:
 
 def _store(args: argparse.Namespace) -> DispatchStore:
     config = load_run_config(workspace_root=args.workspace_root)
-    return DispatchStore(Path(config.user_lara_root) / "dispatch-v1.sqlite3")
+    return DispatchStore(Path(config.user_pygent_root) / "dispatch-v1.sqlite3")
 
 
 def _service(args: argparse.Namespace) -> DispatchService:

@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from lara.tracing.diffing import DiffRecorder
+from pygent.agent.pygent_v1.tracing.diffing import DiffRecorder
 
 
 class _Store:

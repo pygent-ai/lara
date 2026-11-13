@@ -1,5 +1,5 @@
-from lara.runtime.agent.prompt_models import PromptRenderContext
-from lara.runtime.agent.prompts import (
+from pygent.agent.pygent_v1.graph.prompt_models import PromptRenderContext
+from pygent.agent.pygent_v1.graph.prompts import (
     PromptComposer,
     PromptRegistry,
     StaticPromptSessionCache,
@@ -24,8 +24,8 @@ def _context(tmp_path, *, tool_names=None) -> PromptRenderContext:
         turn_id="turn-1",
         projection={},
         tool_names=list(tool_names or []),
-        user_lara_root=tmp_path / "user-lara",
-        project_lara_root=tmp_path / ".lara",
+        user_pygent_root=tmp_path / "user-lara",
+        project_pygent_root=tmp_path / ".lara",
         user_skills_dir=tmp_path / "user-lara" / "skills",
         project_skills_dir=tmp_path / ".lara" / "skills",
     )

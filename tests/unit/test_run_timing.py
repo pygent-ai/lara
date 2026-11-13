@@ -15,7 +15,7 @@ from lara_api.services.session_service import SessionService
 
 def make_manager(tmp_path):
     return SessionManager(
-        RunConfig(workspace_root=tmp_path, lara_root=tmp_path / ".lara")
+        RunConfig(workspace_root=tmp_path, pygent_root=tmp_path / ".lara")
     )
 
 

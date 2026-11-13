@@ -18,6 +18,21 @@ sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 
+
+class _Scheduled:
+    """A freshly scheduled harness worker: pending until drained once."""
+
+    def __init__(self) -> None:
+        self._done = False
+
+    def done(self) -> bool:
+        return self._done
+
+    def __await__(self):
+        async def _run() -> None:
+            self._done = True
+        return _run().__await__()
+
 def test_acceptance_foreground_step_budget_defaults_to_500() -> None:
     assert MODULE.DEFAULT_REACT_MAX_STEPS == 500
 
@@ -344,13 +359,14 @@ async def test_memory_backlog_recovery_restarts_background_job_without_foregroun
             self.covered = 2
             self.retries = 0
 
-        async def wait_idle(self) -> None:
-            return None
+        _workers: dict = {}
+        _builders: dict = {}
 
-        async def retry_pending(self, _session) -> bool:
+        async def record_and_trigger(self, _session) -> None:
             self.retries += 1
             self.covered = 5
-            return True
+            # A finished worker stands in for "the SDK scheduled and ran the job".
+            self._workers["s1"] = _Scheduled()
 
     harness = Harness()
     runtime = SimpleNamespace(memory_harness=harness)
@@ -379,8 +395,13 @@ async def test_memory_backlog_recovery_fails_after_bounded_attempts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     harness = SimpleNamespace()
-    harness.wait_idle = lambda: asyncio.sleep(0)
-    harness.retry_pending = lambda _session: asyncio.sleep(0, result=True)
+    harness._workers = {}
+    harness._builders = {}
+
+    async def _record_and_trigger(_session) -> None:
+        harness._workers["s1"] = _Scheduled()
+
+    harness.record_and_trigger = _record_and_trigger
     runtime = SimpleNamespace(memory_harness=harness)
     manager = SimpleNamespace(load=lambda _session_id: SimpleNamespace(history=[{}] * 5))
     session_ref = SimpleNamespace(session_id="s1", session_dir=str(tmp_path))

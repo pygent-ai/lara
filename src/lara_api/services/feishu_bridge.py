@@ -67,7 +67,7 @@ class FeishuBridge:
         relay work onto that loop).
         """
 
-        self._config = load_feishu_bridge_config(self._context.config.user_lara_root)
+        self._config = load_feishu_bridge_config(self._context.config.user_pygent_root)
         if self._config is None:
             _logger.info("feishu bridge not configured; inbound relay stays off")
             return False

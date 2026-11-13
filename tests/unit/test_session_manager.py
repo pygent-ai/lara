@@ -26,7 +26,7 @@ def native_run_config(root: str | Path) -> RunConfig:
     mapping = native_mapping(group=("main", "backup"))
     return RunConfig(
         workspace_root=str(root),
-        lara_root=str(Path(root) / ".lara"),
+        pygent_root=str(Path(root) / ".lara"),
         model_config_mapping=mapping,
         resolved_agent=ResolvedAgentConfig(
             alias="default", default_model_group="coding"
@@ -38,7 +38,7 @@ class SessionManagerTests(unittest.TestCase):
     def test_list_sessions_filters_mode_and_orders_latest_first(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             manager = SessionManager(
-                RunConfig(workspace_root=tmp, lara_root=str(Path(tmp) / ".lara"))
+                RunConfig(workspace_root=tmp, pygent_root=str(Path(tmp) / ".lara"))
             )
             chat = manager.create("chat", mode="chat")
             agent = manager.create("collaboration", mode="agent")
@@ -60,7 +60,7 @@ class SessionManagerTests(unittest.TestCase):
     def test_create_and_load_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             manager = SessionManager(
-                RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
+                RunConfig(workspace_root=tmp, pygent_root=Path(tmp) / ".lara")
             )
             ref = manager.create("read-file-basic")
             loaded = manager.load(ref.session_id)
@@ -71,7 +71,7 @@ class SessionManagerTests(unittest.TestCase):
 
     def test_multiple_runs_do_not_overwrite(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            config = RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
+            config = RunConfig(workspace_root=tmp, pygent_root=Path(tmp) / ".lara")
             manager = SessionManager(config)
             session = manager.create("case-a")
             first = manager.start_case_run(session.session_id, "case-a")
@@ -111,7 +111,7 @@ class SessionManagerTests(unittest.TestCase):
     def test_finish_case_run_updates_metadata_and_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             manager = SessionManager(
-                RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
+                RunConfig(workspace_root=tmp, pygent_root=Path(tmp) / ".lara")
             )
             session = manager.create("case-a")
             run = manager.start_case_run(session.session_id, "case-a")
@@ -134,7 +134,7 @@ class SessionManagerTests(unittest.TestCase):
     def test_finish_case_run_does_not_regress_newer_session_pointers(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             manager = SessionManager(
-                RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
+                RunConfig(workspace_root=tmp, pygent_root=Path(tmp) / ".lara")
             )
             session = manager.create("case-a")
             stale = manager.start_case_run(session.session_id, "case-a")
@@ -161,7 +161,7 @@ class SessionManagerTests(unittest.TestCase):
     def test_find_case_run_returns_ref_from_run_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             manager = SessionManager(
-                RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
+                RunConfig(workspace_root=tmp, pygent_root=Path(tmp) / ".lara")
             )
             session = manager.create("case-a")
             run = manager.start_case_run(session.session_id, "case-a")
@@ -173,7 +173,7 @@ class SessionManagerTests(unittest.TestCase):
     def test_save_redacts_secrets_from_model_visible_history(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             manager = SessionManager(
-                RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
+                RunConfig(workspace_root=tmp, pygent_root=Path(tmp) / ".lara")
             )
             ref = manager.create("case-a")
             session = manager.load(ref.session_id)
@@ -202,7 +202,7 @@ class SessionManagerTests(unittest.TestCase):
     def test_load_or_create_resume_requires_session_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             manager = SessionManager(
-                RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
+                RunConfig(workspace_root=tmp, pygent_root=Path(tmp) / ".lara")
             )
             with self.assertRaises(ValueError):
                 manager.load_or_create(SessionSpec(case_id="case-a", mode="resume"))
@@ -210,7 +210,7 @@ class SessionManagerTests(unittest.TestCase):
     def test_fork_copies_session_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             manager = SessionManager(
-                RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
+                RunConfig(workspace_root=tmp, pygent_root=Path(tmp) / ".lara")
             )
             source = manager.create("case-a")
             source_dir = Path(source.session_dir)
@@ -242,7 +242,7 @@ class SessionManagerTests(unittest.TestCase):
     def test_fork_can_target_chat_mode_for_sidebar_visibility(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             manager = SessionManager(
-                RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
+                RunConfig(workspace_root=tmp, pygent_root=Path(tmp) / ".lara")
             )
             source = manager.create("chat", mode="chat")
             forked = manager.fork(source.session_id, mode="chat")
@@ -259,7 +259,7 @@ class SessionManagerTests(unittest.TestCase):
     def test_fork_at_checkpoint_sequence_truncates_history(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             manager = SessionManager(
-                RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
+                RunConfig(workspace_root=tmp, pygent_root=Path(tmp) / ".lara")
             )
             source = manager.create("chat", mode="chat")
             run = manager.start_case_run(source.session_id, "chat")
@@ -306,7 +306,7 @@ class SessionManagerTests(unittest.TestCase):
     def test_fork_rejects_unknown_checkpoint_sequence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             manager = SessionManager(
-                RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
+                RunConfig(workspace_root=tmp, pygent_root=Path(tmp) / ".lara")
             )
             source = manager.create("chat", mode="chat")
             with self.assertRaises(ValueError):
@@ -324,7 +324,7 @@ class SessionManagerTests(unittest.TestCase):
         """
         with tempfile.TemporaryDirectory() as tmp:
             manager = SessionManager(
-                RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
+                RunConfig(workspace_root=tmp, pygent_root=Path(tmp) / ".lara")
             )
             source = manager.create("chat", mode="chat")
             run = manager.start_case_run(source.session_id, "chat")
@@ -390,7 +390,7 @@ def test_running_session_exposes_current_run_and_recovery_checkpoint(tmp_path):
     from lara_api.services.session_service import SessionService
 
     manager = SessionManager(
-        RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / "data"))
+        RunConfig(workspace_root=str(tmp_path), pygent_root=str(tmp_path / "data"))
     )
     session = manager.create("chat", mode="chat")
     previous = manager.start_case_run(session.session_id, "chat")
@@ -621,7 +621,7 @@ def spare_group_config(tmp_path: Path):
     mapping["model_groups"]["spare-group"] = {"models": ["spare"]}
     return RunConfig(
         workspace_root=str(tmp_path),
-        lara_root=str(Path(tmp_path) / ".lara"),
+        pygent_root=str(Path(tmp_path) / ".lara"),
         model_config_mapping=mapping,
         resolved_agent=ResolvedAgentConfig(
             alias="default", default_model_group="coding"
@@ -732,7 +732,7 @@ def test_old_session_selection_resolves_default_and_persists_on_save(
     def test_finish_case_run_writes_one_terminal_and_persists_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             manager = SessionManager(
-                RunConfig(workspace_root=tmp, lara_root=str(Path(tmp) / ".lara"))
+                RunConfig(workspace_root=tmp, pygent_root=str(Path(tmp) / ".lara"))
             )
             chat = manager.create("chat", mode="chat")
             ref = manager.start_case_run(chat.session_id, "chat")
@@ -784,7 +784,7 @@ def test_old_session_selection_resolves_default_and_persists_on_save(
     def test_start_case_run_records_owner_stamp(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             manager = SessionManager(
-                RunConfig(workspace_root=tmp, lara_root=str(Path(tmp) / ".lara"))
+                RunConfig(workspace_root=tmp, pygent_root=str(Path(tmp) / ".lara"))
             )
             chat = manager.create("chat", mode="chat")
             ref = manager.start_case_run(chat.session_id, "chat")

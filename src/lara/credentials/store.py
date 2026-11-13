@@ -18,20 +18,20 @@ USER_CREDENTIALS_FILENAME = "credentials.env"
 DEFAULT_API_KEY_ENV = "DEEPSEEK_API_KEY"
 
 
-def user_credentials_path(user_lara_root: str | Path) -> Path:
-    return Path(user_lara_root).expanduser().resolve() / USER_CREDENTIALS_FILENAME
+def user_credentials_path(user_pygent_root: str | Path) -> Path:
+    return Path(user_pygent_root).expanduser().resolve() / USER_CREDENTIALS_FILENAME
 
 
-def ensure_user_lara_root(user_lara_root: str | Path) -> Path:
-    root = Path(user_lara_root).expanduser().resolve()
+def ensure_user_pygent_root(user_pygent_root: str | Path) -> Path:
+    root = Path(user_pygent_root).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
     return root
 
 
-def load_credentials(*, user_lara_root: str | Path) -> list[str]:
+def load_credentials(*, user_pygent_root: str | Path) -> list[str]:
     """Load credential files into ``os.environ`` without overriding existing variables."""
     loaded: list[str] = []
-    user_root = ensure_user_lara_root(user_lara_root)
+    user_root = ensure_user_pygent_root(user_pygent_root)
 
     user_path = user_root / USER_CREDENTIALS_FILENAME
     if _load_env_file_quiet(user_path):
@@ -43,11 +43,11 @@ def load_credentials(*, user_lara_root: str | Path) -> list[str]:
 def lookup_credential(
     env_name: str,
     *,
-    user_lara_root: str | Path | None = None,
+    user_pygent_root: str | Path | None = None,
 ) -> tuple[str | None, str]:
-    if user_lara_root is not None:
+    if user_pygent_root is not None:
         value = _non_empty(
-            read_env_entries(user_credentials_path(user_lara_root)).get(env_name)
+            read_env_entries(user_credentials_path(user_pygent_root)).get(env_name)
         )
         if value:
             return value, f"user-file:{env_name}"
@@ -111,8 +111,8 @@ def write_env_entries(path: Path, entries: dict[str, str]) -> None:
     _restrict_file_permissions(path)
 
 
-def set_user_credential(user_lara_root: str | Path, env_name: str, value: str) -> Path:
-    root = ensure_user_lara_root(user_lara_root)
+def set_user_credential(user_pygent_root: str | Path, env_name: str, value: str) -> Path:
+    root = ensure_user_pygent_root(user_pygent_root)
     path = root / USER_CREDENTIALS_FILENAME
     entries = read_env_entries(path)
     entries[env_name] = value
@@ -121,8 +121,8 @@ def set_user_credential(user_lara_root: str | Path, env_name: str, value: str) -
     return path
 
 
-def delete_user_credential(user_lara_root: str | Path, env_name: str) -> bool:
-    path = user_credentials_path(user_lara_root)
+def delete_user_credential(user_pygent_root: str | Path, env_name: str) -> bool:
+    path = user_credentials_path(user_pygent_root)
     entries = read_env_entries(path)
     if env_name not in entries:
         return False
@@ -132,14 +132,14 @@ def delete_user_credential(user_lara_root: str | Path, env_name: str) -> bool:
     return True
 
 
-def list_user_credential_names(user_lara_root: str | Path) -> list[str]:
-    return sorted(read_env_entries(user_credentials_path(user_lara_root)))
+def list_user_credential_names(user_pygent_root: str | Path) -> list[str]:
+    return sorted(read_env_entries(user_credentials_path(user_pygent_root)))
 
 
-def credential_is_configured(env_name: str, *, user_lara_root: str | Path) -> bool:
+def credential_is_configured(env_name: str, *, user_pygent_root: str | Path) -> bool:
     if _non_empty(os.environ.get(env_name)):
         return True
-    if env_name in read_env_entries(user_credentials_path(user_lara_root)):
+    if env_name in read_env_entries(user_credentials_path(user_pygent_root)):
         return True
     return get_keyring_credential(env_name) is not None
 

@@ -10,12 +10,12 @@ that skips registration gets a clean agent with only its own base prompt.
 
 from __future__ import annotations
 
-from lara.runtime.agent.prompt_models import PromptRenderContext
-from lara.runtime.agent.prompt_sources import (
-    _ctx_project_lara_root,
-    _ctx_user_lara_root,
+from pygent.agent.pygent_v1.graph.prompt_models import PromptRenderContext
+from pygent.agent.pygent_v1.graph.prompt_sources import (
+    _ctx_project_pygent_root,
+    _ctx_user_pygent_root,
 )
-from lara.runtime.agent.prompts import PromptModule, PromptRegistry
+from pygent.agent.pygent_v1.graph.prompts import PromptModule, PromptRegistry
 
 # The base prompt every composed request starts from. It also covers sessions
 # whose persisted prompt predates rendered-prompt persistence (fork replies
@@ -81,15 +81,15 @@ def _render_system_action_safety_prompt(ctx: PromptRenderContext) -> str:
 
 
 def _render_system_path_policy_prompt(ctx: PromptRenderContext) -> str:
-    project_lara_root = _ctx_project_lara_root(ctx)
-    user_lara_root = _ctx_user_lara_root(ctx)
+    project_pygent_root = _ctx_project_pygent_root(ctx)
+    user_pygent_root = _ctx_user_pygent_root(ctx)
     return "\n".join(
         [
             "# Lara Path Layout",
             "",
             f"- Workspace root: {ctx.workspace_root}",
-            f"- Per-project Lara state: {project_lara_root}",
-            f"- Lara home: {user_lara_root}",
+            f"- Per-project Lara state: {project_pygent_root}",
+            f"- Lara home: {user_pygent_root}",
             "- File tools resolve relative paths from the workspace root. Bash defaults to the workspace root; working_directory is resolved from that root, and paths inside the command resolve from the selected working directory.",
             "- Keep host-side file-tool writes, shell redirects, scratch files, and deliverables inside the authorized workspace unless the user explicitly supplies another authorized path.",
             "- Commands running inside an explicitly scoped container or remote sandbox may use paths owned by that environment, including its temporary directory; never use those paths to escape the authorized environment.",

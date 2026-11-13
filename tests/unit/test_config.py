@@ -109,7 +109,7 @@ def test_legacy_routes_boot_as_explicitly_unconfigured(tmp_path: Path) -> None:
 
 def test_yaml_subset_dump_round_trips_native_model_values() -> None:
     data = {
-        "lara_root": r"C:\Users\agent's data\.lara",
+        "pygent_root": r"C:\Users\agent's data\.lara",
         "models": {"main": {"connection": {"base_url": "https://example.test/v1#chat", "credential": {"env": "MAIN_KEY"}}}},
         "model_groups": {"coding": {"models": ["main"]}},
     }
@@ -163,7 +163,7 @@ def test_runtime_and_context_settings_are_loaded(tmp_path: Path) -> None:
     assert config.context_window == 64000
     assert config.context_compression_enabled is False
     assert config.runtime_capacity.scope == "deployment"
-    assert config.runtime_capacity.coordinator_path == str((Path(config.lara_root) / ".state/capacity.sqlite3").resolve())
+    assert config.runtime_capacity.coordinator_path == str((Path(config.pygent_root) / ".state/capacity.sqlite3").resolve())
 
 
 def test_missing_agent_alias_is_rejected(tmp_path: Path) -> None:

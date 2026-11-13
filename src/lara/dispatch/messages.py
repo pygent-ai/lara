@@ -6,7 +6,7 @@ from pygent import UserMessage, freeze_json_object
 
 from .models import DispatchItem, DispatchTask
 
-AUTOMATION_MESSAGE_KIND = "lara.automation.trigger"
+AUTOMATION_MESSAGE_KIND = "pygent.v1.automation.trigger"
 
 
 def automation_trigger_message(

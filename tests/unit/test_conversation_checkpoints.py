@@ -16,7 +16,7 @@ from pygent.runtime.codec import message_to_dict
 
 from lara.config import load_run_config
 from tests.unit.test_model_configuration import native_runtime_config
-from lara.runtime.agent.pipeline import checkpoint_conversation_message
+from pygent.agent.pygent_v1.graph.pipeline import checkpoint_conversation_message
 from lara.runtime.context import LaraContext
 from lara.runtime.service import LaraRuntimeService
 from lara.schema import AgentSession, CaseDefinition
@@ -378,7 +378,7 @@ async def test_model_calls_stream_live_context_usage() -> None:
             collector = asyncio.create_task(collect(handle))
             await asyncio.wait_for(handle.result(), 30)
             await asyncio.wait_for(collector, 10)
-            usage_events = [data for kind, data in streamed if kind == "lara.context.usage"]
+            usage_events = [data for kind, data in streamed if kind == "pygent.v1.context.usage"]
             assert [(item["last_input_tokens"], item["compression_count"]) for item in usage_events] == [
                 (85045, 0),
                 (86000, 0),

@@ -5,7 +5,7 @@ from typing import Any
 
 from lara.config import load_run_config
 from lara.schema import RunConfig
-from lara.sessions import SessionDirectory, SessionManager, user_lara_root_for
+from lara.sessions import SessionDirectory, SessionManager, user_pygent_root_for
 
 from .models import DispatchDestination, DispatchItem, DispatchItemKind, DispatchTask, DispatchTaskStatus
 from .store import DispatchStore
@@ -106,7 +106,7 @@ class DispatchService:
         try:
             SessionManager(config).load(session_id)
         except FileNotFoundError:
-            directory = SessionDirectory(user_lara_root_for(config.lara_root))
+            directory = SessionDirectory(user_pygent_root_for(config.pygent_root))
             if directory.locate_session(session_id) is None:
                 raise
 

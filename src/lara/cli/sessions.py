@@ -11,7 +11,7 @@ from lara.core.io import plain_object
 from lara.dispatch import DispatchOperationView, DispatchService, DispatchStore
 from lara.orchestration import LocalExecutionHost, ManagedSessionTurn
 from lara.schema import RunConfig
-from lara.sessions import SessionManager, user_lara_root_for
+from lara.sessions import SessionManager, user_pygent_root_for
 
 
 def _execution_host() -> LocalExecutionHost:
@@ -178,7 +178,7 @@ def _session_fork(args: argparse.Namespace) -> dict[str, Any]:
 
 def _dispatch_service(config: RunConfig) -> DispatchService:
     store = DispatchStore(
-        user_lara_root_for(config.lara_root) / "dispatch-v1.sqlite3"
+        user_pygent_root_for(config.pygent_root) / "dispatch-v1.sqlite3"
     )
     return DispatchService(store)
 
@@ -317,7 +317,7 @@ async def _render_turn_events(turn: ManagedSessionTurn) -> bool:
                 if chunk:
                     streamed = True
                     print(chunk, end="", flush=True)
-            elif event.kind == "lara.approval.requested":
+            elif event.kind == "pygent.v1.approval.requested":
                 answer = await asyncio.to_thread(
                     input,
                     f"Approve {data.get('tool_name')} {data.get('arguments')}? [y/N] ",

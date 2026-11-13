@@ -266,7 +266,7 @@ class DispatchScheduler:
                 case_id="automation",
                 submission_id=item.item_id,
                 interactive_approvals=False,
-                message_kind=message.kind or "lara.automation.trigger",
+                message_kind=message.kind or "pygent.v1.automation.trigger",
                 message_data=dict(data) if isinstance(data, dict) else {},
                 session_title=(
                     f"定时任务：{task.name}"
@@ -532,7 +532,7 @@ class DispatchScheduler:
         )
         try:
             await asyncio.to_thread(
-                SessionCollaborationStore(config.lara_root).enqueue_message,
+                SessionCollaborationStore(config.pygent_root).enqueue_message,
                 submission_id=f"operation-completion:{item.item_id}",
                 fingerprint=hashlib.sha256(content.encode("utf-8")).hexdigest(),
                 source_session_id=target_session_id,
