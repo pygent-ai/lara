@@ -450,7 +450,7 @@ test("parseSseEvents decodes named events and JSON payloads", () => {
   const events = parseSseEvents(
     [
       "event: execution.event",
-      'data: {"execution_id":"exec1","sequence":1,"kind":"lara.chat.started","data":{"session_id":"s1"}}',
+      'data: {"execution_id":"exec1","sequence":1,"kind":"pygent.v1.chat.started","data":{"session_id":"s1"}}',
       "",
       ": keep-alive",
       "",
@@ -464,7 +464,7 @@ test("parseSseEvents decodes named events and JSON payloads", () => {
   assert.deepEqual(events, [
     {
       event: "execution.event",
-      data: { execution_id: "exec1", sequence: 1, kind: "lara.chat.started", data: { session_id: "s1" } },
+      data: { execution_id: "exec1", sequence: 1, kind: "pygent.v1.chat.started", data: { session_id: "s1" } },
     },
     {
       event: "execution.event",
@@ -484,7 +484,7 @@ test("streamChat keeps reading when an event handler throws", async () => {
         new Response(
           [
             "event: execution.event\n",
-            'data: {"execution_id":"exec1","sequence":1,"kind":"lara.chat.started","data":{}}\n\n',
+            'data: {"execution_id":"exec1","sequence":1,"kind":"pygent.v1.chat.started","data":{}}\n\n',
             "event: execution.event\n",
             'data: {"execution_id":"exec1","sequence":2,"kind":"model.text.delta","data":{"text":"hello"}}\n\n',
             'event: execution.event\ndata: {"execution_id":"exec1","sequence":3,"kind":"execution.completed","data":{}}\n\n',
@@ -511,7 +511,7 @@ test("streamChat keeps reading when an event handler throws", async () => {
     console.error = previousConsoleError;
   }
 
-  assert.deepEqual(seen, ["lara.chat.started", "model.text.delta", "execution.completed"]);
+  assert.deepEqual(seen, ["pygent.v1.chat.started", "model.text.delta", "execution.completed"]);
 });
 
 test("streamChat resumes the same run after a stream read failure", async () => {
@@ -536,7 +536,7 @@ test("streamChat resumes the same run after a stream read failure", async () => 
                 encoder.encode(
                   [
                     "event: execution.event\n",
-                    'data: {"execution_id":"exec1","sequence":1,"kind":"lara.chat.started","data":{"session_id":"s1"}}\n\n',
+                    'data: {"execution_id":"exec1","sequence":1,"kind":"pygent.v1.chat.started","data":{"session_id":"s1"}}\n\n',
                   ].join(""),
                 ),
               );
@@ -573,7 +573,7 @@ test("streamChat resumes the same run after a stream read failure", async () => 
     },
   );
 
-  assert.deepEqual(seen, ["lara.chat.started", "model.text.delta", "execution.completed"]);
+  assert.deepEqual(seen, ["pygent.v1.chat.started", "model.text.delta", "execution.completed"]);
   assert.equal(calls.length, 2);
   assert.equal(calls[1].execution_id, "exec1");
   assert.equal(calls[1].after_sequence, 1);
@@ -590,7 +590,7 @@ test("streamChat reconnects after premature EOF even after a long running task",
       calls.push(JSON.parse(init.body));
       if (calls.length === 1) {
         now = 120_000;
-        return new Response('event: execution.event\ndata: {"execution_id":"exec-long","sequence":10,"kind":"lara.chat.started","data":{}}\n\n');
+        return new Response('event: execution.event\ndata: {"execution_id":"exec-long","sequence":10,"kind":"pygent.v1.chat.started","data":{}}\n\n');
       }
       return new Response('event: execution.event\ndata: {"execution_id":"exec-long","sequence":11,"kind":"execution.completed","data":{}}\n\n');
     }});
@@ -639,7 +639,7 @@ test("streamChat forwards workspace attachment paths in the request body", async
   const client = createApiClient({ fetchImpl: async (url, init) => {
     calls.push(JSON.parse(init.body));
     return new Response(
-      'event: execution.event\ndata: {"execution_id":"exec1","sequence":1,"kind":"lara.chat.started","data":{}}\n\n' +
+      'event: execution.event\ndata: {"execution_id":"exec1","sequence":1,"kind":"pygent.v1.chat.started","data":{}}\n\n' +
       'event: execution.event\ndata: {"execution_id":"exec1","sequence":2,"kind":"execution.completed","data":{}}\n\n',
       { status: 200, headers: { "Content-Type": "text/event-stream" } },
     );
@@ -677,7 +677,7 @@ test("streamChat reconnects when the event stream goes silent mid-run", async (t
           new ReadableStream({
             start(controller) {
               controller.enqueue(encoder.encode(
-                'event: execution.event\ndata: {"execution_id":"exec1","sequence":1,"kind":"lara.chat.started","data":{}}\n\n',
+                'event: execution.event\ndata: {"execution_id":"exec1","sequence":1,"kind":"pygent.v1.chat.started","data":{}}\n\n',
               ));
               init.signal.addEventListener("abort", () =>
                 controller.error(new DOMException("The operation was aborted.", "AbortError")));
@@ -752,7 +752,7 @@ test("streamChat keeps a quiet stream alive while keep-alive comments arrive", a
             // First chunk is a real event so the run has an execution_id to
             // resume; every later chunk is a keep-alive-only quiet period.
             const text = chunksSent === 0
-              ? 'event: execution.event\ndata: {"execution_id":"exec1","sequence":1,"kind":"lara.chat.started","data":{}}\n\n'
+              ? 'event: execution.event\ndata: {"execution_id":"exec1","sequence":1,"kind":"pygent.v1.chat.started","data":{}}\n\n'
               : ": keep-alive\n\n";
             chunksSent += 1;
             await nextChunk();
@@ -810,7 +810,7 @@ test("streamChat gives up on a persistently silent stream instead of spinning fo
         new ReadableStream({
           start(controller) {
             controller.enqueue(encoder.encode(
-              'event: execution.event\ndata: {"execution_id":"exec1","sequence":1,"kind":"lara.chat.started","data":{}}\n\n',
+              'event: execution.event\ndata: {"execution_id":"exec1","sequence":1,"kind":"pygent.v1.chat.started","data":{}}\n\n',
             ));
             init.signal.addEventListener("abort", () =>
               controller.error(new DOMException("The operation was aborted.", "AbortError")));

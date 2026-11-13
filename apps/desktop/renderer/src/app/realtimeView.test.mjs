@@ -45,7 +45,7 @@ test("view mode persists per session", () => {
 });
 
 test("finalizer reminders are internal in both views", () => {
-  const row = { id: "r1", role: "user", kind: "lara.realtime.finalizer", content: "提醒" };
+  const row = { id: "r1", role: "user", kind: "pygent.v1.realtime.finalizer", content: "提醒" };
   assert.equal(isInternalMessage(row), true);
   assert.equal(displayRowsForView([row], "front").length, 0);
   assert.equal(displayRowsForView([row], "back").length, 0);
@@ -171,7 +171,7 @@ test("off mode (realtime disabled) passes rows through untouched", () => {
       content: "普通会话的回答",
       sections: [{ type: "tool" }],
     },
-    { id: "internal", role: "user", kind: "lara.realtime.finalizer", content: "提醒" },
+    { id: "internal", role: "user", kind: "pygent.v1.realtime.finalizer", content: "提醒" },
   ];
   assert.equal(displayRowsForView(rows, "off"), rows);
 });
@@ -179,7 +179,7 @@ test("off mode (realtime disabled) passes rows through untouched", () => {
 test("front filtering composes with speak history rows", () => {
   const rows = [
     { id: "u1", role: "user", content: "任务" },
-    { id: "internal", role: "user", kind: "lara.realtime.finalizer", content: "提醒" },
+    { id: "internal", role: "user", kind: "pygent.v1.realtime.finalizer", content: "提醒" },
     {
       id: "a1",
       role: "assistant",
