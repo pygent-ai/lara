@@ -6,9 +6,9 @@ from pygent import AIMessage, UserMessage
 from pygent.runtime.codec import context_from_dict, context_to_dict, message_to_dict
 from pygent.runtime.context_codec import ContextCodecRegistry
 
-from lara.runtime.agent.common import _initial_lara_context
+from pygent.agent.pygent_v1.graph.common import _initial_pygent_context as _initial_lara_context
 from lara.runtime.context import LARA_CONTEXT_CODEC, LARA_CONTEXT_CODECS, LaraContext
-from lara.runtime.file_effect_models import DeferredFileEffectJob
+from pygent.agent.pygent_v1.runtime.file_effect_models import DeferredFileEffectJob
 
 
 def test_lara_context_keeps_model_projection_and_native_commits_distinct() -> None:

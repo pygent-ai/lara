@@ -36,7 +36,7 @@ class RepairWorkflowTests(unittest.TestCase):
 
     def test_plan_skips_passed_run(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            config = RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
+            config = RunConfig(workspace_root=tmp, pygent_root=Path(tmp) / ".lara")
             manager = SessionManager(config)
             session = manager.create("passing-case")
             run = manager.start_case_run(session.session_id, "passing-case", run_config=config)
@@ -88,7 +88,7 @@ class RepairGateStatusTests(unittest.TestCase):
 
 
 def _failed_run(tmp: str):
-    config = RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
+    config = RunConfig(workspace_root=tmp, pygent_root=Path(tmp) / ".lara")
     manager = SessionManager(config)
     session = manager.create("failing-case")
     run = manager.start_case_run(session.session_id, "failing-case", run_config=config)

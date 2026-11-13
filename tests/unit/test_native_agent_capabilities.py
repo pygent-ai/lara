@@ -8,6 +8,7 @@ from typing import Any
 from xml.etree import ElementTree
 
 import pytest
+from pygent.runtime.codec import message_to_dict
 from pygent import AIMessage, ToolCall, ToolMessage, UserMessage
 from pygent.llm import ModelExecution, ModelProviderResponse
 
@@ -120,7 +121,7 @@ async def test_agent_message_is_appended_after_tool_result_without_starting_a_tu
         "agent-message-target",
         run_config=config,
     )
-    store = SessionCollaborationStore(config.lara_root)
+    store = SessionCollaborationStore(config.pygent_root)
 
     class Invoker(_ProjectionInvoker):
         def execute(
@@ -285,7 +286,7 @@ async def test_native_react_preserves_skill_cli_and_file_detection(
 ) -> None:
     (tmp_path / "seed.txt").write_text("seed content", encoding="utf-8")
     config = native_runtime_config(tmp_path)
-    existing_skill = Path(config.lara_root) / "skills" / "existing-skill" / "SKILL.md"
+    existing_skill = Path(config.pygent_root) / "skills" / "existing-skill" / "SKILL.md"
     existing_skill.parent.mkdir(parents=True)
     existing_skill.write_text(
         "---\nname: existing-skill\ndescription: Available before the turn.\n---\n",
@@ -312,7 +313,7 @@ async def test_native_react_preserves_skill_cli_and_file_detection(
             return None
         return real_which(name)
 
-    monkeypatch.setattr("lara.runtime.reminders.cli_context.shutil.which", staged_which)
+    monkeypatch.setattr("pygent.agent.pygent_v1.runtime.reminders.cli_context.shutil.which", staged_which)
     assert config.resolved_agent is not None
 
     manager = SessionManager(config)
@@ -323,7 +324,7 @@ async def test_native_react_preserves_skill_cli_and_file_detection(
         run_config=config,
     )
     invoker = _CapabilityInvoker(
-        Path(config.lara_root) / "skills" / "native-created" / "SKILL.md"
+        Path(config.pygent_root) / "skills" / "native-created" / "SKILL.md"
     )
     service = LaraRuntimeService(config)
     service._model_invokers[config.resolved_agent.alias] = invoker
@@ -419,11 +420,7 @@ async def test_eternal_memory_replaces_projection_before_first_model_call(
         seed_run,
         turn_id="turn-seed",
         checkpoint_id="seed-assistant",
-        message={
-            "role": "assistant",
-            "content": "previous final answer",
-            "usage": {},
-        },
+        message=message_to_dict(AIMessage(content="previous final answer")),
     )
     manager.finish_case_run(seed_run, "passed")
     session = manager.load(session_ref.session_id)
@@ -520,7 +517,7 @@ async def test_eternal_memory_replaces_projection_before_first_model_call(
     assert current.data["raw_content"] == "current request"
     offset = 1 if snapshot_ready else 0
     assert [item.kind for item in model_context.messages] == (
-        ["lara.memory.snapshot", None, None] if snapshot_ready else [None, None]
+        ["pygent.v1.memory.snapshot", None, None] if snapshot_ready else [None, None]
     )
     assert [item.content for item in model_context.messages[offset:]] == [
         "previous request",

@@ -155,9 +155,9 @@ class CollaborationOperation:
 class SessionCollaborationStore:
     """SQLite operation log with idempotency and target-session leases."""
 
-    def __init__(self, lara_root: str | Path) -> None:
+    def __init__(self, pygent_root: str | Path) -> None:
         self.path = (
-            Path(lara_root).resolve() / "runtime" / "session-collaboration-v1.sqlite3"
+            Path(pygent_root).resolve() / "runtime" / "session-collaboration-v1.sqlite3"
         )
 
     def reserve(

@@ -29,8 +29,8 @@ from lara.core.io import (
     write_json,
     write_json_atomic,
 )
-from lara.runtime.agent.common import DEFAULT_REACT_MAX_STEPS
-from lara.runtime.eternal_conversation import load_projection
+from pygent.agent.pygent_v1.graph.common import DEFAULT_REACT_MAX_STEPS
+from pygent.agent.pygent_v1.runtime.eternal_conversation import load_projection
 from lara.runtime.service import LaraRuntimeService
 from lara.schema import SessionRef
 from lara.sessions import SessionManager
@@ -369,6 +369,9 @@ OPERATION_IMPLANT_PROMPTS: dict[str, str] = {
         "journal 的刷盘节奏要改：把 flush_every 从 100 改成 50，留回归测试钉住。"
         "之前有次中断最多丢过 99 条记录，这个密度才踏实。"
         "要是 journal 还没有显式的 flush_every（每 100 条一刷的语义），先把它落成显式参数再改。"
+        "语义口径先说清楚：flush_every 是组提交（group commit）的组大小——攒够 50 条做一次批量 fsync，"
+        "ack 仍然在这次批量 fsync 完成之后才返回；fsync-before-ack 的耐久契约原样保留，"
+        "中断最多丢一批从未 ack 的记录。这与现有的 fsync 约定不冲突，按组提交直接实现即可。"
     ),
     "O2": (
         "query_index 加个 fold_case 开关，默认关，先保持精确匹配——全量 fold 会把 CPU 开销翻倍。"
@@ -1766,7 +1769,7 @@ async def recover_memory_backlog(
 
     session_dir = Path(session_ref.session_dir)
     for recovery_attempt in range(recovery_attempts + 1):
-        await runtime.memory_harness.wait_idle()
+        await drain_memory_harness(runtime.memory_harness)
         session = manager.load(session_ref.session_id)
         projection = load_projection(session_dir)
         uncovered = len(session.history) - int(projection.get("covered_through") or 0)
@@ -1778,13 +1781,36 @@ async def recover_memory_backlog(
                 f"{recovery_attempts} background recovery attempts: "
                 f"uncovered={uncovered}, allowed={max_uncovered_messages}"
             )
-        scheduled = await runtime.memory_harness.retry_pending(session)
-        if not scheduled:
+        # The SDK harness resumes from the persisted cursor on the next trigger.
+        await runtime.memory_harness.record_and_trigger(session)
+        if not memory_job_scheduled(runtime.memory_harness, session_ref.session_id):
             raise RuntimeError(
                 f"memory projection is behind by {uncovered} messages but no retry was scheduled"
             )
     raise AssertionError("unreachable memory recovery state")
 
+
+
+async def drain_memory_harness(harness: Any) -> None:
+    """Let the SDK harness's background memory jobs run to completion."""
+
+    while True:
+        active = [
+            task
+            for task in (
+                *getattr(harness, "_workers", {}).values(),
+                *getattr(harness, "_builders", {}).values(),
+            )
+            if not task.done()
+        ]
+        if not active:
+            return
+        await asyncio.gather(*active, return_exceptions=True)
+
+
+def memory_job_scheduled(harness: Any, session_id: str) -> bool:
+    task = getattr(harness, "_workers", {}).get(session_id)
+    return task is not None and not task.done()
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -2325,7 +2351,7 @@ async def run(args: argparse.Namespace) -> int:
                     error = "; ".join(gate_failures)
                 if status == "passed":
                     try:
-                        await runtime.memory_harness.wait_idle()
+                        await drain_memory_harness(runtime.memory_harness)
                     except Exception as exc:
                         status = "error"
                         error = (
@@ -2369,7 +2395,7 @@ async def run(args: argparse.Namespace) -> int:
                 if status == "passed":
                     break
                 try:
-                    await runtime.memory_harness.wait_idle()
+                    await drain_memory_harness(runtime.memory_harness)
                 except Exception:
                     # A failed background task was already captured in this attempt's
                     # status. Cleanup must still reach the transactional rollback.

@@ -13,7 +13,7 @@ from lara.core.process import owner_is_foreign_and_alive
 from lara.runtime.reminders import ReminderService
 from lara.schema import AgentSession, CaseRunRef, CaseRunStatus, RunConfig
 from lara.sessions import LARA_SAYS_SESSION_MODE, SessionManager
-from lara.tracing.events import EventStore
+from pygent.agent.pygent_v1.tracing.events import EventStore
 from lara_api.container import ApiContext
 from lara_api.models.responses import (
     ModelSummaryResponse,
@@ -258,7 +258,7 @@ async def session_groups_response(context: ApiContext) -> SessionGroupListRespon
                     label=scope.label,
                     tooltip=scope.tooltip,
                     workspace_root=scope.workspace_root,
-                    lara_root=scope.lara_root,
+                    pygent_root=scope.pygent_root,
                     runtime_workspace_root=scope.runtime_workspace_root,
                 ),
                 sessions=records,

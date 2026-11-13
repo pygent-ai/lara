@@ -4,11 +4,11 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from lara.core.paths import project_lara_root, user_lara_root
+from lara.core.paths import project_pygent_root, user_pygent_root
 
 
 def default_state_path() -> Path:
-    user_root = user_lara_root()
+    user_root = user_pygent_root()
     return user_root / "gui" / "state.json"
 
 
@@ -189,19 +189,19 @@ class SessionScope:
     label: str
     tooltip: str
     workspace_root: str | None
-    lara_root: str
+    pygent_root: str
     runtime_workspace_root: str
 
 
 # The dedicated realtime session is one user-level scope outside every
 # project workspace: storage derives from its own workspace path through the
-# standard project_lara_root rule, so switching the selected project never
+# standard project_pygent_root rule, so switching the selected project never
 # orphans it.
-LARA_SAYS_SCOPE_ID = "lara-says"
+LARA_SAYS_SCOPE_ID = "pygent.v1-says"
 
 
 def build_session_scopes(state: GuiProjectState, *, active_workspace_root: str | None = None) -> list[SessionScope]:
-    user_root = user_lara_root()
+    user_root = user_pygent_root()
     conversation_root = user_root / "conversations"
     project_paths = list(state.recent_project_paths or [])
     if active_workspace_root:
@@ -225,7 +225,7 @@ def build_session_scopes(state: GuiProjectState, *, active_workspace_root: str |
                 tooltip=str(project),
                 workspace_root=str(project),
                 runtime_workspace_root=str(project),
-                lara_root=str(project_lara_root(project)),
+                pygent_root=str(project_pygent_root(project)),
             )
         )
 
@@ -239,7 +239,7 @@ def build_session_scopes(state: GuiProjectState, *, active_workspace_root: str |
             tooltip="The dedicated realtime conversation session",
             workspace_root=None,
             runtime_workspace_root=str(says_root / "workspace"),
-            lara_root=str(says_root),
+            pygent_root=str(says_root),
         )
     )
     scopes.append(
@@ -249,7 +249,7 @@ def build_session_scopes(state: GuiProjectState, *, active_workspace_root: str |
             tooltip="Conversations without a project path",
             workspace_root=None,
             runtime_workspace_root=str((conversation_root / "workspace").resolve()),
-            lara_root=str(conversation_root.resolve()),
+            pygent_root=str(conversation_root.resolve()),
         )
     )
     return scopes

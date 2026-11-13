@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lara.core.paths import project_lara_root
+from lara.core.paths import project_pygent_root
 from tests.native_config_support import native_model_config_yaml
 
 
@@ -23,8 +23,8 @@ class RepairFlowScenarioTests(unittest.TestCase):
                 "USERPROFILE": str(root / "home"),
             }
             _write_no_api_config(root)
-            (project_lara_root(root, root / "home" / ".lara")).mkdir(parents=True)
-            (project_lara_root(root, root / "home" / ".lara") / "repair.json").write_text(
+            (project_pygent_root(root, root / "home" / ".lara")).mkdir(parents=True)
+            (project_pygent_root(root, root / "home" / ".lara") / "repair.json").write_text(
                 json.dumps({"commands": [[sys.executable, "-c", "print('gate passed')"]]}),
                 encoding="utf-8",
             )

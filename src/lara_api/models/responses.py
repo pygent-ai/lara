@@ -13,7 +13,7 @@ class HealthResponse(BaseModel):
 class RuntimeConfigResponse(BaseModel):
     approvals_enabled: bool
     workspace_root: str
-    lara_root: str
+    pygent_root: str
     agent: str
     model_configuration_status: str
     model_configuration_error: str | None
@@ -22,7 +22,7 @@ class RuntimeConfigResponse(BaseModel):
     model_groups: dict[str, dict[str, Any]]
     default_model_group: str | None
     retry: dict[str, Any]
-    user_lara_root: str
+    user_pygent_root: str
     max_steps: int
     context_window: int | None
     context_compression_trigger_ratio: float
@@ -33,7 +33,7 @@ class ProjectResponse(BaseModel):
     scope_id: str
     label: str
     workspace_root: str | None
-    lara_root: str
+    pygent_root: str
     tooltip: str = ""
 
 
@@ -82,7 +82,7 @@ class SessionScopeResponse(BaseModel):
     label: str
     tooltip: str
     workspace_root: str | None
-    lara_root: str
+    pygent_root: str
     runtime_workspace_root: str
 
 

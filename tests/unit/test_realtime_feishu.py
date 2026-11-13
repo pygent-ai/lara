@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from lara.runtime.realtime.feishu import FeishuChannel, load_feishu_channels
-from lara.runtime.realtime.speak import SILENT_ACKNOWLEDGEMENT, SPEAK_TOOL_SPEC
+from pygent.agent.pygent_v1.runtime.realtime.speak import SILENT_ACKNOWLEDGEMENT, SPEAK_TOOL_SPEC
 from lara.runtime.service import _SpeakExecutor
 
 
@@ -199,7 +199,7 @@ def test_speak_executor_forwards_delivered_text_to_channels() -> None:
         await asyncio.gather(*executor._delivery_tasks)
 
     asyncio.run(_run())
-    assert events[0]["kind"] == "lara.realtime.speak"
+    assert events[0]["kind"] == "pygent.v1.realtime.speak"
     assert events[0]["data"]["text"] == "给飞书也来一份"
     assert delivered == ["给飞书也来一份"]
 

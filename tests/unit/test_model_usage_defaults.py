@@ -10,8 +10,8 @@ from pygent.llm._adapter_contracts import ModelProviderStreamPart
 from pygent.llm._stream_accumulator import ModelStreamAccumulator
 from pygent.llm.layer import _message_effect_value, _message_from_effect
 
-from lara.runtime.agent.core import LaraAgent
-from lara.runtime.agent.pipeline import checkpoint_conversation_message
+from pygent.agent.pygent_v1.graph.core import PygentAgent as LaraAgent
+from pygent.agent.pygent_v1.graph.pipeline import checkpoint_conversation_message
 from lara.runtime.context import LaraContext
 from lara.runtime.service import LaraRuntimeService
 from lara.sessions import SessionManager
@@ -24,7 +24,7 @@ def model_agent(tmp_path):
     mapping["connections"]["shared"]["credential"] = {"none": True}
     config = RunConfig(
         workspace_root=tmp_path,
-        lara_root=tmp_path / ".lara",
+        pygent_root=tmp_path / ".lara",
         model_config_mapping=mapping,
         resolved_agent=ResolvedAgentConfig(
             alias="default", default_model_group="coding"
@@ -197,7 +197,7 @@ async def test_usage_after_finish_survives_native_session_storage(tmp_path):
         "reasoning_tokens": 14,
         "cached_input_tokens": 0,
     }
-    messages = list(Path(config.lara_root).glob("sessions/**/messages.jsonl"))
+    messages = list(Path(config.pygent_root).glob("sessions/**/messages.jsonl"))
     assert messages
     for path in messages:
         rows = [

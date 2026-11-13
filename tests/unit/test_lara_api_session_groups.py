@@ -12,7 +12,7 @@ from httpx import ASGITransport, AsyncClient
 from lara.core.io import read_json, write_json
 from lara.schema import ResolvedAgentConfig, RunConfig
 from lara.sessions import SessionManager
-from lara.tracing.events import EventStore
+from pygent.agent.pygent_v1.tracing.events import EventStore
 from lara_api.app import create_app
 from lara_api.dependencies import ApiContext
 from lara_api.services.session_service import SessionService, _first_user_message_from_events, session_service_for_scope
@@ -89,25 +89,25 @@ def test_lara_says_session_lives_in_its_own_user_level_scope(tmp_path: Path, mon
     config = RunConfig(workspace_root=str(project))
     context = ApiContext(workspace_root=str(project), state_path=str(tmp_path / "state.json"), _config=config)
 
-    created = asyncio.run(create_session(CreateSessionRequest(mode="lara-says"), context=context))
-    again = asyncio.run(create_session(CreateSessionRequest(mode="lara-says"), context=context))
+    created = asyncio.run(create_session(CreateSessionRequest(mode="pygent.v1-says"), context=context))
+    again = asyncio.run(create_session(CreateSessionRequest(mode="pygent.v1-says"), context=context))
 
-    assert created.scope_id == "lara-says"
-    assert created.session_id == "lara-says"
-    assert again.session_id == "lara-says"
-    dedicated_root = tmp_path / ".lara" / "lara-says"
-    session_dir = dedicated_root / "sessions" / "lara-says"
+    assert created.scope_id == "pygent.v1-says"
+    assert created.session_id == "pygent.v1-says"
+    assert again.session_id == "pygent.v1-says"
+    dedicated_root = tmp_path / ".lara" / "pygent.v1-says"
+    session_dir = dedicated_root / "sessions" / "pygent.v1-says"
     assert session_dir.is_dir()
     assert (dedicated_root / "workspace").is_dir()
 
-    loaded = get_session("lara-says", scope_id="lara-says", context=context)
-    assert loaded.session.mode == "lara-says"
-    assert loaded.session.scope_id == "lara-says"
+    loaded = get_session("pygent.v1-says", scope_id="pygent.v1-says", context=context)
+    assert loaded.session.mode == "pygent.v1-says"
+    assert loaded.session.scope_id == "pygent.v1-says"
 
     groups = {group.scope.scope_id: group for group in asyncio.run(session_groups_response(context)).groups}
-    assert groups["lara-says"].scope.label == "Lara说"
-    assert groups["lara-says"].scope.workspace_root is None
-    assert [item.session_id for item in groups["lara-says"].sessions] == ["lara-says"]
+    assert groups["pygent.v1-says"].scope.label == "Lara说"
+    assert groups["pygent.v1-says"].scope.workspace_root is None
+    assert [item.session_id for item in groups["pygent.v1-says"].sessions] == ["pygent.v1-says"]
 
 
 def test_existing_conversation_scope_can_select_new_group_model(tmp_path: Path, monkeypatch) -> None:
@@ -257,7 +257,7 @@ def test_idle_session_can_switch_group_with_preferred_child(tmp_path: Path) -> N
     mapping["model_groups"]["spare-group"] = {"models": ["spare"]}
     config = RunConfig(
         workspace_root=str(tmp_path),
-        lara_root=str(Path(tmp_path) / ".lara"),
+        pygent_root=str(Path(tmp_path) / ".lara"),
         model_config_mapping=mapping,
         resolved_agent=ResolvedAgentConfig(
             alias="default", default_model_group="coding"
@@ -645,7 +645,7 @@ def test_session_groups_ignore_project_lara_yaml(tmp_path: Path) -> None:
     assert [group.scope.scope_id for group in response.groups] == [
         f"project:{invalid_project.resolve()}",
         f"project:{active_project.resolve()}",
-        "lara-says",
+        "pygent.v1-says",
         "conversation",
     ]
 
@@ -654,7 +654,7 @@ def test_session_list_uses_first_user_message_as_title_when_metadata_title_is_mi
     manager = SessionManager(
         RunConfig(
             workspace_root=str(tmp_path),
-            lara_root=str((tmp_path / ".lara").resolve()),
+            pygent_root=str((tmp_path / ".lara").resolve()),
         )
     )
     ref = manager.create("chat", mode="chat")
@@ -677,15 +677,15 @@ def test_session_list_includes_the_dedicated_lara_says_session(tmp_path: Path) -
     manager = SessionManager(
         RunConfig(
             workspace_root=str(tmp_path),
-            lara_root=str((tmp_path / ".lara").resolve()),
+            pygent_root=str((tmp_path / ".lara").resolve()),
         )
     )
-    manager.create("chat", mode="lara-says")
+    manager.create("chat", mode="pygent.v1-says")
     regular = manager.create("chat", mode="chat")
 
     records = SessionService(manager).list_chat_sessions()
 
-    assert {record.mode for record in records} == {"chat", "lara-says"}
+    assert {record.mode for record in records} == {"chat", "pygent.v1-says"}
     assert any(record.session_id == regular.session_id for record in records)
 
     # Non-chat work sessions (e.g. automation runs) stay hidden from the sidebar.
@@ -697,7 +697,7 @@ def test_session_list_ignores_incomplete_metadata_only_sessions(tmp_path: Path) 
     manager = SessionManager(
         RunConfig(
             workspace_root=str(tmp_path),
-            lara_root=str((tmp_path / ".lara").resolve()),
+            pygent_root=str((tmp_path / ".lara").resolve()),
         )
     )
     valid = manager.create("chat", mode="chat")

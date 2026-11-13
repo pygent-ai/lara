@@ -15,7 +15,7 @@ class EvaluatorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "README.md").write_text("stable", encoding="utf-8")
-            config = RunConfig(workspace_root=root, lara_root=root / ".lara")
+            config = RunConfig(workspace_root=root, pygent_root=root / ".lara")
             manager = SessionManager(config)
             session = manager.create("case-a")
             run = manager.start_case_run(
@@ -56,7 +56,7 @@ class EvaluatorTests(unittest.TestCase):
 
     def test_fails_missing_answer_and_required_tool(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            config = RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
+            config = RunConfig(workspace_root=tmp, pygent_root=Path(tmp) / ".lara")
             manager = SessionManager(config)
             session = manager.create("case-a")
             run = manager.start_case_run(session.session_id, "case-a")

@@ -5,6 +5,8 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from pygent import AIMessage, UserMessage
+from pygent.runtime.codec import message_to_dict
 from pygent.runtime.codec import context_from_dict
 
 from lara.runtime.context import LARA_CONTEXT_CODECS, LaraContext
@@ -16,13 +18,8 @@ from tests.runtime_recovery_support import recovery_service
 def _seed_transcript(manager: SessionManager, session_id: str) -> None:
     session = manager.load(session_id)
     session.history = [
-        {"role": "user", "content": f"prior question {'x' * 50_000}"},
-        {
-            "role": "assistant",
-            "content": "prior answer",
-            "tool_calls": [],
-            "usage": {},
-        },
+        message_to_dict(UserMessage(content=f"prior question {'x' * 50_000}")),
+        message_to_dict(AIMessage(content="prior answer")),
     ]
     manager.save(session)
 

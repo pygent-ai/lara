@@ -6,7 +6,7 @@ import pytest
 from pygent import AIMessage, ToolCall, ToolMessage, ToolResult
 
 from lara.runtime.context import LaraContext
-from lara.runtime.realtime.injection import RealtimeNudgeModule
+from pygent.agent.pygent_v1.runtime.realtime.injection import RealtimeNudgeModule
 from lara.runtime.realtime.nudge import NUDGE_REMINDER
 
 

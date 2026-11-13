@@ -25,7 +25,7 @@ class _FakeEvent:
 
 def _bridge(tmp_path: Path, *, chats=("oc_chat",)) -> FeishuBridge:
     context = SimpleNamespace(
-        config=SimpleNamespace(user_lara_root=str(tmp_path)),
+        config=SimpleNamespace(user_pygent_root=str(tmp_path)),
         chat_registry=SimpleNamespace(),
     )
     bridge = FeishuBridge(context, loop=asyncio.new_event_loop())
@@ -39,7 +39,7 @@ def _bridge(tmp_path: Path, *, chats=("oc_chat",)) -> FeishuBridge:
 
 def test_start_noops_when_bridge_config_missing(tmp_path: Path) -> None:
     context = SimpleNamespace(
-        config=SimpleNamespace(user_lara_root=str(tmp_path)),
+        config=SimpleNamespace(user_pygent_root=str(tmp_path)),
         chat_registry=SimpleNamespace(),
     )
     bridge = FeishuBridge(context)
@@ -78,7 +78,7 @@ def test_relay_sends_a_fresh_turn_when_idle(tmp_path: Path, monkeypatch: pytest.
             pass
 
         async def events(self, *, after=None, log_model_text_deltas=False):
-            yield {"kind": "lara.chat.result"}
+            yield {"kind": "pygent.v1.chat.result"}
             return
 
     class _FakeRegistry:
@@ -96,7 +96,7 @@ def test_relay_sends_a_fresh_turn_when_idle(tmp_path: Path, monkeypatch: pytest.
         lambda context, scope_id: service,
     )
     context = SimpleNamespace(
-        config=SimpleNamespace(user_lara_root=str(tmp_path)),
+        config=SimpleNamespace(user_pygent_root=str(tmp_path)),
         chat_registry=_FakeRegistry(),
     )
     bridge = FeishuBridge(context, loop=asyncio.new_event_loop())
@@ -106,7 +106,7 @@ def test_relay_sends_a_fresh_turn_when_idle(tmp_path: Path, monkeypatch: pytest.
     assert len(recorded) == 1
     request = recorded[0]
     assert request.session_id == "lara-says-1"
-    assert request.scope_id == "lara-says"
+    assert request.scope_id == "pygent.v1-says"
     assert request.message == "帮我看看代码"
 
 
@@ -129,7 +129,7 @@ def test_relay_routes_running_session_to_fork_and_replies(
         list_chat_sessions=lambda: [
             SimpleNamespace(
                 session_id="lara-says-1",
-                mode="lara-says",
+                mode="pygent.v1-says",
                 case_id="chat",
                 last_case_run_status="running",
                 last_case_run_id="run-1",
@@ -148,7 +148,7 @@ def test_relay_routes_running_session_to_fork_and_replies(
     )
 
     context = SimpleNamespace(
-        config=SimpleNamespace(user_lara_root=str(tmp_path)),
+        config=SimpleNamespace(user_pygent_root=str(tmp_path)),
         chat_registry=_FakeRegistry(),
     )
     bridge = FeishuBridge(context, loop=asyncio.new_event_loop())
@@ -189,7 +189,7 @@ def test_relay_falls_back_to_a_turn_when_the_execution_is_gone(
         list_chat_sessions=lambda: [
             SimpleNamespace(
                 session_id="lara-says-1",
-                mode="lara-says",
+                mode="pygent.v1-says",
                 case_id="chat",
                 last_case_run_status="running",
                 last_case_run_id="run-1",
@@ -206,7 +206,7 @@ def test_relay_falls_back_to_a_turn_when_the_execution_is_gone(
     (run_metadata / "run_metadata.json").write_text("{}", encoding="utf-8")
 
     context = SimpleNamespace(
-        config=SimpleNamespace(user_lara_root=str(tmp_path)),
+        config=SimpleNamespace(user_pygent_root=str(tmp_path)),
         chat_registry=_FakeRegistry(),
     )
     bridge = FeishuBridge(context, loop=asyncio.new_event_loop())

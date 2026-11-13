@@ -12,7 +12,7 @@ from .yaml_subset import dump_yaml_subset, parse_yaml_subset
 
 
 def replace_user_model_config(
-    user_lara_root: str | Path,
+    user_pygent_root: str | Path,
     *,
     model_config: dict[str, Any],
     agents: list[dict[str, Any]],
@@ -53,7 +53,7 @@ def replace_user_model_config(
             )
         normalized_agents.append(agent)
 
-    root = Path(user_lara_root).expanduser().resolve()
+    root = Path(user_pygent_root).expanduser().resolve()
     path = root / USER_CONFIG_FILENAME
     data = parse_yaml_subset(path.read_text(encoding="utf-8")) if path.exists() else {}
     data["connections"] = model_config.get("connections", {})
@@ -68,19 +68,19 @@ def replace_user_model_config(
     return _write_config(path, data)
 
 
-def clear_user_model_config(user_lara_root: str | Path) -> Path:
+def clear_user_model_config(user_pygent_root: str | Path) -> Path:
     """Remove model-related settings while preserving unrelated user settings."""
 
-    path = Path(user_lara_root).expanduser().resolve() / USER_CONFIG_FILENAME
+    path = Path(user_pygent_root).expanduser().resolve() / USER_CONFIG_FILENAME
     data = parse_yaml_subset(path.read_text(encoding="utf-8")) if path.exists() else {}
     for key in ("connections", "models", "model_groups", "agents", "agent"):
         data.pop(key, None)
     return _write_config(path, data)
 
 
-def update_user_approvals(user_lara_root: str | Path, *, enabled: bool) -> Path:
+def update_user_approvals(user_pygent_root: str | Path, *, enabled: bool) -> Path:
     """Persist tool approval mode while preserving other runtime settings."""
-    path = Path(user_lara_root).expanduser().resolve() / USER_CONFIG_FILENAME
+    path = Path(user_pygent_root).expanduser().resolve() / USER_CONFIG_FILENAME
     data = parse_yaml_subset(path.read_text(encoding="utf-8")) if path.exists() else {}
     runtime = data.setdefault("runtime", {})
     approvals = runtime.setdefault("approvals", {})

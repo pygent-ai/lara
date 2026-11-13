@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from lara.runtime.realtime.speak import (
+from pygent.agent.pygent_v1.runtime.realtime.speak import (
+    SILENT_ACKNOWLEDGEMENT,
     SPEAK_TOOL_SPEC,
     SpeakArgsError,
     execute_speak,
@@ -112,10 +113,7 @@ def test_execute_speak_silent_skips_renderer() -> None:
     renderer = RecordingRenderer()
     args = parse_speak_args({"say_nothing": True})
     result = execute_speak(args, renderer=renderer)
-    assert result == (
-        "acknowledged (silent). Your decision is recorded - do not call "
-        "speak again; end this turn with a normal plain-text reply."
-    )
+    assert result == SILENT_ACKNOWLEDGEMENT
     assert renderer.calls == []
 
 
@@ -167,7 +165,7 @@ async def test_executor_emits_speak_event(tmp_path: Path) -> None:
     )
     assert result == "delivered"
     assert context.events == [
-        ("lara.realtime.speak", {"text": "干完了", "attachments": []})
+        ("pygent.v1.realtime.speak", {"text": "干完了", "attachments": []})
     ]
 
 
@@ -179,10 +177,7 @@ async def test_executor_say_nothing_emits_nothing() -> None:
         SimpleNamespace(arguments={"say_nothing": True}),
         context,
     )
-    assert result == (
-        "acknowledged (silent). Your decision is recorded - do not call "
-        "speak again; end this turn with a normal plain-text reply."
-    )
+    assert result == SILENT_ACKNOWLEDGEMENT
     assert context.events == []
 
 

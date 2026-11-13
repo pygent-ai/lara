@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lara.core.paths import project_lara_root
+from lara.core.paths import project_pygent_root
 from tests.native_config_support import native_model_config_yaml
 
 
@@ -202,7 +202,7 @@ class CliScenarioTests(unittest.TestCase):
             root = Path(tmp)
             cases_dir = root / "cases"
             cases_dir.mkdir()
-            (project_lara_root(root, root / "home" / ".lara")).mkdir(parents=True)
+            (project_pygent_root(root, root / "home" / ".lara")).mkdir(parents=True)
             pass_case = cases_dir / "pass.yaml"
             pass_case.write_text(
                 "\n".join(
@@ -236,7 +236,7 @@ class CliScenarioTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (
-                project_lara_root(root, root / "home" / ".lara") / "regression.json"
+                project_pygent_root(root, root / "home" / ".lara") / "regression.json"
             ).write_text(
                 json.dumps(
                     {
@@ -541,7 +541,7 @@ class CliScenarioTests(unittest.TestCase):
             self.assertIn("workspace.setup[].path", run.stderr)
             self.assertEqual(outside.read_text(encoding="utf-8"), "safe")
             run_dirs = list(
-                (project_lara_root(root, root / "home" / ".lara") / "sessions").glob(
+                (project_pygent_root(root, root / "home" / ".lara") / "sessions").glob(
                     "*/cases/unsafe-case/runs/*"
                 )
             )
@@ -603,7 +603,7 @@ class CliScenarioTests(unittest.TestCase):
                 prompt_event["payload"]["prompt_text_path"]
             ).read_text(encoding="utf-8")
             static_prompt = (
-                project_lara_root(root, root / "home" / ".lara")
+                project_pygent_root(root, root / "home" / ".lara")
                 / "sessions"
                 / payload["session_id"]
                 / "context"

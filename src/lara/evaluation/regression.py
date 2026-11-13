@@ -98,7 +98,7 @@ class RegressionRunner:
         self.session_manager = session_manager
         self.case_manager = case_manager
         self.evaluator = evaluator
-        self.regressions_root = Path(config.lara_root) / "regressions"
+        self.regressions_root = Path(config.pygent_root) / "regressions"
 
     def run(self, manifest_path: str | Path) -> dict[str, Any]:
         manifest = RegressionManifest.from_file(manifest_path)

@@ -11,8 +11,11 @@ from pygent.llm import ConnectionConfig, ModelConfig, ModelInfo
 from lara.schema import ResolvedAgentConfig, RunConfig
 from lara.runtime.prompt_profile import LARA_BASE_SYSTEM_PROMPT
 from lara.runtime.model_configuration import (
+    lara_credential_environment,
     CLIENT_FACTORIES,
+    DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS,
     CredentialEnvironment,
+    LaraAnthropicMessagesAdapter,
     build_model_invoker,
     builtin_model_catalogs,
     discover_models,
@@ -62,7 +65,7 @@ def native_runtime_config(root, *, group: tuple[str, ...] = ("main", "backup")):
     mapping["connections"]["shared"]["credential"] = {"none": True}
     config = RunConfig(
         workspace_root=str(root),
-        lara_root=str(root / ".lara"),
+        pygent_root=str(root / ".lara"),
         # Test composition root: the kernel raises on an empty prompt, so
         # directly-built configs carry the stock Lara base prompt.
         system_prompt=LARA_BASE_SYSTEM_PROMPT,
@@ -131,12 +134,58 @@ def test_build_model_invoker_wires_media_resolver_into_all_protocols(
     asyncio.run(invoker.aclose())
 
 
+def _anthropic_request(entry, generation):
+    from pygent import Context, UserMessage
+    from pygent.llm import ModelProviderRequest
+
+    return ModelProviderRequest(
+        model_key=entry.key,
+        model=entry.spec,
+        message=UserMessage(content="OK"),
+        context=Context(),
+        generation=generation,
+    )
+
+
+def test_anthropic_requests_default_max_tokens_from_model_limits() -> None:
+    from pygent import GenerationConfig
+
+    config = ModelConfig.from_mapping(native_mapping(protocol="anthropic_messages"))
+    invoker = build_model_invoker(config, credential_environ={"TEST_KEY": "secret"})
+    adapter = invoker._adapters["anthropic_messages"]
+    assert isinstance(adapter, LaraAnthropicMessagesAdapter)
+    entry = config.models["a"]
+
+    body = adapter.build_request(_anthropic_request(entry, GenerationConfig()))
+    assert body["max_tokens"] == 100
+
+    body = adapter.build_request(
+        _anthropic_request(entry, GenerationConfig(max_output_tokens=7))
+    )
+    assert body["max_tokens"] == 7
+    asyncio.run(invoker.aclose())
+
+
+def test_anthropic_requests_fall_back_when_model_has_no_output_limit() -> None:
+    from pygent import GenerationConfig
+
+    mapping = native_mapping(protocol="anthropic_messages")
+    mapping["models"]["a"]["capabilities"]["limits"]["max_output_tokens"] = None
+    config = ModelConfig.from_mapping(mapping)
+    entry = config.models["a"]
+
+    body = LaraAnthropicMessagesAdapter().build_request(
+        _anthropic_request(entry, GenerationConfig())
+    )
+    assert body["max_tokens"] == DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS
+
+
 def test_credential_environment_checks_transient_before_store(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(
-        "lara.runtime.model_configuration.lookup_credential",
-        lambda name, user_lara_root: ("stored", f"keyring:{name}"),
+        "lara.credentials.lookup_credential",
+        lambda name, user_pygent_root: ("stored", f"keyring:{name}"),
     )
-    environ = CredentialEnvironment(tmp_path, transient={"TEST_KEY": "draft"})
+    environ = lara_credential_environment(tmp_path, transient={"TEST_KEY": "draft"})
     assert environ["TEST_KEY"] == "draft"
     assert environ["OTHER_KEY"] == "stored"
 

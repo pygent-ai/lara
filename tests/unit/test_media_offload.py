@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from lara.runtime.agent.media_offload import (
+from pygent.agent.pygent_v1.graph.media_offload import (
     UPLOADS_SUBDIR,
     offload_inline_media,
     offload_remote_media,
@@ -233,7 +233,7 @@ async def test_remote_fetch_failure_keeps_link(tmp_path: Path) -> None:
 async def test_oversized_remote_image_stays_remote(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("lara.runtime.agent.media_offload.MEDIA_MAX_BYTES", 1024)
+    monkeypatch.setattr("pygent.agent.pygent_v1.graph.media_offload.MEDIA_MAX_BYTES", 1024)
     payload = {"content": f"![image]({REMOTE_URL})"}
     result = await offload_remote_media(
         payload, workspace_root=tmp_path, fetch_url=make_fetcher(PNG_BYTES, [])

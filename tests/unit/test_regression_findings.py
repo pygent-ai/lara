@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from lara.config import load_mapping_file, load_run_config
-from lara.core.redaction import REDACTED, redact_secrets
+from pygent.agent.pygent_v1.core.redaction import REDACTED, redact_secrets
 from lara.evaluation import CaseManager
 from lara.schema import CaseRunRef, ContextEvent, RunConfig
 from lara.sessions import SessionManager
@@ -41,7 +41,7 @@ class DocumentationRegressionFindingTests(unittest.TestCase):
 
 
 class ConfigParserRegressionFindingTests(unittest.TestCase):
-    def test_config_is_loaded_from_the_user_lara_root(self) -> None:
+    def test_config_is_loaded_from_the_user_pygent_root(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
             root = Path(tmp) / "workspace"
@@ -189,9 +189,9 @@ class WorkspacePathSafetyRegressionFindingTests(unittest.TestCase):
 class SessionPathSafetyRegressionFindingTests(unittest.TestCase):
     def test_load_rejects_session_id_path_traversal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            config = RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
+            config = RunConfig(workspace_root=tmp, pygent_root=Path(tmp) / ".lara")
             manager = SessionManager(config)
-            escaped = Path(config.lara_root) / "outside"
+            escaped = Path(config.pygent_root) / "outside"
             escaped.mkdir(parents=True)
             (escaped / "session.json").write_text(
                 '{"session_id":"../outside","workspace_root":".","session_dir":".","created_at":"now","updated_at":"now"}',
@@ -204,7 +204,7 @@ class SessionPathSafetyRegressionFindingTests(unittest.TestCase):
     def test_start_case_run_rejects_case_id_path_traversal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             manager = SessionManager(
-                RunConfig(workspace_root=tmp, lara_root=Path(tmp) / ".lara")
+                RunConfig(workspace_root=tmp, pygent_root=Path(tmp) / ".lara")
             )
             session = manager.create("safe")
 

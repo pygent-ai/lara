@@ -1,6 +1,6 @@
 """Tests for the end-of-turn bottom-line decision (D-RT11)."""
 
-from lara.runtime.realtime.turn_finalizer import (
+from pygent.agent.pygent_v1.runtime.realtime.turn_finalizer import (
     TURN_FINALIZER_REMINDER,
     decide_turn_finalization,
 )
@@ -41,8 +41,8 @@ def test_decision_is_deterministic() -> None:
 
 from types import SimpleNamespace
 
-from lara.orchestration.session_execution import SessionExecutionCoordinator
-from lara.runtime.realtime.turn_finalizer import TURN_FINALIZER_REMINDER
+from pygent.agent.pygent_v1.orchestration.session_execution import SessionExecutionCoordinator
+from pygent.agent.pygent_v1.runtime.realtime.turn_finalizer import TURN_FINALIZER_REMINDER
 
 
 def _finalizer_turn(*, enabled=True, history=None, turn_id="t1"):
@@ -56,7 +56,7 @@ def _finalizer_turn(*, enabled=True, history=None, turn_id="t1"):
         run_ref=SimpleNamespace(case_run_id="cr1"),
         manager=SimpleNamespace(
             load=lambda sid: SimpleNamespace(
-                metadata={"mode": "lara-says" if enabled else "chat"},
+                metadata={"mode": "pygent.v1-says" if enabled else "chat"},
                 history=history if history is not None else [{"role": "assistant", "content": "纯文本草稿"}]
             )
         ),
@@ -75,7 +75,7 @@ async def test_finalizer_queues_followup_for_pure_text_ending() -> None:
     await coordinator._maybe_start_finalizer(_finalizer_turn())
     assert len(submitted) == 1
     command = submitted[0]
-    assert command.message_kind == "lara.realtime.finalizer"
+    assert command.message_kind == "pygent.v1.realtime.finalizer"
     assert command.turn_id == "t1:finalize"
     assert command.interactive_approvals is False
     assert "<system-reminder>" in command.message

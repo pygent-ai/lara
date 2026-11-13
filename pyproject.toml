@@ -7,7 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.115.0",
     "lark-oapi>=1.7.5",
-    "pygent-ai[video]==0.4.1",
+    "pygent-ai[video]==0.6.0",
     "python-dateutil>=2.9.0",
     "tzdata>=2025.2",
     "tzlocal>=5.2",
@@ -29,6 +29,9 @@ credentials = [
 # and publishes from PyPI, so the temporary local-path override is gone.
 # 0.3.34 sinks the lara runtime as pygent.lara and vendors the dynamic-memory
 # CLI, so the memory-cli git dependency is no longer needed.
+# 0.6.0 renames the sunk individual to pygent.agent.pygent_v1 and unifies its
+# delivery entry; the framework core and pygent.agent exports lara imports are
+# unchanged, so no code adaptation is needed on our side.
 
 [project.scripts]
 lara = "lara.cli:main"

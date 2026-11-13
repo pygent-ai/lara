@@ -7,6 +7,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from pygent import AIMessage, UserMessage
+from pygent.runtime.codec import message_to_dict
 from pygent import AIMessage, Context, Module, ToolCall, UserMessage, thaw_json
 from pygent.agent import (
     StandaloneUserMessage,
@@ -19,10 +21,10 @@ from pygent.llm import ModelConfig
 from pygent.runtime import ExecutionOptions
 from pygent.tool import AgentToolExecutor
 
-from lara.runtime.agent.prompt_models import PromptRenderContext
+from pygent.agent.pygent_v1.graph.prompt_models import PromptRenderContext
 from lara.runtime.prompt_profile import _render_available_tools_prompt
 from lara.runtime.context import LaraContext
-from lara.runtime.file_effects import FileEffectBaselineStore
+from pygent.agent.pygent_v1.runtime.file_effects import FileEffectBaselineStore
 from lara.runtime.service import (
     PROJECTION_OPERATION_METADATA_KEY,
     LaraRuntimeService,
@@ -77,7 +79,7 @@ async def test_prepare_turn_waits_for_initial_reminder_before_model_start(
 ) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    config = RunConfig(workspace_root=workspace, lara_root=workspace / ".lara")
+    config = RunConfig(workspace_root=workspace, pygent_root=workspace / ".lara")
     manager = SessionManager(config)
     session = manager.create("chat", mode="chat")
     run_ref = manager.start_case_run(session.session_id, "chat", run_config=config)
@@ -429,10 +431,10 @@ async def test_eternal_turn_uses_native_projection_replacement() -> None:
         session_ref = manager.create(case_id="chat", mode="agent", eternal_memory=True)
         session = manager.load(session_ref.session_id)
         session.history = [
-            {"role": "user", "content": "covered user"},
-            {"role": "assistant", "content": "covered answer", "usage": {}},
-            {"role": "user", "content": "working user"},
-            {"role": "assistant", "content": "working answer", "usage": {}},
+            message_to_dict(UserMessage(content="covered user")),
+            message_to_dict(AIMessage(content="covered answer")),
+            message_to_dict(UserMessage(content="working user")),
+            message_to_dict(AIMessage(content="working answer")),
         ]
         manager.save(session)
         state_dir = Path(session.session_dir) / "state"
@@ -461,10 +463,10 @@ async def test_eternal_turn_uses_native_projection_replacement() -> None:
             assert isinstance(operation, ReplaceMessageProjection)
             assert operation.expected_revision == context.projection_revision + 1
             assert [item.kind for item in operation.messages] == [
-                "lara.memory.snapshot",
+                "pygent.v1.memory.snapshot",
                 None,
                 None,
-                "lara.chat.turn",
+                "pygent.v1.chat.turn",
             ]
             assert [item.content for item in operation.messages[1:3]] == [
                 "working user",
@@ -488,11 +490,9 @@ async def test_eternal_turn_keeps_unbounded_session_history_out_of_pygent_invoca
         session_ref = manager.create(case_id="large-native", mode="chat", eternal_memory=True)
         session = manager.load(session_ref.session_id)
         session.history = [
-            {
-                "role": "user" if index % 2 == 0 else "assistant",
-                "content": f"message-{index}",
-                **({"usage": {}} if index % 2 else {}),
-            }
+            message_to_dict(
+                (UserMessage if index % 2 == 0 else AIMessage)(content=f"message-{index}")
+            )
             for index in range(30_000)
         ]
         manager.save(session)

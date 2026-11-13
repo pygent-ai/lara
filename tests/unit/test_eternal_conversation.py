@@ -13,18 +13,18 @@ from pygent.tool import StandardTools
 from pygent.runtime.codec import message_to_dict
 
 from tests.unit.test_model_configuration import native_runtime_config
-from lara.runtime.eternal_conversation import (
+from pygent.agent.pygent_v1.runtime.eternal_conversation import (
     BUILDER_GUIDANCE,
     EXTRACTOR_GUIDANCE,
     MAX_MEMORY_JOB_ATTEMPTS,
-    MEMORY_JOB_FALLBACK_FOREGROUND_PROMPT,
     DynamicMemoryCli,
     EternalConversationHarness,
     MemoryJobContext,
     MemoryJobRequest,
     estimate_context_tokens,
     load_projection,
-    render_memory_context,
+    render_memory_access_instruction,
+    render_memory_snapshot,
 )
 from lara.runtime.service import LaraRuntimeService
 from lara.schema import EternalConversationConfig, RunConfig
@@ -42,6 +42,32 @@ SCRIPT = (
 
 def _memory_cli_for(request: MemoryJobRequest) -> DynamicMemoryCli:
     return DynamicMemoryCli(SCRIPT, request.context.memory_root)
+
+
+_FOREGROUND_PROMPT = "You are the test foreground agent."
+
+
+def _render_memory_context(session_dir, projection) -> str:
+    """Compose the two SDK renderers the way the pipeline and service do."""
+
+    return (
+        f"{render_memory_access_instruction(session_dir, projection)}\n"
+        f"{render_memory_snapshot(projection)}"
+    )
+
+
+async def _drain(harness: EternalConversationHarness) -> None:
+    """Let the SDK harness's background jobs run to completion (tests only)."""
+
+    while True:
+        active = [
+            task
+            for task in (*harness._workers.values(), *harness._builders.values())
+            if not task.done()
+        ]
+        if not active:
+            return
+        await asyncio.gather(*active, return_exceptions=True)
 
 
 async def _publish_via_cli(
@@ -76,7 +102,7 @@ async def _publish_via_cli(
         / f"proposal-{request.context.covered_through + 1}-{request.context.target_cursor}.json"
     )
     path.write_text(json.dumps(proposal, ensure_ascii=False), encoding="utf-8")
-    await cli.file_command("publish-pending", proposal, path.name)
+    await cli.call("publish-pending", "--file", str(path))
 
 
 class _SeamScriptedState:
@@ -122,6 +148,8 @@ async def test_memory_job_runner_forks_extractor_and_runs_builder_as_child(
     config = native_runtime_config(tmp_path)
     service = object.__new__(LaraRuntimeService)
     service.config = config
+    service._credential_environ = None
+    service._closed = False
     service._memory_job_tools = StandardTools(
         workspace_root=str(tmp_path), restrict_to_workspace=False
     )
@@ -133,11 +161,11 @@ async def test_memory_job_runner_forks_extractor_and_runs_builder_as_child(
         return model
 
     monkeypatch.setattr(
-        "lara.runtime.service.build_model_layer_factory",
+        "pygent.agent.pygent_v1.runtime.service.build_model_layer_factory",
         lambda *_args, **_kwargs: model_factory,
     )
     monkeypatch.setattr(
-        "lara.runtime.service.LaraAgent",
+        "pygent.agent.pygent_v1.runtime.service.PygentAgent",
         lambda *_args, **_kwargs: _StubMemoryLaraAgent(),
     )
     monkeypatch.setattr(
@@ -214,53 +242,6 @@ async def test_memory_job_runner_forks_extractor_and_runs_builder_as_child(
     assert builder_message.content == "build directive"
 
 
-@pytest.mark.asyncio
-async def test_wait_idle_isolates_failed_background_job_from_foreground() -> None:
-    async def fail() -> None:
-        raise ValueError("bad extractor output")
-
-    harness = EternalConversationHarness(
-        EternalConversationConfig(enabled=True),
-        run_memory_job=lambda *_args: asyncio.sleep(0, result="done"),
-    )
-    harness._workers["session-1"] = asyncio.create_task(fail())
-
-    await harness.wait_idle()
-    assert harness._workers == {}
-
-
-@pytest.mark.asyncio
-async def test_retry_pending_restarts_only_the_failed_memory_job(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
-    manager = SessionManager(config)
-    ref = manager.create("retry-memory", mode="chat")
-    session = manager.load(ref.session_id)
-    session_dir = Path(session.session_dir)
-    (session_dir / "state").mkdir(parents=True, exist_ok=True)
-    (session_dir / "state" / "eternal-harness.json").write_text(
-        json.dumps({"requested_cursor": 5}), encoding="utf-8"
-    )
-    (session_dir / "state" / "eternal-conversation.json").write_text(
-        json.dumps({"covered_through": 2}), encoding="utf-8"
-    )
-    harness = EternalConversationHarness(
-        EternalConversationConfig(enabled=True),
-        run_memory_job=lambda *_args: asyncio.sleep(0, result="done"),
-    )
-    resumed: list[str] = []
-
-    async def resumed_job(session_id: str, _session_dir: Path) -> None:
-        resumed.append(session_id)
-
-    monkeypatch.setattr(harness, "_guarded_extract_loop", resumed_job)
-
-    assert await harness.retry_pending(session) is True
-    assert await harness.retry_pending(session) is False
-    await harness.wait_idle()
-
-    assert resumed == [session.session_id]
 
 
 def test_eternal_trigger_config_validation() -> None:
@@ -301,7 +282,7 @@ def test_estimate_context_tokens_counts_snapshot_plus_uncovered_tail() -> None:
 async def test_context_ratio_trigger_defers_extraction_below_threshold(
     tmp_path: Path,
 ) -> None:
-    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
+    config = RunConfig(workspace_root=str(tmp_path), pygent_root=str(tmp_path / ".lara"))
     manager = SessionManager(config)
     ref = manager.create("chat", mode="chat")
     session = manager.load(ref.session_id)
@@ -313,11 +294,12 @@ async def test_context_ratio_trigger_defers_extraction_below_threshold(
             extraction_trigger="context_ratio",
             extraction_trigger_ratio=0.7,
         ),
+        foreground_system_prompt=_FOREGROUND_PROMPT,
         run_memory_job=lambda *_args: asyncio.sleep(0, result="done"),
     )
 
     await harness.record_and_trigger(session, context_window_tokens=1_000_000)
-    await harness.wait_idle()
+    await _drain(harness)
 
     state = json.loads(
         (Path(ref.session_dir) / "state" / "eternal-harness.json").read_text(
@@ -338,7 +320,7 @@ async def test_context_ratio_trigger_defers_extraction_below_threshold(
 async def test_context_ratio_trigger_spawns_extraction_at_threshold(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
+    config = RunConfig(workspace_root=str(tmp_path), pygent_root=str(tmp_path / ".lara"))
     manager = SessionManager(config)
     ref = manager.create("chat", mode="chat")
     session = manager.load(ref.session_id)
@@ -350,6 +332,7 @@ async def test_context_ratio_trigger_spawns_extraction_at_threshold(
             extraction_trigger="context_ratio",
             extraction_trigger_ratio=0.7,
         ),
+        foreground_system_prompt=_FOREGROUND_PROMPT,
         run_memory_job=lambda *_args: asyncio.sleep(0, result="done"),
     )
     started: list[str] = []
@@ -360,7 +343,7 @@ async def test_context_ratio_trigger_spawns_extraction_at_threshold(
     monkeypatch.setattr(harness, "_guarded_extract_loop", extract)
 
     await harness.record_and_trigger(session, context_window_tokens=1_000)
-    await harness.wait_idle()
+    await _drain(harness)
 
     assert started == [ref.session_id]
     state = json.loads(
@@ -376,7 +359,7 @@ async def test_context_ratio_trigger_spawns_extraction_at_threshold(
 async def test_context_ratio_trigger_falls_back_without_window_budget(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
+    config = RunConfig(workspace_root=str(tmp_path), pygent_root=str(tmp_path / ".lara"))
     manager = SessionManager(config)
     ref = manager.create("chat", mode="chat")
     session = manager.load(ref.session_id)
@@ -388,6 +371,7 @@ async def test_context_ratio_trigger_falls_back_without_window_budget(
             extraction_trigger="context_ratio",
             extraction_trigger_ratio=0.7,
         ),
+        foreground_system_prompt=_FOREGROUND_PROMPT,
         run_memory_job=lambda *_args: asyncio.sleep(0, result="done"),
     )
     started: list[str] = []
@@ -398,7 +382,7 @@ async def test_context_ratio_trigger_falls_back_without_window_budget(
     monkeypatch.setattr(harness, "_guarded_extract_loop", extract)
 
     await harness.record_and_trigger(session, context_window_tokens=None)
-    await harness.wait_idle()
+    await _drain(harness)
 
     assert started == [ref.session_id]
 
@@ -407,7 +391,7 @@ async def test_context_ratio_trigger_falls_back_without_window_budget(
 async def test_turn_trigger_extraction_ignores_window_budget(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
+    config = RunConfig(workspace_root=str(tmp_path), pygent_root=str(tmp_path / ".lara"))
     manager = SessionManager(config)
     ref = manager.create("chat", mode="chat")
     session = manager.load(ref.session_id)
@@ -415,6 +399,7 @@ async def test_turn_trigger_extraction_ignores_window_budget(
     manager.save(session)
     harness = EternalConversationHarness(
         EternalConversationConfig(enabled=True),
+        foreground_system_prompt=_FOREGROUND_PROMPT,
         run_memory_job=lambda *_args: asyncio.sleep(0, result="done"),
     )
     started: list[str] = []
@@ -425,7 +410,7 @@ async def test_turn_trigger_extraction_ignores_window_budget(
     monkeypatch.setattr(harness, "_guarded_extract_loop", extract)
 
     await harness.record_and_trigger(session, context_window_tokens=1_000_000)
-    await harness.wait_idle()
+    await _drain(harness)
 
     assert started == [ref.session_id]
     state = json.loads(
@@ -444,7 +429,7 @@ async def test_memory_workers_do_not_inherit_foreground_execution_context(
         "test_foreground_scope", default=None
     )
     observed = []
-    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
+    config = RunConfig(workspace_root=str(tmp_path), pygent_root=str(tmp_path / ".lara"))
     manager = SessionManager(config)
     ref = manager.create("chat", mode="chat")
     session = manager.load(ref.session_id)
@@ -486,12 +471,13 @@ async def test_memory_workers_do_not_inherit_foreground_execution_context(
 
     harness = EternalConversationHarness(
         EternalConversationConfig(enabled=True, dynamic_memory_cli_path=str(SCRIPT)),
+        foreground_system_prompt=_FOREGROUND_PROMPT,
         run_memory_job=run_memory_job,
     )
     token = foreground_scope.set("active-foreground-execution")
     try:
         await harness.record_and_trigger(manager.load(ref.session_id))
-        await harness.wait_idle()
+        await _drain(harness)
     finally:
         foreground_scope.reset(token)
 
@@ -593,7 +579,7 @@ def test_cli_publish_is_not_silently_truncated(tmp_path: Path) -> None:
 def test_memory_context_requires_clarification_for_unacknowledged_conflicts(
     tmp_path: Path,
 ) -> None:
-    prompt = render_memory_context(
+    prompt = _render_memory_context(
         tmp_path,
         {
             "snapshot": {},
@@ -619,7 +605,7 @@ def test_memory_context_requires_clarification_for_unacknowledged_conflicts(
 def test_memory_context_requires_memory_search_evidence_for_conflicts(
     tmp_path: Path,
 ) -> None:
-    prompt = render_memory_context(
+    prompt = _render_memory_context(
         tmp_path,
         {
             "snapshot": {},
@@ -647,14 +633,14 @@ def test_memory_context_requires_memory_search_evidence_for_conflicts(
 def test_memory_context_conflict_evidence_falls_back_to_raw_history(
     tmp_path: Path,
 ) -> None:
-    prompt = render_memory_context(tmp_path, {"snapshot": {}, "covered_through": 4})
+    prompt = _render_memory_context(tmp_path, {"snapshot": {}, "covered_through": 4})
     assert "perform the same two lookups directly against Raw History" in prompt
     assert "the only permitted tool calls are the required memory searches" in prompt
     assert "repeat that exact original term" in prompt
 
 
 def test_memory_context_explains_automatic_journaling(tmp_path: Path) -> None:
-    prompt = render_memory_context(tmp_path, {"snapshot": {}, "covered_through": 4})
+    prompt = _render_memory_context(tmp_path, {"snapshot": {}, "covered_through": 4})
     assert "Memory publication is automatic and asynchronous" in prompt
     assert "you may promise the user that something will be remembered" in prompt
     assert "do not claim loss" in prompt
@@ -673,7 +659,7 @@ def test_memory_context_explains_automatic_journaling(tmp_path: Path) -> None:
 def test_unpublished_memory_does_not_advertise_an_uninstalled_command(
     tmp_path: Path, projection: dict
 ) -> None:
-    prompt = render_memory_context(tmp_path, projection)
+    prompt = _render_memory_context(tmp_path, projection)
     assert "Memory search is not available" in prompt
     assert "Do not invoke or invent a memory CLI command" in prompt
     assert "Search command:" not in prompt
@@ -685,7 +671,7 @@ def test_unpublished_memory_does_not_advertise_an_uninstalled_command(
 
 def test_published_memory_uses_the_explicit_command(tmp_path: Path) -> None:
     command = '"C:/Python/python.exe" "C:/Memory Tools/dynamic_memory_cli.py" --root "C:/Session/memory"'
-    prompt = render_memory_context(tmp_path, {"memory_cli_command": command})
+    prompt = _render_memory_context(tmp_path, {"memory_cli_command": command})
     assert f"Search command: {command} search <keyword-or-key-phrase>" in prompt
     assert "Memory search is not available" not in prompt
 
@@ -715,7 +701,7 @@ def test_extractor_retains_named_entities_as_retrievable_memory() -> None:
 async def test_harness_records_raw_history_publishes_snapshot_and_builds_memory(
     tmp_path: Path,
 ) -> None:
-    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
+    config = RunConfig(workspace_root=str(tmp_path), pygent_root=str(tmp_path / ".lara"))
     manager = SessionManager(config)
     ref = manager.create("chat", mode="chat")
     session = manager.load(ref.session_id)
@@ -772,10 +758,11 @@ async def test_harness_records_raw_history_publishes_snapshot_and_builds_memory(
             builder_agent_alias="builder",
             dynamic_memory_cli_path=str(SCRIPT),
         ),
+        foreground_system_prompt=_FOREGROUND_PROMPT,
         run_memory_job=run_memory_job,
     )
     await harness.record_and_trigger(manager.load(ref.session_id))
-    await harness.wait_idle()
+    await _drain(harness)
 
     projection = load_projection(ref.session_dir)
     assert projection["covered_through"] == 2
@@ -790,12 +777,12 @@ async def test_harness_records_raw_history_publishes_snapshot_and_builds_memory(
     extractor_request = requests[0]
     assert extractor_request.role == "extractor"
     # legacy sessions with no stored prompt get the explicit fallback
-    assert extractor_request.system_prompt == MEMORY_JOB_FALLBACK_FOREGROUND_PROMPT
+    assert extractor_request.system_prompt == _FOREGROUND_PROMPT
     assert [entry["content"] for entry in extractor_request.history_range] == [
         "Use blue deployments for this service.",
         "I will preserve blue deployments as a constraint.",
     ]
-    assert extractor_request.directive.startswith("<system-reminder>")
+    assert extractor_request.directive.startswith("<memory-extract-instruction>")
     assert "publish-pending" in extractor_request.directive
     assert "Old Snapshot" in extractor_request.directive
     assert requests[0].label != requests[1].label
@@ -832,7 +819,7 @@ async def test_harness_records_raw_history_publishes_snapshot_and_builds_memory(
 async def test_harness_retries_invalid_proposal_and_only_freezes_uncovered_history(
     tmp_path: Path,
 ) -> None:
-    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
+    config = RunConfig(workspace_root=str(tmp_path), pygent_root=str(tmp_path / ".lara"))
     manager = SessionManager(config)
     ref = manager.create("chat", mode="chat")
     requests: list[MemoryJobRequest] = []
@@ -889,6 +876,7 @@ async def test_harness_retries_invalid_proposal_and_only_freezes_uncovered_histo
 
     harness = EternalConversationHarness(
         EternalConversationConfig(enabled=True, dynamic_memory_cli_path=str(SCRIPT)),
+        foreground_system_prompt=_FOREGROUND_PROMPT,
         run_memory_job=run_memory_job,
     )
     session = manager.load(ref.session_id)
@@ -900,7 +888,7 @@ async def test_harness_retries_invalid_proposal_and_only_freezes_uncovered_histo
     await harness.record_and_trigger(
         session, model_envelope={"system_prompt": "host", "tools": []}
     )
-    await harness.wait_idle()
+    await _drain(harness)
 
     session = manager.load(ref.session_id)
     session.history.extend(
@@ -908,7 +896,7 @@ async def test_harness_retries_invalid_proposal_and_only_freezes_uncovered_histo
     )
     manager.save(session)
     await harness.record_and_trigger(session)
-    await harness.wait_idle()
+    await _drain(harness)
 
     extractor_requests = [
         request for request in requests if request.role == "extractor"
@@ -941,7 +929,7 @@ async def test_harness_retries_invalid_proposal_and_only_freezes_uncovered_histo
 async def test_failed_builder_keeps_pending_ut_and_recovers_without_rolling_back_turn(
     tmp_path: Path,
 ) -> None:
-    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
+    config = RunConfig(workspace_root=str(tmp_path), pygent_root=str(tmp_path / ".lara"))
     manager = SessionManager(config)
     ref = manager.create("chat", mode="chat")
     session = manager.load(ref.session_id)
@@ -991,10 +979,11 @@ async def test_failed_builder_keeps_pending_ut_and_recovers_without_rolling_back
 
     harness = EternalConversationHarness(
         EternalConversationConfig(enabled=True, dynamic_memory_cli_path=str(SCRIPT)),
+        foreground_system_prompt=_FOREGROUND_PROMPT,
         run_memory_job=run_memory_job,
     )
     await harness.record_and_trigger(manager.load(ref.session_id))
-    await harness.wait_idle()  # Background failure must not fail the foreground turn.
+    await _drain(harness)  # Background failure must not fail the foreground turn.
 
     import sqlite3
 
@@ -1016,7 +1005,7 @@ async def test_failed_builder_keeps_pending_ut_and_recovers_without_rolling_back
     # A later foreground trigger restarts only the recoverable memory job. The
     # already-persisted foreground history and the Pending UT remain unchanged.
     await harness.record_and_trigger(manager.load(ref.session_id))
-    await harness.wait_idle()
+    await _drain(harness)
 
     with sqlite3.connect(database) as connection:
         built = connection.execute(
@@ -1033,7 +1022,7 @@ async def test_failed_builder_keeps_pending_ut_and_recovers_without_rolling_back
 
 
 def test_memory_job_limits_match_the_validated_background_budget() -> None:
-    from lara.runtime.agent.common import DEFAULT_REACT_MAX_STEPS
+    from pygent.agent.pygent_v1.graph.common import DEFAULT_REACT_MAX_STEPS
     from lara.runtime.service import MEMORY_JOB_LIMITS
 
     assert MEMORY_JOB_LIMITS.max_steps == DEFAULT_REACT_MAX_STEPS
@@ -1045,7 +1034,7 @@ def test_memory_job_limits_match_the_validated_background_budget() -> None:
 async def test_close_cancels_stuck_job_quickly_and_next_turn_reruns(
     tmp_path: Path,
 ) -> None:
-    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
+    config = RunConfig(workspace_root=str(tmp_path), pygent_root=str(tmp_path / ".lara"))
     manager = SessionManager(config)
     ref = manager.create("chat", mode="chat")
     session = manager.load(ref.session_id)
@@ -1063,6 +1052,7 @@ async def test_close_cancels_stuck_job_quickly_and_next_turn_reruns(
 
     harness = EternalConversationHarness(
         EternalConversationConfig(enabled=True, dynamic_memory_cli_path=str(SCRIPT)),
+        foreground_system_prompt=_FOREGROUND_PROMPT,
         run_memory_job=stuck_memory_job,
     )
     await harness.record_and_trigger(manager.load(ref.session_id))
@@ -1102,10 +1092,11 @@ async def test_close_cancels_stuck_job_quickly_and_next_turn_reruns(
 
     resumed = EternalConversationHarness(
         EternalConversationConfig(enabled=True, dynamic_memory_cli_path=str(SCRIPT)),
+        foreground_system_prompt=_FOREGROUND_PROMPT,
         run_memory_job=resumed_memory_job,
     )
     await resumed.record_and_trigger(manager.load(ref.session_id))
-    await resumed.wait_idle()
+    await _drain(resumed)
 
     projection = load_projection(ref.session_dir)
     assert projection["covered_through"] == 4

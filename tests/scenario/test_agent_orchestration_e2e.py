@@ -298,7 +298,7 @@ async def test_parent_agent_fanout_send_wait_any_and_callbacks_persist(
     assert invoker.slow_callback_seen
     assert invoker.slow_message_seen
 
-    reopened = SessionCollaborationStore(config.lara_root)
+    reopened = SessionCollaborationStore(config.pygent_root)
     operations = reopened.list_operations(parent.session_id)
     assert {item.operation_id for item in operations} == {
         invoker.fast_operation_id,

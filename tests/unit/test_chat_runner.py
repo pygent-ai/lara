@@ -240,7 +240,7 @@ async def test_nonterminal_durable_execution_is_recovered_instead_of_only_attach
         async def result(self):
             return AIMessage(
                 content="recovered",
-                kind="lara.chat.result",
+                kind="pygent.v1.chat.result",
                 data={"result": {"status": "passed"}},
             ), Context()
 
@@ -550,7 +550,7 @@ async def test_same_session_creates_next_case_run_only_after_finalization(
             await releases[self.index].wait()
             return AIMessage(
                 content="done",
-                kind="lara.chat.result",
+                kind="pygent.v1.chat.result",
                 data={"result": {"status": "passed"}},
             ), Context()
 
@@ -673,7 +673,7 @@ async def _async_value(value):
 
 def test_resume_miss_finalize_decision_respects_the_run_owner(tmp_path) -> None:
     manager = SessionManager(
-        RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
+        RunConfig(workspace_root=str(tmp_path), pygent_root=str(tmp_path / ".lara"))
     )
     chat = manager.create("chat", mode="chat")
     ref = manager.start_case_run(chat.session_id, "chat")
@@ -706,7 +706,7 @@ async def test_resume_continues_a_resumable_terminal_run_with_a_fresh_turn(
         async def result(self):
             return AIMessage(
                 content="continued",
-                kind="lara.chat.result",
+                kind="pygent.v1.chat.result",
                 data={"result": {"status": "passed"}},
             ), Context()
 
@@ -858,7 +858,7 @@ async def test_resume_finalizes_a_dead_start_and_continues(
         async def result(self):
             return AIMessage(
                 content="continued",
-                kind="lara.chat.result",
+                kind="pygent.v1.chat.result",
                 data={"result": {"status": "passed"}},
             ), Context()
 
@@ -1017,7 +1017,7 @@ class _StubRegistry(ChatRunRegistry):
 
 async def test_deliver_steering_routes_to_interrupt_for_lara_says_session() -> None:
     service = _StubRuntimeService(enabled=True)
-    registry = _StubRegistry(_StubActive(service, mode="lara-says"))
+    registry = _StubRegistry(_StubActive(service, mode="pygent.v1-says"))
     receipt = await registry.deliver_steering(
         "execution-1", session_id="session-1", input_id="input-1",
         message="进度如何",

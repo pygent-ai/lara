@@ -31,7 +31,7 @@ class SecretsTests(unittest.TestCase):
             )
             os.environ["DEEPSEEK_API_KEY"] = "process-key"
             try:
-                load_credentials(user_lara_root=user_root)
+                load_credentials(user_pygent_root=user_root)
                 value, source = lookup_credential("DEEPSEEK_API_KEY")
             finally:
                 os.environ.pop("DEEPSEEK_API_KEY", None)
@@ -51,7 +51,7 @@ class SecretsTests(unittest.TestCase):
                 "OPENAI_API_KEY=project-key\n", encoding="utf-8"
             )
             os.environ.pop("OPENAI_API_KEY", None)
-            sources = load_credentials(user_lara_root=user_root)
+            sources = load_credentials(user_pygent_root=user_root)
             self.assertIn("file:" + str(user_root / "credentials.env"), sources)
             self.assertNotIn("file:" + str(root / ".env.local"), sources)
 
@@ -69,12 +69,12 @@ class SecretsTests(unittest.TestCase):
             self.assertEqual(read_env_entries(path)["DEV_API_KEY"], "secret-value")
             self.assertEqual(list_user_credential_names(user_root), ["DEV_API_KEY"])
             self.assertTrue(
-                credential_is_configured("DEV_API_KEY", user_lara_root=user_root)
+                credential_is_configured("DEV_API_KEY", user_pygent_root=user_root)
             )
             self.assertTrue(delete_user_credential(user_root, "DEV_API_KEY"))
             self.assertEqual(list_user_credential_names(user_root), [])
             self.assertFalse(
-                credential_is_configured("DEV_API_KEY", user_lara_root=user_root)
+                credential_is_configured("DEV_API_KEY", user_pygent_root=user_root)
             )
 
     def test_write_env_entries_preserves_other_keys(self) -> None:
@@ -156,7 +156,7 @@ class SecretsTests(unittest.TestCase):
             os.environ["DEV_API_KEY"] = "stale-process-key"
             try:
                 value, source = lookup_credential(
-                    "DEV_API_KEY", user_lara_root=user_root
+                    "DEV_API_KEY", user_pygent_root=user_root
                 )
             finally:
                 os.environ.pop("DEV_API_KEY", None)

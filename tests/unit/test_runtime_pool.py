@@ -26,7 +26,7 @@ class _Runtime:
 def _config(tmp_path, *, max_steps: int = -1) -> RunConfig:
     return RunConfig(
         workspace_root=tmp_path,
-        lara_root=tmp_path / ".lara",
+        pygent_root=tmp_path / ".lara",
         max_steps=max_steps,
     )
 
@@ -59,23 +59,37 @@ async def test_same_generation_reuses_one_runtime(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_pool_injects_host_collaboration_into_new_runtime(tmp_path) -> None:
-    created: list[_Runtime] = []
-    collaboration = object()
+async def test_api_context_binds_collaboration_and_lara_runtime(tmp_path, monkeypatch) -> None:
+    from lara.runtime.service import LaraRuntimeService
+    from lara_api.container import ApiContext
 
-    def factory(config, **kwargs):
-        assert kwargs["collaboration"] is collaboration
-        runtime = _Runtime(config, **kwargs)
-        created.append(runtime)
-        return runtime
+    created: list[dict] = []
 
-    pool = WorkspaceRuntimePool(runtime_factory=factory)
-    pool.attach_collaboration(collaboration)
-    lease = await pool.acquire(config=_config(tmp_path))
+    def fake_init(self, config, *, collaboration=None, dispatch=None, **kwargs):
+        created.append({"collaboration": collaboration, "kwargs": kwargs})
+        self.config = config
 
-    assert len(created) == 1
-    await lease.release()
-    await pool.close(cancel=True)
+    async def fake_initialize(self):
+        return None
+
+    async def fake_close(self, *, cancel=True):
+        return None
+
+    monkeypatch.setattr(LaraRuntimeService, "__init__", fake_init)
+    monkeypatch.setattr(LaraRuntimeService, "initialize", fake_initialize)
+    monkeypatch.setattr(LaraRuntimeService, "close", fake_close)
+
+    context = ApiContext(workspace_root=str(tmp_path))
+    context._config = _config(tmp_path)
+    lease = await context.acquire_runtime()
+    try:
+        assert len(created) == 1
+        assert created[0]["collaboration"] is context.session_collaboration
+        assert created[0]["kwargs"]["prompt_registry"] is not None
+        assert type(lease.runtime.manager).__module__ == "lara.sessions.manager"
+    finally:
+        await lease.release()
+        await context.aclose()
 
 
 @pytest.mark.asyncio

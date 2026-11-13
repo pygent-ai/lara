@@ -8,6 +8,7 @@ from typing import Any
 
 from pygent import AIMessage, ToolCall, ToolMessage, UserMessage
 from pygent.llm import ModelExecution, ModelProviderResponse
+from pygent.runtime.codec import message_to_dict
 
 from lara.config import load_run_config
 from tests.unit.test_model_configuration import native_runtime_config
@@ -100,13 +101,8 @@ async def crash_at_boundary(
         # sizeable, still-compressible history.
         session = manager.load(session_ref.session_id)
         session.history = [
-            {"role": "user", "content": f"durable prior context {'x' * 50_000}"},
-            {
-                "role": "assistant",
-                "content": "prior answer",
-                "tool_calls": [],
-                "usage": {},
-            },
+            message_to_dict(UserMessage(content=f"durable prior context {'x' * 50_000}")),
+            message_to_dict(AIMessage(content="prior answer")),
         ]
         manager.save(session)
         turn_message = f"recover this turn {'y' * 30_000}"
@@ -115,8 +111,8 @@ async def crash_at_boundary(
         "recovery",
         run_config=config,
     )
-    import lara.runtime.agent.core as core_module
-    import lara.runtime.agent.pipeline as pipeline_module
+    import pygent.agent.pygent_v1.graph.core as core_module
+    import pygent.agent.pygent_v1.graph.pipeline as pipeline_module
 
     original = pipeline_module.checkpoint_conversation_message
 

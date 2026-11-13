@@ -17,7 +17,7 @@ from lara.orchestration import (
     SessionExecutionCoordinator,
     SessionTurnService,
 )
-from lara.runtime.attachments import resolve_attachments
+from pygent.agent.pygent_v1.runtime.attachments import resolve_attachments
 from lara.schema import CaseRunRef, CaseRunStatus
 from lara.sessions import realtime_enabled_for
 from lara_api.container import ApiContext
@@ -58,7 +58,7 @@ _TERMINAL_EVENTS = {
 def _with_run_timing(
     event: ExecutionEvent, manager: Any, ref: CaseRunRef
 ) -> ExecutionEvent:
-    if event.kind not in _TERMINAL_EVENTS | {"execution.started", "lara.chat.started"}:
+    if event.kind not in _TERMINAL_EVENTS | {"execution.started", "pygent.v1.chat.started"}:
         return event
     return event.model_copy(
         update={
@@ -328,7 +328,7 @@ class ChatRunRegistry:
         request: ChatTurnRequest,
         *,
         message: str,
-        message_kind: str = "lara.chat.turn",
+        message_kind: str = "pygent.v1.chat.turn",
         message_data: dict[str, object] | None = None,
     ) -> ActiveChatRun:
         service = session_service_for_scope(context, request.scope_id)
@@ -556,7 +556,7 @@ class ChatRunRegistry:
             if attachments:
                 raise ValueError("实时插话暂不支持附件，请先移除附件后重试。")
             outcome = await active.runtime_service.send_interrupt(
-                execution_id, manager=active.manager, run_ref=active.run_ref,
+                manager=active.manager,
                 session_id=session_id, input_id=input_id, message=message or "",
             )
             if outcome.speak_args is not None:

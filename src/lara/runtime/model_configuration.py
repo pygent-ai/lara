@@ -1,7 +1,11 @@
+"""lora 产品层补充；基础实现全部来自 SDK ``pygent.agent.pygent_v1.runtime.model_configuration``。"""
+
 from __future__ import annotations
+
 
 import os
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +15,7 @@ from pygent.core import FrozenJsonObject
 from pygent.llm import (
     AnthropicMessagesAdapter,
     AnthropicMessagesClient,
+    ModelProviderRequest,
     CapabilityPresetCatalog,
     GeminiGenerateContentAdapter,
     GeminiGenerateContentClient,
@@ -34,233 +39,45 @@ from pygent.llm import (
 
 from lara.credentials import list_user_credential_names, lookup_credential
 
-from .attachments import MEDIA_MAX_BYTES
-from .agent.model_invoker import LaraModelInvoker
+from pygent.agent.pygent_v1.runtime.attachments import MEDIA_MAX_BYTES
+from pygent.agent.pygent_v1.graph.model_invoker import PygentModelInvoker
+
+import pygent.agent.pygent_v1.runtime.model_configuration as _sdk_model_configuration
+from pygent.agent.pygent_v1.runtime.model_configuration import (  # noqa: F401
+    CLIENT_FACTORIES,
+    CredentialEnvironment,
+    build_model_invoker,
+    preferred_models,
+    preferred_profile_name,
+    workspace_media_resolver,
+    _create_client,
+)
 
 
-CLIENT_FACTORIES: dict[str, Any] = {
-    "openai_chat_completions": OpenAICompatibleClient,
-    "openai_responses": OpenAIResponsesClient,
-    "anthropic_messages": AnthropicMessagesClient,
-    "gemini_generate_content": GeminiGenerateContentClient,
-}
+# Anthropic Messages 的 ``max_tokens`` 是必填字段,而 agent 链路构造的
+# ``GenerationConfig`` 不带 ``max_output_tokens``,导致走该协议的模型在
+# build_request 阶段就被拒绝。这里把模型声明的 ``limits.max_output_tokens``
+# 作为请求默认值补上;模型未声明上限时回退到 Anthropic 文档中的通用下限。
+DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS = 4096
 
 
-class CredentialEnvironment(Mapping[str, str]):
-    """Resolve native environment references across Lara credential sources."""
-
-    def __init__(
-        self,
-        user_lara_root: str | Path,
-        *,
-        transient: Mapping[str, str] | None = None,
-    ) -> None:
-        self.user_lara_root = Path(user_lara_root).expanduser().resolve()
-        self.transient = {
-            key: value for key, value in dict(transient or {}).items() if value
-        }
-
-    def __getitem__(self, key: str) -> str:
-        if key in self.transient:
-            return self.transient[key]
-        value, _ = lookup_credential(key, user_lara_root=self.user_lara_root)
-        if value is None:
-            raise KeyError(key)
-        return value
-
-    def __iter__(self) -> Iterator[str]:
-        return iter(
-            set(self.transient)
-            | set(os.environ)
-            | set(list_user_credential_names(self.user_lara_root))
-        )
-
-    def __len__(self) -> int:
-        return len(set(iter(self)))
-
-
-class _OwnedProviderClient:
-    """Close an injected HTTP client that Pygent intentionally treats as borrowed."""
-
-    def __init__(self, inner: ModelProviderClient, http_client: httpx.AsyncClient) -> None:
-        self.inner = inner
-        self.http_client = http_client
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self.inner, name)
-
-    async def invoke(
-        self, model: ModelSpec, payload: FrozenJsonObject
-    ) -> FrozenJsonObject:
-        return await self.inner.invoke(model, payload)
-
-    def stream(
-        self, model: ModelSpec, payload: FrozenJsonObject
-    ) -> AsyncIterator[FrozenJsonObject]:
-        return self.inner.stream(model, payload)
-
-    async def aclose(self) -> None:
-        try:
-            await self.inner.aclose()
-        finally:
-            await self.http_client.aclose()
-
-
-def preferred_profile_name(model_key: str) -> str:
-    if not isinstance(model_key, str) or not model_key:
-        raise ValueError("model_key must be a non-empty string")
-    return f"preferred:{model_key}"
-
-
-def preferred_models(
-    config: ModelConfig, group_name: str, preferred_model_key: str
-) -> tuple[ModelEntry, ...]:
-    try:
-        group = config.model_groups[group_name]
-    except KeyError:
-        raise ValueError(f"unknown model group {group_name!r}") from None
-    by_name = {entry.key: entry for entry in group.models}
-    if preferred_model_key not in by_name:
-        raise ValueError(
-            f"model {preferred_model_key!r} is not in group {group_name!r}"
-        )
-    return (
-        by_name[preferred_model_key],
-        *(entry for entry in group.models if entry.key != preferred_model_key),
-    )
-
-
-def workspace_media_resolver(
-    workspace_root: str | Path,
-) -> Callable[[MediaSource], bytes]:
-    """Resolve resource media sources to workspace-local file bytes."""
-
-    root = Path(workspace_root).resolve()
-
-    def resolve(source: MediaSource) -> bytes:
-        uri = source.uri
-        if not uri:
-            raise ValueError("resource media source requires a uri")
-        path = Path(uri)
-        if not path.is_absolute():
-            path = root / path
-        resolved = path.resolve()
-        if resolved != root and root not in resolved.parents:
-            raise ValueError(f"media resource escapes the workspace: {uri}")
-        return resolved.read_bytes()
-
-    return resolve
-
-
-def build_model_invoker(
-    config: ModelConfig,
-    *,
-    credential_environ: Mapping[str, str],
-    media_resolver: Callable[[MediaSource], bytes] | None = None,
-) -> LaraModelInvoker:
-    protocols = {entry.spec.protocol for entry in config.models.values()}
-    unsupported = protocols - set(CLIENT_FACTORIES)
-    if unsupported:
-        raise ValueError("unsupported model protocols: " + ", ".join(sorted(unsupported)))
-    adapters: dict[str, Any] = {
-        "openai_chat_completions": OpenAICompatibleAdapter(
-            media_transport=MediaTransportCapabilities(
-                enabled=True,
-                modalities=("image", "video"),
-                source_kinds=(
-                    ("inline", "resource") if media_resolver else ("inline",)
+class LaraAnthropicMessagesAdapter(AnthropicMessagesAdapter):
+    def build_request(self, request: ModelProviderRequest) -> FrozenJsonObject:
+        if request.generation.max_output_tokens is None:
+            limit = request.model.capabilities.limits.max_output_tokens
+            request = replace(
+                request,
+                generation=replace(
+                    request.generation,
+                    max_output_tokens=limit or DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS,
                 ),
-                max_media_bytes=MEDIA_MAX_BYTES,
-            ),
-            media_resolver=media_resolver,
-        ),
-        # Every multimodal protocol gets the workspace resolver so user
-        # attachments carried as resource sources reach models on that
-        # protocol; without it the adapters only accept inline data and
-        # workspace media fails delivery for every turn.
-        "anthropic_messages": AnthropicMessagesAdapter(
-            media_resolver=media_resolver,
-        ),
-        "gemini_generate_content": GeminiGenerateContentAdapter(
-            media_resolver=media_resolver,
-        ),
-        "openai_responses": OpenAIResponsesAdapter(
-            media_resolver=media_resolver,
-        ),
-    }
-    clients = {
-        key: _create_client(
-            connection=config.connection_for(key),
-            credential_environ=credential_environ,
-        )
-        for key in config.models
-    }
-    return LaraModelInvoker(
-        adapters={protocol: adapters[protocol] for protocol in protocols},
-        clients=clients,
-        media_resolver=media_resolver,
-    )
-
-
-def _create_client(
-    *,
-    connection: ResolvedModelConnection,
-    credential_environ: Mapping[str, str],
-) -> ModelProviderClient:
-    try:
-        factory = CLIENT_FACTORIES[connection.protocol]
-    except KeyError:
-        raise ValueError(
-            f"unsupported model protocol {connection.protocol!r}"
-        ) from None
-    api_key = connection.credential.resolve(credential_environ)
-    if connection.proxy is None:
-        return factory(
-            base_url=connection.base_url,
-            api_key=api_key,
-            verify_ssl=connection.verify_ssl,
-        )
-    http_client = httpx.AsyncClient(
-        proxy=connection.proxy,
-        verify=connection.verify_ssl,
-    )
-    inner = factory(
-        base_url=connection.base_url,
-        api_key=api_key,
-        client=http_client,
-    )
-    return _OwnedProviderClient(inner, http_client)
-
-
-async def discover_models(
-    *,
-    connection_name: str,
-    protocol: str,
-    connection: ConnectionConfig,
-    credential_environ: Mapping[str, str],
-    timeout: float = 10.0,
-) -> tuple[ModelInfo, ...]:
-    client = _create_client(
-        connection=ResolvedModelConnection(
-            connection_key=connection_name,
-            provider=connection.provider,
-            protocol=protocol,
-            base_url=connection.protocols[protocol],
-            credential=connection.credential,
-            verify_ssl=connection.verify_ssl,
-            proxy=connection.proxy,
-        ),
-        credential_environ=credential_environ,
-    )
-    try:
-        catalog = getattr(client, "models", None)
-        if catalog is None:
-            raise ValueError(
-                f"protocol {protocol!r} does not provide native model discovery"
             )
-        return await catalog.list(timeout=timeout)
-    finally:
-        await client.aclose()
+        return super().build_request(request)
+
+
+# SDK 的 build_model_invoker 在模块内按名字引用 AnthropicMessagesAdapter,
+# 替换该绑定即可让 PygentAgent 自建的 invoker 也走补默认值的适配器。
+_sdk_model_configuration.AnthropicMessagesAdapter = LaraAnthropicMessagesAdapter
 
 
 def builtin_model_catalogs() -> dict[str, Any]:
@@ -307,12 +124,53 @@ def builtin_model_catalogs() -> dict[str, Any]:
     }
 
 
-__all__ = [
-    "CLIENT_FACTORIES",
-    "CredentialEnvironment",
-    "build_model_invoker",
-    "builtin_model_catalogs",
-    "discover_models",
-    "preferred_models",
-    "preferred_profile_name",
-]
+async def discover_models(
+    *,
+    connection_name: str,
+    protocol: str,
+    connection: ConnectionConfig,
+    credential_environ: Mapping[str, str],
+    timeout: float = 10.0,
+) -> tuple[ModelInfo, ...]:
+    client = _create_client(
+        connection=ResolvedModelConnection(
+            connection_key=connection_name,
+            provider=connection.provider,
+            protocol=protocol,
+            base_url=connection.protocols[protocol],
+            credential=connection.credential,
+            verify_ssl=connection.verify_ssl,
+            proxy=connection.proxy,
+        ),
+        credential_environ=credential_environ,
+    )
+    try:
+        catalog = getattr(client, "models", None)
+        if catalog is None:
+            raise ValueError(
+                f"protocol {protocol!r} does not provide native model discovery"
+            )
+        return await catalog.list(timeout=timeout)
+    finally:
+        await client.aclose()
+
+
+def lara_credential_environment(
+    user_pygent_root: str | Path,
+    *,
+    transient: Mapping[str, str] | None = None,
+) -> CredentialEnvironment:
+    """SDK ``CredentialEnvironment`` backed by lora's credential store.
+
+    The SDK kernel only reads the process environment; lora adds the user
+    ``credentials.env`` file and the OS keyring through the injected lookup.
+    """
+
+    from lara.credentials import list_user_credential_names, lookup_credential
+
+    return CredentialEnvironment(
+        user_pygent_root,
+        transient=transient,
+        lookup=lambda name, root: lookup_credential(name, user_pygent_root=root),
+        name_lister=list_user_credential_names,
+    )

@@ -105,7 +105,7 @@ def test_store_upload_rejects_oversized_bytes(tmp_path):
 
 
 def test_uploaded_path_flows_through_attachment_pipeline(tmp_path):
-    from lara.runtime.attachments import resolve_attachments
+    from pygent.agent.pygent_v1.runtime.attachments import resolve_attachments
 
     stored = store_upload(PNG_BYTES, "error.png", tmp_path)
     resolved = resolve_attachments([stored.relative], tmp_path)

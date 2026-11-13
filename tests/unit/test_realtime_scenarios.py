@@ -24,10 +24,10 @@ import pytest
 from pygent import AIMessage, ToolCall
 from pygent.llm import ModelExecution, ModelProviderResponse
 
-from lara.orchestration.models import TurnCommand
-from lara.orchestration.session_execution import SessionExecutionCoordinator
-from lara.runtime.realtime.speak import SPEAK_TOOL_SPEC
-from lara.runtime.realtime.turn_finalizer import TURN_FINALIZER_REMINDER
+from pygent.agent.pygent_v1.orchestration.models import TurnCommand
+from pygent.agent.pygent_v1.orchestration.session_execution import SessionExecutionCoordinator
+from pygent.agent.pygent_v1.runtime.realtime.speak import SPEAK_TOOL_SPEC
+from pygent.agent.pygent_v1.runtime.realtime.turn_finalizer import TURN_FINALIZER_REMINDER
 from lara.sessions import (
     LARA_SAYS_SESSION_MODE,
     SessionManager,
@@ -159,9 +159,7 @@ async def test_mid_turn_interrupt_forks_reply_and_delivers_envelope() -> None:
             await _wait_for(lambda: len(invoker.calls) >= 1)
             await asyncio.sleep(0.3)
             outcome = await service.send_interrupt(
-                handle.execution_id,
                 manager=manager,
-                run_ref=run_ref,
                 session_id=session.session_id,
                 input_id="input-1",
                 message="进度如何",
@@ -210,17 +208,13 @@ async def test_consecutive_interrupts_produce_two_replies_and_envelopes() -> Non
             await _wait_for(lambda: len(invoker.calls) >= 1)
             await asyncio.sleep(0.3)
             first = await service.send_interrupt(
-                handle.execution_id,
                 manager=manager,
-                run_ref=run_ref,
                 session_id=session.session_id,
                 input_id="input-1",
                 message="进度如何",
             )
             second = await service.send_interrupt(
-                handle.execution_id,
                 manager=manager,
-                run_ref=run_ref,
                 session_id=session.session_id,
                 input_id="input-2",
                 message="进度如何",
@@ -243,7 +237,7 @@ class _SpeakInvoker(_ScriptedInvoker):
     """Turn: speak(text) → final."""
 
     def respond(self, content: str) -> ModelProviderResponse:
-        if "lara.realtime.speak" in content:
+        if "pygent.v1.realtime.speak" in content:
             return _response(content="final answer")
         if self.calls and len(self.calls) == 1:
             return _response(
@@ -281,7 +275,7 @@ async def test_agent_speak_delivers_stream_event_and_tool_result() -> None:
                 execution_id=handle.execution_id, limit=256
             )
             assert any(
-                "lara.realtime.speak" in str(event) for event in events
+                "pygent.v1.realtime.speak" in str(event) for event in events
             ), "the speak bubble event must be on the durable stream"
 
             restored = manager.load(session.session_id)
@@ -303,7 +297,7 @@ class _PureTextInvoker(_ScriptedInvoker):
             return _response(
                 tool_calls=(_tool_call("fin-1", "speak", {"text": "草稿说完了"}),)
             )
-        if "lara.realtime.speak" in content or self.finalizer_seen:
+        if "pygent.v1.realtime.speak" in content or self.finalizer_seen:
             return _response(content="done talking")
         return _response(content="thinking in plain text")
 
@@ -331,7 +325,7 @@ async def test_pure_text_ending_queues_exactly_one_finalizer_round() -> None:
                     case_id="chat",
                     turn_id="turn-1",
                     interactive_approvals=False,
-                    message_kind="lara.chat.turn",
+                    message_kind="pygent.v1.chat.turn",
                 ),
             )
             await turn.finalized.wait()

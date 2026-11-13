@@ -228,7 +228,7 @@ def test_interactive_session_chat_submits_one_managed_turn_per_input(
         async def __aexit__(self, *_args):
             return None
 
-    config = RunConfig(workspace_root=str(tmp_path), lara_root=str(tmp_path / ".lara"))
+    config = RunConfig(workspace_root=str(tmp_path), pygent_root=str(tmp_path / ".lara"))
     args = argparse.Namespace(
         workspace_root=str(tmp_path),
         session_id=None,

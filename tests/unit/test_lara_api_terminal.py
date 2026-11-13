@@ -12,7 +12,7 @@ def test_powershell_session_runs_in_project_and_preserves_working_directory(tmp_
     project = tmp_path / "project"
     child = project / "child"
     child.mkdir(parents=True)
-    config = RunConfig(workspace_root=str(project), lara_root=str(project / ".lara"))
+    config = RunConfig(workspace_root=str(project), pygent_root=str(project / ".lara"))
     context = ApiContext(workspace_root=str(project), state_path=str(tmp_path / "state.json"), _config=config)
     service = TerminalService()
     scope_id = f"project:{project.resolve()}"
@@ -32,7 +32,7 @@ def test_powershell_session_runs_in_project_and_preserves_working_directory(tmp_
 def test_terminal_rejects_conversation_scope(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()
-    config = RunConfig(workspace_root=str(project), lara_root=str(project / ".lara"))
+    config = RunConfig(workspace_root=str(project), pygent_root=str(project / ".lara"))
     context = ApiContext(workspace_root=str(project), state_path=str(tmp_path / "state.json"), _config=config)
 
     with pytest.raises(ValueError, match="Select a project"):

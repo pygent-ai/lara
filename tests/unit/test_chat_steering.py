@@ -61,7 +61,7 @@ async def test_http_steering_reaches_running_react_and_persists_once(tmp_path: P
             interactive_approvals=False, deadline=time.monotonic() + 30,
         )
         await asyncio.wait_for(attempts_started[0].wait(), 10)
-        active = SimpleNamespace(run_ref=run, runtime_service=service)
+        active = SimpleNamespace(run_ref=run, runtime_service=service, manager=manager)
         coordinator = SimpleNamespace(find_execution=AsyncMock(return_value=active))
         app = FastAPI()
         app.include_router(router)
@@ -89,7 +89,7 @@ async def test_http_steering_reaches_running_react_and_persists_once(tmp_path: P
         assert message.content == "use Chinese"
         assert any(item.content == "focus on tests" for item in context.messages)
         history = manager.load(session.session_id).history
-        steering = [item for item in history if item.get("kind") == "lara.user.steering"]
+        steering = [item for item in history if item.get("kind") == "pygent.v1.user.steering"]
         assert [item["content"] for item in steering] == ["focus on tests", "use Chinese"]
     finally:
         release.set()
@@ -137,7 +137,7 @@ async def test_http_steering_carries_attachments(tmp_path: Path) -> None:
             interactive_approvals=False, deadline=time.monotonic() + 30,
         )
         await asyncio.wait_for(attempts_started[0].wait(), 10)
-        active = SimpleNamespace(run_ref=run, runtime_service=service)
+        active = SimpleNamespace(run_ref=run, runtime_service=service, manager=manager)
         coordinator = SimpleNamespace(find_execution=AsyncMock(return_value=active))
         app = FastAPI()
         app.include_router(router)
@@ -155,7 +155,7 @@ async def test_http_steering_carries_attachments(tmp_path: Path) -> None:
         message, context = requests[1]
         drained = [
             item for item in (message, *context.messages)
-            if getattr(item, "kind", None) == "lara.user.steering"
+            if getattr(item, "kind", None) == "pygent.v1.user.steering"
         ]
         assert len(drained) == 1
         assert drained[0].content == ""
@@ -163,7 +163,7 @@ async def test_http_steering_carries_attachments(tmp_path: Path) -> None:
         assert len(drained[0].media) == 1
         assert drained[0].media[0].mime_type == "image/png"
         history = manager.load(session.session_id).history
-        persisted = [item for item in history if item.get("kind") == "lara.user.steering"]
+        persisted = [item for item in history if item.get("kind") == "pygent.v1.user.steering"]
         assert persisted[0]["content"] == ""
         assert persisted[0]["data"]["attachments"] == ["shot.png"]
         assert persisted[0]["media"]
@@ -241,9 +241,9 @@ async def test_steering_announces_its_react_boundary_once(tmp_path: Path) -> Non
         await asyncio.wait_for(collector, 10)
         boundaries = [
             data for kind, data in streamed
-            if kind == "lara.runtime.message"
+            if kind == "pygent.v1.runtime.message"
             and data.get("role") == "user"
-            and data.get("kind") == "lara.user.steering"
+            and data.get("kind") == "pygent.v1.user.steering"
         ]
         assert [(item["content"], item["data"]["input_id"]) for item in boundaries] == [
             ("focus on tests", "input-1"),

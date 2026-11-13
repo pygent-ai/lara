@@ -1106,7 +1106,7 @@ export function App() {
                 }
               }
               const eventData = data.data || {};
-              const eventSessionId = eventKind === "lara.chat.started" ? String(eventData.session_id || "") : "";
+              const eventSessionId = eventKind === "pygent.v1.chat.started" ? String(eventData.session_id || "") : "";
               if (eventSessionId && !streamSessionId) {
                 // Read visibility before binding: an unbound stream is visible
                 // from the new-chat view, and only while the user stayed there.
@@ -1135,7 +1135,7 @@ export function App() {
                   }).catch(() => {});
                 }
               }
-              if (eventKind === "lara.context.usage") {
+              if (eventKind === "pygent.v1.context.usage") {
                 const usedTokens = Number(eventData.last_input_tokens);
                 const usageSessionId = String(eventData.session_id || eventSessionId || streamSessionId || "");
                 if (usageSessionId && Number.isFinite(usedTokens) && usedTokens > 0) {
@@ -1164,7 +1164,7 @@ export function App() {
               }
               // Usage events are gauge signals, not transcript history: keep
               // them out of the trace list entirely.
-              if (eventKind !== "lara.context.usage") {
+              if (eventKind !== "pygent.v1.context.usage") {
                 streamEvents = appendSessionLiveTraceEvent(
                   sessionLiveEventsRef.current,
                   streamSessionId,
@@ -1192,7 +1192,7 @@ export function App() {
               // The runtime announces the ReAct boundary it drained a steering
               // input on: that is where the transcript splits and the input stops
               // being pending.
-              if (eventKind === "lara.runtime.message" && eventData.role === "user" && eventData.kind === "lara.user.steering") {
+              if (eventKind === "pygent.v1.runtime.message" && eventData.role === "user" && eventData.kind === "pygent.v1.user.steering") {
                 const inputId = String(eventData.data?.input_id || "");
                 const newAssistantId = `assistant-${Date.now()}`;
                 const nextMessages = splitAssistantForSteering(
@@ -1208,7 +1208,7 @@ export function App() {
                 }
                 setPendingSteerings((items) => resolvePendingSteering(items, streamSessionId, inputId));
               }
-              if (eventKind === "lara.realtime.speak") {
+              if (eventKind === "pygent.v1.realtime.speak") {
                 // The proactive-speak bubble (D-RT12): append to the live
                 // transcript; unread accrues when the session is not on the
                 // front view.
@@ -1238,7 +1238,7 @@ export function App() {
                   }));
                 }
               }
-              if (eventKind === "lara.approval.requested") {
+              if (eventKind === "pygent.v1.approval.requested") {
                 setApprovals((items) => [
                   ...items.filter((item) => item.approval_id !== eventData.approval_id),
                   { ...eventData, session_id: eventSessionId || streamSessionId },
@@ -1762,7 +1762,7 @@ export function splitLaraSaysSession(sessionGroups) {
   const laraSaysSessions = [];
   const source = Array.isArray(sessionGroups) ? sessionGroups : [];
   const generalGroups = source
-    .filter((group) => group.scope?.scope_id !== "lara-says")
+    .filter((group) => group.scope?.scope_id !== "pygent.v1-says")
     .map((group) => {
       const sessions = (group.sessions || []).filter((session) => {
         if (isLaraSaysSession(session)) {
@@ -3399,7 +3399,8 @@ const MessageRow = memo(function MessageRow({ message, entering = false, activit
         <div className="realtime-speak-bubbles">
           {delivered.map((speak, index) => (
             <div className="bubble realtime-speak-bubble" key={index}>
-              {speak.text ? <div className="realtime-speak-text">{speak.text}</div> : null}
+              {/* Speak text is markdown: reuse the chat transcript renderer. */}
+              {speak.text ? <div className="realtime-speak-text"><MarkdownContent content={speak.text} /></div> : null}
               {Array.isArray(speak.attachments) && speak.attachments.length > 0 ? (
                 <div className="realtime-speak-attachments">
                   {speak.attachments.map((item) => (
@@ -4749,7 +4750,7 @@ export function historyToMessages(history) {
       rendered.push({ id: `history-${historyRowKey(message, index)}`, role: messageDisplayRole(message), content,
         ...(message.created_at ? { createdAt: message.created_at } : {}),
         ...(message.checkpoint_sequence ? { checkpointSequence: message.checkpoint_sequence } : {}),
-        ...(message.kind === "lara.user.steering" ? { steeringInputId: message.data?.input_id } : {}),
+        ...(message.kind === "pygent.v1.user.steering" ? { steeringInputId: message.data?.input_id } : {}),
         // Carrying the journal kind keeps internal coordination rows (the
         // realtime finalizer reminder) visible to the view filters — without
         // it the raw <system-reminder> text leaks into the transcript.
@@ -4812,7 +4813,7 @@ function renderTurnSegment(segment, idPrefix, timing = segment.find((message) =>
     if (
       index > lastToolCallIndex &&
       String(message?.role || "") === "assistant" &&
-      cleanContent(String(message?.content || "")).trim() &&
+      String(message?.content || "").trim() &&
       toolCallsFromMessage(message).length === 0
     ) {
       finalAssistantIndex = index;
@@ -4829,8 +4830,11 @@ function renderTurnSegment(segment, idPrefix, timing = segment.find((message) =>
   );
   segment.forEach((message, index) => {
     const role = String(message?.role || "");
-    const content = cleanContent(String(message?.content || ""));
-    const reasoning = cleanContent(String(message?.metadata?.reasoning_content || message?.reasoning_content || ""));
+    // Assistant rows are raw markdown and never carry the <user-message>
+    // envelope, so unwrapping here would shred a reply that legitimately
+    // quotes the tag; only user rows go through displayMessageContent.
+    const content = String(message?.content || "");
+    const reasoning = String(message?.metadata?.reasoning_content || message?.reasoning_content || "");
     const toolCalls = toolCallsFromMessage(message);
     if (role === "assistant") {
       if (reasoning) {
@@ -5093,7 +5097,7 @@ export function projectLiveAssistantEvent(message, event, now = Date.now()) {
   }
 
   if (kind === "model.tool_call.completed" || kind === "tool.started"
-      || (kind === "lara.runtime.message" && payload.role === "assistant" && toolCallsFromMessage(payload).length)) {
+      || (kind === "pygent.v1.runtime.message" && payload.role === "assistant" && toolCallsFromMessage(payload).length)) {
     if (kind === "tool.started" && isInternalToolId(payload.tool_id)) {
       const callId = String(payload.call_id || payload.tool_call_id || "");
       const internalIds = Array.isArray(message.internalToolCallIds) ? message.internalToolCallIds : [];
@@ -5104,7 +5108,7 @@ export function projectLiveAssistantEvent(message, event, now = Date.now()) {
     }
     const sections = Array.isArray(message.sections) ? message.sections : [];
     const knownIds = new Set(sections.flatMap((section) => (section.calls || []).map((call) => call.id)));
-    const calls = kind === "lara.runtime.message" ? toolCallsFromMessage(payload) : [{
+    const calls = kind === "pygent.v1.runtime.message" ? toolCallsFromMessage(payload) : [{
       id: payload.call_id || payload.tool_call_id,
       name: payload.name || payload.tool_name,
       arguments: payload.arguments ?? payload.args,
@@ -5140,7 +5144,7 @@ export function projectLiveAssistantEvent(message, event, now = Date.now()) {
     return { ...message, content: "", sections: appendToolCallsSection(nextSections, newCalls) };
   }
 
-  if (kind === "tool.result" || (kind === "lara.runtime.message" && payload.role === "tool")) {
+  if (kind === "tool.result" || (kind === "pygent.v1.runtime.message" && payload.role === "tool")) {
     const activities = kind === "tool.result"
       ? [toolResultActivity(payload, payload)]
       : toolMessageResultActivities(payload);
@@ -5178,7 +5182,7 @@ export function projectLiveAssistantEvent(message, event, now = Date.now()) {
   if (kind === "execution.completed") {
     return {
       ...message,
-      content: cleanContent(String(message.content || "")),
+      content: String(message.content || ""),
       endedAt: message.endedAt ?? now,
       sections: finalizeToolSections(message.sections || []),
       status: "success",
@@ -5265,14 +5269,14 @@ function latestToolDescriptionFromSection(section) {
 }
 
 function hasVisibleAssistantContent(message) {
-  if (cleanContent(String(message.content || "")).trim()) {
+  if (String(message.content || "").trim()) {
     return true;
   }
   return (Array.isArray(message.sections) ? message.sections : []).some(
     (section) =>
       section.type === "text" &&
       section.title === "Assistant content" &&
-      cleanContent(String(section.content || "")).trim(),
+      String(section.content || "").trim(),
   );
 }
 
@@ -5310,12 +5314,21 @@ function appendTextSection(sections, title, content) {
   ];
 }
 
+function isBlankThinkingSection(section) {
+  return section?.type === "text" && section.title === "Thinking" && !String(section.content || "").trim();
+}
+
 function appendToolCallsSection(sections, calls) {
   const safeCalls = Array.isArray(calls) ? calls.filter(Boolean) : [];
   if (!safeCalls.length) {
     return Array.isArray(sections) ? sections : [];
   }
   const nextSections = Array.isArray(sections) ? [...sections] : [];
+  // Some routes stream a whitespace-only reasoning delta before every tool
+  // round; it renders as nothing, so it must not split the tool group either.
+  while (isBlankThinkingSection(nextSections[nextSections.length - 1])) {
+    nextSections.pop();
+  }
   const lastSection = nextSections[nextSections.length - 1];
   if (lastSection?.type === "tools") {
     // Only batches rendered back to back share one group; thinking or text
@@ -5561,7 +5574,7 @@ export function traceToolEvents(events) {
       continue;
     }
 
-    if (type === "runtime.message" || type === "lara.runtime.message") {
+    if (type === "runtime.message" || type === "pygent.v1.runtime.message") {
       if (payload.role === "assistant") {
         for (const call of toolCallsFromMessage(payload)) {
           const state = toolCallState(call);
@@ -5951,7 +5964,7 @@ function cleanContent(content) {
 }
 
 function messageDisplayRole(message) {
-  if (message?.kind === "lara.automation.trigger" || message?.data?.origin === "automation") {
+  if (message?.kind === "pygent.v1.automation.trigger" || message?.data?.origin === "automation") {
     return "automation";
   }
   if (message?.kind === "lara.user.resume" || message?.data?.origin === "resume") {

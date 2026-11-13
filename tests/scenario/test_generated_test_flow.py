@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lara.core.paths import project_lara_root
+from lara.core.paths import project_pygent_root
 from tests.native_config_support import native_model_config_yaml
 
 
@@ -56,7 +56,7 @@ class GeneratedTestFlowScenarioTests(unittest.TestCase):
 
             first_register = _lara(root, env, "test", "register", str(generated_path))
             second_register = _lara(root, env, "test", "register", str(generated_path))
-            manifest_path = project_lara_root(root, root / "home" / ".lara") / "regression.json"
+            manifest_path = project_pygent_root(root, root / "home" / ".lara") / "regression.json"
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
             self.assertEqual(first_register["status"], "registered")

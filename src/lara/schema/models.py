@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pygent.llm import ModelConfig
 
-from lara.core.paths import project_lara_root, user_lara_root
+from lara.core.paths import project_pygent_root, user_pygent_root
 
 
 def _abs_path(value: str | Path) -> str:
@@ -184,6 +184,7 @@ class RealtimeInteractionConfig:
     enabled: bool = False
     nudge_interval: int = 5
     fork_deadline_seconds: float = 60.0
+    fork_reasoning_effort: str | None = "low"
 
     def __post_init__(self) -> None:
         self.enabled = bool(self.enabled)
@@ -197,6 +198,10 @@ class RealtimeInteractionConfig:
             or self.fork_deadline_seconds <= 0
         ):
             raise ValueError("fork_deadline_seconds must be positive")
+        if self.fork_reasoning_effort is not None:
+            self.fork_reasoning_effort = _require(
+                self.fork_reasoning_effort, "fork_reasoning_effort"
+            )
 
 
 @dataclass(slots=True)
@@ -231,18 +236,8 @@ class EternalConversationConfig:
             )
 
 
-@dataclass(slots=True)
-class BashCliPreset:
-    name: str
-    command: str = ""
-    description: str = ""
-
-    def __post_init__(self) -> None:
-        self.name = _require(self.name, "name")
-        if self.command is None:
-            self.command = ""
-        if self.description is None:
-            self.description = ""
+# BashCliPreset 与 SDK schema 完全同构，直接复用 pygent_v1 的定义（isinstance 需同一类）。
+from pygent.agent.pygent_v1.schema import BashCliPreset  # noqa: E402
 
 
 def default_cli_bash_presets() -> list[BashCliPreset]:
@@ -283,7 +278,7 @@ def default_cli_bash_presets() -> list[BashCliPreset]:
 @dataclass(slots=True)
 class RunConfig:
     workspace_root: str
-    lara_root: str = ""
+    pygent_root: str = ""
     session_id: str | None = None
     case_file: str | None = None
     max_steps: int = -1
@@ -312,7 +307,7 @@ class RunConfig:
     )
     bash_full_output_allowlist: list[str] = field(default_factory=list)
     allow_read_outside_workspace: bool = True
-    user_lara_root: str = ""
+    user_pygent_root: str = ""
     context_window: int | None = None
     context_compression_enabled: bool = True
     context_compression_trigger_ratio: float = 0.9
@@ -341,10 +336,10 @@ class RunConfig:
 
     def __post_init__(self) -> None:
         self.workspace_root = _abs_path(self.workspace_root)
-        self.user_lara_root = _abs_path(self.user_lara_root or user_lara_root())
-        self.lara_root = _abs_path(
-            self.lara_root
-            or project_lara_root(self.workspace_root, self.user_lara_root)
+        self.user_pygent_root = _abs_path(self.user_pygent_root or user_pygent_root())
+        self.pygent_root = _abs_path(
+            self.pygent_root
+            or project_pygent_root(self.workspace_root, self.user_pygent_root)
         )
         if self.case_file is not None:
             self.case_file = _abs_path(self.case_file)
@@ -416,7 +411,7 @@ class RunConfig:
         ):
             path = Path(getattr(settings, field_name)).expanduser()
             if not path.is_absolute():
-                path = Path(self.lara_root) / path
+                path = Path(self.pygent_root) / path
             setattr(settings, field_name, str(path.resolve()))
         self.mcp_servers = [
             item if isinstance(item, MCPServerConfig) else MCPServerConfig(**item)

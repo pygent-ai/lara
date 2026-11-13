@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from pygent.llm import ModelInfo
 from lara.config.yaml_subset import parse_yaml_subset
 from lara.core.io import read_json
-from lara.core.paths import project_lara_root
+from lara.core.paths import project_pygent_root
 from lara_api.dependencies import ApiContext
 from tests.unit.test_model_configuration import native_mapping
 
@@ -215,13 +215,13 @@ def test_update_settings_switches_workspace_and_rebuilds_session_manager(
         )
 
     assert response.workspace_root == str(workspace_b.resolve())
-    assert response.lara_root == str(project_lara_root(workspace_b, home / ".lara"))
+    assert response.pygent_root == str(project_pygent_root(workspace_b, home / ".lara"))
     assert response.agent == "other"
     assert response.model_configuration_status == "legacy"
     assert response.models == {}
     assert (
         Path(context.manager.sessions_root)
-        == project_lara_root(workspace_b, home / ".lara") / "sessions"
+        == project_pygent_root(workspace_b, home / ".lara") / "sessions"
     )
 
 
@@ -552,7 +552,7 @@ def test_update_settings_rejects_unreferenced_credential_values(
     # The session-selection guard scans the user-level conversation scope;
     # redirect it so the developer's real chats cannot fail this test.
     monkeypatch.setattr(
-        "lara_api.services.project_state.user_lara_root",
+        "lara_api.services.project_state.user_pygent_root",
         lambda: tmp_path / "lara-home",
     )
     context = ApiContext(
@@ -575,7 +575,7 @@ def test_update_settings_rejects_removing_a_session_model(tmp_path: Path) -> Non
     from tests.unit.test_session_manager import native_run_config
 
     config = native_run_config(tmp_path)
-    config.user_lara_root = str(tmp_path / "user")
+    config.user_pygent_root = str(tmp_path / "user")
     context = ApiContext(
         workspace_root=str(tmp_path),
         state_path=str(tmp_path / "state.json"),
@@ -603,11 +603,11 @@ def _rename_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     home = tmp_path / "home"
     monkeypatch.setattr("lara.config.loader.Path.home", lambda: home)
     monkeypatch.setattr(
-        "lara_api.services.project_state.user_lara_root",
+        "lara_api.services.project_state.user_pygent_root",
         lambda: home / ".lara",
     )
     config = native_run_config(tmp_path)
-    config.user_lara_root = str(home / ".lara")
+    config.user_pygent_root = str(home / ".lara")
     return ApiContext(
         workspace_root=str(tmp_path),
         state_path=str(tmp_path / "state.json"),

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from functools import partial
 from typing import Any
 
+from lara.runtime.service import LaraRuntimeService
 from lara.schema import RunConfig
 from lara.sessions import SessionManager
 
@@ -21,18 +23,18 @@ class LocalExecutionHost:
         coordinator: SessionExecutionCoordinator | None = None,
         prompt_registry: Any | None = None,
     ) -> None:
+        self.collaboration = SessionCollaborationService()
         self.runtime_pool = runtime_pool or WorkspaceRuntimePool(
-            prompt_registry=prompt_registry
+            runtime_factory=partial(
+                LaraRuntimeService, collaboration=self.collaboration
+            ),
+            prompt_registry=prompt_registry,
         )
         self.coordinator = coordinator or SessionExecutionCoordinator()
         self.turns = SessionTurnService(
             coordinator=self.coordinator,
             acquire_runtime=self.acquire_runtime,
         )
-        self.collaboration = SessionCollaborationService()
-        attach_collaboration = getattr(self.runtime_pool, "attach_collaboration", None)
-        if callable(attach_collaboration):
-            attach_collaboration(self.collaboration)
         self._closed = False
 
     async def acquire_runtime(
