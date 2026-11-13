@@ -14,9 +14,10 @@ export function filterDiscoveredModels(discovered, query) {
 // Add-model row for one connection. It looks exactly like a saved model row:
 // one collapsed head line with 模型选择 / 本地名称 / API 协议 plus the icon
 // actions (测试 / 保存 / 删除), while the capability configuration stays
-// folded below until the chevron opens it. 保存 commits the model into the
-// connection buffer and the row turns into a normal model row without the
-// save action. The caller owns the connection buffer.
+// folded below until the chevron opens it. 保存 hands the model to the caller,
+// which persists it on a saved connection (or keeps it in the create form's
+// buffer), and the row turns into a normal model row. The caller owns the
+// connection buffer.
 export function AddModelForm({ connection, credentialValue, catalogs, api, defaultModelKey, onAdd, onCancel }) {
   const protocolChoices = Object.keys(connection?.protocols || {});
   const provider = connection?.provider || "";

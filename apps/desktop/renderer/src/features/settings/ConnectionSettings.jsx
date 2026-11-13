@@ -52,10 +52,6 @@ export function ConnectionEditor({ connectionKey, previousKey, connection, model
   const [testState, setTestState] = useState(null);
   const [addingModel, setAddingModel] = useState(false);
   const [saveError, setSaveError] = useState("");
-  // Rows marked for deletion: the trash icon only marks a saved model, the
-  // row's own 保存 commits the deletion (unsaved rows leave the buffer at
-  // once). Discarding the buffer clears the marks.
-  const [pendingDeletes, setPendingDeletes] = useState(() => new Set());
   const [expandedModel, setExpandedModel] = useState(null);
   const [modelDiscovered, setModelDiscovered] = useState({});
   const [modelDiscoveryState, setModelDiscoveryState] = useState({});
@@ -181,17 +177,28 @@ export function ConnectionEditor({ connectionKey, previousKey, connection, model
     setExpandedModel((current) => current === modelKey ? null : current);
   }
 
-  function addModel(draft) {
+  async function addModel(draft) {
     if (!draft.protocol || !draft.modelId) return;
     // A typed local name must stay unique across every model; duplicates fall
     // back to the next generated key instead of overwriting an entry.
     const scope = { ...savedDraft.models, ...buffer.models };
     const key = draft.key && !Object.hasOwn(scope, draft.key) ? draft.key : nextModelKey(scope);
-    setBuffer((current) => ({ ...current, models: { ...current.models, [key]: { ...emptyNativeModel(current.key, draft.protocol), model_id: draft.modelId, capabilities: draft.capabilities } } }));
+    const next = { ...buffer, models: { ...buffer.models, [key]: { ...emptyNativeModel(buffer.key, draft.protocol), model_id: draft.modelId, capabilities: draft.capabilities } } };
+    setBuffer(next);
     // The saved row joins the list expanded, so its discover button and
     // capability form are immediately reachable like every other model row.
     setExpandedModel(key);
     setAddingModel(false);
+    // On a saved connection the form's 保存 persists the model right away; the
+    // create form and a connection with unsaved fields keep it in the buffer
+    // (its row 保存 stays enabled) until the connection itself is saved.
+    if (!previousKey || headDirty) return;
+    setSaveError("");
+    try {
+      await onPersist(previousKey, next, catalogs, "model", key);
+    } catch (error) {
+      setSaveError(typeof error?.message === "string" && error.message ? error.message : "保存失败，请稍后再试。");
+    }
   }
 
   function selectProvider(value) {
@@ -284,7 +291,6 @@ export function ConnectionEditor({ connectionKey, previousKey, connection, model
       renames: {},
       credentialValues: savedConnection.credential?.env ? { [savedConnection.credential.env]: savedDraft.credentialValues[savedConnection.credential.env] || "" } : {},
     });
-    setPendingDeletes(new Set());
     setTestState(null);
     setAddingModel(false);
     setSaveError("");
@@ -311,23 +317,25 @@ export function ConnectionEditor({ connectionKey, previousKey, connection, model
     }
   }
 
-  // One model row commits on its own: a plain entry save, or the deletion of
-  // a marked row. Unsaved rows cannot commit here — they either ride the
-  // create-form save or leave the buffer through the trash icon.
+  // One model row commits on its own. Unsaved rows cannot commit here — they
+  // either ride the create-form save or leave the buffer through the trash icon.
   async function saveModelRow(modelKey) {
-    const deleting = pendingDeletes.has(modelKey);
     setSaveError("");
     try {
-      await onPersist(previousKey, buffer, catalogs, deleting ? "delete" : "model", modelKey);
-      if (deleting) {
-        setPendingDeletes((current) => {
-          const next = new Set(current);
-          next.delete(modelKey);
-          return next;
-        });
-        removeModel(modelKey);
-        setExpandedModel((current) => (current === modelKey ? null : current));
-      }
+      await onPersist(previousKey, buffer, catalogs, "model", modelKey);
+    } catch (error) {
+      setSaveError(typeof error?.message === "string" && error.message ? error.message : "保存失败，请稍后再试。");
+    }
+  }
+
+  // The trash icon deletes a saved model in one step. The deletion only
+  // touches the saved entry and its group memberships, so unlike a row save
+  // it does not wait for unsaved connection fields.
+  async function deleteModelRow(modelKey) {
+    setSaveError("");
+    try {
+      await onPersist(previousKey, buffer, catalogs, "delete", modelKey);
+      removeModel(modelKey);
     } catch (error) {
       setSaveError(typeof error?.message === "string" && error.message ? error.message : "保存失败，请稍后再试。");
     }
@@ -492,21 +500,18 @@ export function ConnectionEditor({ connectionKey, previousKey, connection, model
         {Object.entries(buffer.models).map(([modelKey, model]) => {
           const protocolSelectable = protocols.length > 1 || (Boolean(model.protocol) && !protocols.includes(model.protocol));
           const open = expandedModel === modelKey;
-          const rowPendingDelete = pendingDeletes.has(modelKey);
-          const rowDirty = rowPendingDelete || modelRowDirty(savedDraft, buffer, modelKey);
+          const rowDirty = modelRowDirty(savedDraft, buffer, modelKey);
           const rowSaveDisabled = !previousKey || connectionFieldsDirty(savedDraft, previousKey, buffer) || !rowDirty || !model.model_id?.trim();
-          const rowSaveTitle = rowPendingDelete
-            ? "保存删除"
-            : !previousKey
-              ? "随连接一起保存"
-              : connectionFieldsDirty(savedDraft, previousKey, buffer)
-                ? "先保存连接信息"
-                : !rowDirty
-                  ? "模型未修改"
-                  : !model.model_id?.trim()
-                    ? "填写模型 ID 后保存"
-                    : "保存此模型";
-          return <article className={`model-route-card pool-row${open ? " pool-row-open" : ""}${rowPendingDelete ? " pending-delete" : ""}`} key={modelKey}>
+          const rowSaveTitle = !previousKey
+            ? "随连接一起保存"
+            : connectionFieldsDirty(savedDraft, previousKey, buffer)
+              ? "先保存连接信息"
+              : !rowDirty
+                ? "模型未修改"
+                : !model.model_id?.trim()
+                  ? "填写模型 ID 后保存"
+                  : "保存此模型";
+          return <article className={`model-route-card pool-row${open ? " pool-row-open" : ""}`} key={modelKey}>
             <div className="pool-row-head model-row-head">
               <button type="button" className="pool-row-main" aria-expanded={open} title={open ? "收起能力配置" : "展开能力配置"} onClick={() => setExpandedModel(open ? null : modelKey)}><ChevronRight size={16} aria-hidden="true" /></button>
               <div className="head-field field-id">
@@ -525,25 +530,16 @@ export function ConnectionEditor({ connectionKey, previousKey, connection, model
                 <select value={model.protocol || ""} onChange={(event) => updateModel(modelKey, "protocol", event.target.value)} aria-label="API 协议" title="只能选择当前连接提供的协议">{!protocols.includes(model.protocol) && <option value={model.protocol}>{protocolLabel(model.protocol)}</option>}{protocols.map(([key]) => <option key={key} value={key}>{protocolLabel(key)}</option>)}</select>
               </div>}
               <div className="model-head-actions">
-                {rowPendingDelete && <span className="pending-delete-tag">将删除</span>}
                 <button type="button" className="send model-save" disabled={rowSaveDisabled} title={rowSaveTitle} onClick={() => saveModelRow(modelKey)}>保存</button>
                 <button
                   className="route-remove"
                   type="button"
                   onClick={() => {
-                    if (previousKey && savedDraft.models[originalModelKey(buffer.renames, modelKey)]) {
-                      setPendingDeletes((current) => {
-                        const next = new Set(current);
-                        if (next.has(modelKey)) next.delete(modelKey);
-                        else next.add(modelKey);
-                        return next;
-                      });
-                    } else {
-                      removeModel(modelKey);
-                    }
+                    if (previousKey && savedDraft.models[originalModelKey(buffer.renames, modelKey)]) deleteModelRow(modelKey);
+                    else removeModel(modelKey);
                   }}
                   aria-label={`Remove ${modelKey}`}
-                  title={rowPendingDelete ? "取消删除标记" : "删除模型"}
+                  title="删除模型"
                 ><Trash2 aria-hidden="true" /></button>
               </div>
             </div>
