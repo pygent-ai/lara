@@ -28,7 +28,7 @@ export function isLaraSaysSession(session) {
 // either view (envelope/nudge ride inside tool results and are naturally
 // invisible in the front view).
 const INTERNAL_KINDS = new Set([
-  "lara.realtime.finalizer",
+  "pygent.v1.realtime.finalizer",
 ]);
 
 export function normalizeViewMode(mode) {
