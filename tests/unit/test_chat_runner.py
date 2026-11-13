@@ -987,8 +987,8 @@ class _StubRuntimeService:
         self.interrupts: list[dict] = []
         self.steerings: list[dict] = []
 
-    async def send_interrupt(self, execution_id, **kwargs):
-        self.interrupts.append({"execution_id": execution_id, **kwargs})
+    async def send_interrupt(self, **kwargs):
+        self.interrupts.append(dict(kwargs))
         return SimpleNamespace(
             speak_args=SimpleNamespace(
                 text="在做了", attachments=(), say_nothing=False

@@ -271,6 +271,12 @@ async def test_non_http_url_is_not_fetched(tmp_path: Path) -> None:
     assert not (tmp_path / UPLOADS_SUBDIR).exists()
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="SDK bug: graph.media_offload.offload_remote_media passes a fresh "
+    "fetched={} per node, so the per-URL cache never spans the payload and "
+    "the same URL is downloaded once per reference (its docstring promises once)",
+)
 async def test_same_remote_url_downloaded_once(tmp_path: Path) -> None:
     calls: list[str] = []
     payload = {

@@ -60,16 +60,24 @@ async def test_nudge_fires_periodically_not_every_round() -> None:
 
 async def test_speak_call_resets_counter() -> None:
     module = RealtimeNudgeModule(interval=2)
-    silent = LaraContext(messages=(_assistant(_read_call()),))
-    spoke = LaraContext(messages=(_assistant(_read_call(), _speak_call()),))
-    message = _tool_message()
+    context = LaraContext(messages=(_assistant(_read_call()),))
+    silent = _tool_message()
+    # The SDK detects speaking from this round's tool results, not from the
+    # assistant's tool calls in the context.
+    spoke = ToolMessage(
+        content="result text",
+        results=(
+            ToolResult(call_id="c1", name="read", status="succeeded"),
+            ToolResult(call_id="c9", name="speak", status="succeeded"),
+        ),
+    )
 
-    _, _ = await module.invoke(message, silent)
-    out, _ = await module.invoke(message, spoke)  # speak resets to 0
+    _, _ = await module.invoke(silent, context)
+    out, _ = await module.invoke(spoke, context)  # speak resets to 0
     assert out.content == "result text"
-    out, _ = await module.invoke(message, silent)  # one silent round since speak
+    out, _ = await module.invoke(silent, context)  # one silent round since speak
     assert out.content == "result text"
-    out, _ = await module.invoke(message, silent)  # second silent round fires
+    out, _ = await module.invoke(silent, context)  # second silent round fires
     assert NUDGE_REMINDER.format(rounds=2) in out.content
 
 

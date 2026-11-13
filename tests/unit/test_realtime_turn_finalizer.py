@@ -45,16 +45,24 @@ from pygent.agent.pygent_v1.orchestration.session_execution import SessionExecut
 from pygent.agent.pygent_v1.runtime.realtime.turn_finalizer import TURN_FINALIZER_REMINDER
 
 
+async def _no_pending_messages(_session_id: str) -> tuple:
+    return ()
+
+
 def _finalizer_turn(*, enabled=True, history=None, turn_id="t1"):
     return SimpleNamespace(
         runtime_service=SimpleNamespace(
             config=SimpleNamespace(
                 realtime_interaction=SimpleNamespace(enabled=enabled)
-            )
+            ),
+            # SDK finalizer defers when exchange envelopes are queued.
+            pending_agent_messages=_no_pending_messages,
         ),
         command=SimpleNamespace(session_id="s1", case_id="chat", turn_id=turn_id),
         run_ref=SimpleNamespace(case_run_id="cr1"),
         manager=SimpleNamespace(
+            # SessionExecutionKey.from_manager keys lanes by sessions_root.
+            sessions_root="E:/tmp/sessions",
             load=lambda sid: SimpleNamespace(
                 metadata={"mode": "pygent.v1-says" if enabled else "chat"},
                 history=history if history is not None else [{"role": "assistant", "content": "纯文本草稿"}]
