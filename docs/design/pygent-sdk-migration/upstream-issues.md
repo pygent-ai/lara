@@ -59,6 +59,16 @@
 - **现象**：lara 的 fork 回复要按会话模型组选 fork profile，只能 import 这个内部路径；pygent 调整内部布局会直接断。
 - **建议**：提升到 `pygent.agent.pygent_v1.runtime`（或 `pygent.agent`）的公开导出。
 
-## 6. 同类观察：SDK 工具注册没有"宿主扩展点"
+## 6. `graph/media_offload.UPLOADS_SUBDIR` 硬编码 `<workspace>/.pygent_v1/uploads`（配置缺口）
+
+- **位置**：`pygent/agent/pygent_v1/graph/media_offload.py:30`
+  ```python
+  UPLOADS_SUBDIR = Path(".pygent_v1") / "uploads"
+  ```
+- **现象**：模型输出里的 inline/远程媒体被落盘到用户项目目录下的 `.pygent_v1/uploads/`。宿主数据目录叫别的名字时（lara：`.lara/`，`lara_api/services/uploads.py` 把用户上传放在 `.lara/uploads`），项目里会同时出现两个运行时目录，而且 `.pygent_v1/` 不在宿主的 `.gitignore` 里，会污染用户仓库。与第 3 项同根：工作区内的运行时目录名应来自 `RunConfig`。
+- **建议修复**：`offload_inline_media`/`offload_remote_media` 接受 `uploads_dir`（或从 `config.pygent_root` 推导目录名），默认值保持 `.pygent_v1/uploads`。
+- **lara 临时处理**：`.gitignore` 加 `.pygent_v1/`。上游修复后改回 `.lara/uploads` 并删掉这条 ignore。
+
+## 7. 同类观察：SDK 工具注册没有"宿主扩展点"
 
 不算 bug，但迁移中反复碰到：`PygentRuntimeService.__init__` 固定注册 speak（`channels=()`）、scheduler 工具，并用这组工具构建模板 agent。宿主要换 speak 通道或改可见工具集，只能 `register_tool(..., replace_existing=True)` 再清空 `_agent_definitions` 重建。若 `__init__` 接受 `speak_channels` / `external_tools` 两个可选参数，lara 的 `LaraRuntimeService.__init__` 可再删十几行。
