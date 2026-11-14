@@ -82,7 +82,8 @@ async def test_managed_bash_background_can_be_queried_stopped_and_read_after_res
         assert result.status == "detached", result
         assert result.task is not None
         task_id = result.task.task_id
-        async with asyncio.timeout(5):
+        # Generous bounds: bash spawn on Windows stalls under a full-suite load.
+        async with asyncio.timeout(30):
             while "started" not in str(await service.get_task_output(task_id)):
                 await asyncio.sleep(0.02)
         # Control calls must not wait behind the only occupied tool permit.
@@ -151,7 +152,7 @@ async def test_background_completion_finalizes_audit_and_late_file_writes(tmp_pa
             service.bash_tasks = BashTaskObservations(config, service.runtime, previous.directory)
             await service.bash_tasks.restore()
         elif finish in {"cancel", "shutdown"}:
-            async with asyncio.timeout(5):
+            async with asyncio.timeout(30):
                 while not (tmp_path / "late.txt").exists():
                     await asyncio.sleep(0.02)
             if finish == "cancel":
@@ -160,7 +161,7 @@ async def test_background_completion_finalizes_audit_and_late_file_writes(tmp_pa
             else:
                 await service.close()
         # The foreground invocation has returned. The task and its finalizer continue.
-        async with asyncio.timeout(10):
+        async with asyncio.timeout(30):
             while not (Path(run.run_dir) / "file_events.jsonl").exists():
                 await asyncio.sleep(0.02)
         events = list(EventStore.iter_jsonl(Path(run.run_dir) / "file_events.jsonl"))
