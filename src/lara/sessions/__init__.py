@@ -3,9 +3,9 @@ from __future__ import annotations
 from .collaboration import (
     AgentMessage,
     AgentMessageState,
-    CollaborationOperation,
-    CollaborationState,
     SessionCollaborationStore,
+    agent_message_to_dict,
+    collaboration_item_dict,
 )
 from .directory import (
     ItemLocation,
@@ -22,11 +22,11 @@ from .manager import (
 __all__ = [
     "AgentMessage",
     "AgentMessageState",
-    "CollaborationOperation",
-    "CollaborationState",
     "ItemLocation",
     "LARA_SAYS_SESSION_MODE",
     "SessionCollaborationStore",
+    "agent_message_to_dict",
+    "collaboration_item_dict",
     "SessionDirectory",
     "SessionLocation",
     "SessionManager",

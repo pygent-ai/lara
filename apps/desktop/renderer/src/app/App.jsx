@@ -5435,7 +5435,7 @@ export function dedupeTraceEvents(events) {
 // without a model step: they emit tool.started/tool.completed with a tool_id
 // but no name and no model.tool_call.completed, so chat rows built from them
 // can only show the "tool" placeholder. They are tracked and hidden instead.
-const INTERNAL_TOOL_ID_PREFIX = "lara.internal.";
+const INTERNAL_TOOL_ID_PREFIX = "pygent.v1.internal.";
 
 function isInternalToolId(toolId) {
   return String(toolId || "").startsWith(INTERNAL_TOOL_ID_PREFIX);

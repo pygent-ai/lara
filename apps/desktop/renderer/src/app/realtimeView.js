@@ -18,7 +18,7 @@ const STORAGE_KEY = "lara.desktop.realtime-view-modes.v1";
 
 // The dedicated sidebar session ("Lara说") is the only one where realtime
 // interaction exists; the backend gates the feature on this session mode.
-export const LARA_SAYS_SESSION_MODE = "lara-says";
+export const LARA_SAYS_SESSION_MODE = "pygent.v1-says";
 
 export function isLaraSaysSession(session) {
   return String(session?.mode || "") === LARA_SAYS_SESSION_MODE;

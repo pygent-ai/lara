@@ -13,14 +13,13 @@ from lara.dispatch import DispatchOperationView, DispatchStore
 from lara.schema import RunConfig
 from lara.sessions import (
     AgentMessage,
-    CollaborationOperation,
     SessionCollaborationStore,
     SessionDirectory,
     SessionManager,
     user_pygent_root_for,
 )
 
-Item = AgentMessage | CollaborationOperation | DispatchOperationView
+Item = AgentMessage | DispatchOperationView
 
 
 class SessionCollaborationService:
@@ -28,8 +27,7 @@ class SessionCollaborationService:
 
     Background starts and forks are dispatched through the user-level
     DispatchStore (see lara.dispatch); this service only routes messages and
-    reports item status, falling back to the legacy project operation table
-    for operations recorded before the unified dispatch channel.
+    reports item status.
     """
 
     def __init__(
@@ -170,13 +168,7 @@ class SessionCollaborationService:
             session_id,
             limit=limit,
         )
-        legacy = await asyncio.to_thread(
-            self._store(config).list_operations, session_id, limit=limit
-        )
-        return [
-            *[DispatchOperationView.from_item(item) for item in dispatched],
-            *legacy,
-        ]
+        return [DispatchOperationView.from_item(item) for item in dispatched]
 
     async def wait_message(
         self,
@@ -247,21 +239,11 @@ class SessionCollaborationService:
 
     async def status(
         self, *, config: RunConfig, operation_id: str
-    ) -> CollaborationOperation | DispatchOperationView:
-        try:
-            item = await asyncio.to_thread(
-                self._dispatch_store(config).get_item, operation_id
-            )
-            return DispatchOperationView.from_item(item)
-        except KeyError:
-            pass
-        try:
-            return await asyncio.to_thread(self._store(config).get, operation_id)
-        except FileNotFoundError:
-            store = await self._routed_store(config, operation_id)
-            if store is None:
-                raise
-            return await asyncio.to_thread(store.get, operation_id)
+    ) -> DispatchOperationView:
+        item = await asyncio.to_thread(
+            self._dispatch_store(config).get_item, operation_id
+        )
+        return DispatchOperationView.from_item(item)
 
     async def wait(
         self,
@@ -269,8 +251,8 @@ class SessionCollaborationService:
         config: RunConfig,
         operation_id: str,
         timeout: float | None = None,
-    ) -> CollaborationOperation | DispatchOperationView:
-        async def _wait() -> CollaborationOperation | DispatchOperationView:
+    ) -> DispatchOperationView:
+        async def _wait() -> DispatchOperationView:
             while True:
                 operation = await self.status(config=config, operation_id=operation_id)
                 if operation.done:

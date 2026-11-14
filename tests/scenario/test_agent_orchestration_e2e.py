@@ -13,11 +13,12 @@ from tests.unit.test_model_configuration import native_runtime_config
 from lara.core.io import plain_data
 from lara.orchestration import LocalExecutionHost, WorkspaceRuntimePool
 from lara.runtime.service import LaraRuntimeService
+from lara.dispatch import DispatchItemState, DispatchStore
 from lara.sessions import (
     AgentMessageState,
-    CollaborationState,
     SessionCollaborationStore,
     SessionManager,
+    user_pygent_root_for,
 )
 
 
@@ -298,13 +299,16 @@ async def test_parent_agent_fanout_send_wait_any_and_callbacks_persist(
     assert invoker.slow_callback_seen
     assert invoker.slow_message_seen
 
-    reopened = SessionCollaborationStore(config.pygent_root)
-    operations = reopened.list_operations(parent.session_id)
-    assert {item.operation_id for item in operations} == {
+    dispatch = DispatchStore(
+        user_pygent_root_for(config.pygent_root) / "dispatch-v1.sqlite3"
+    )
+    operations = dispatch.list_items_for_session(parent.session_id)
+    assert {item.item_id for item in operations} == {
         invoker.fast_operation_id,
         invoker.slow_operation_id,
     }
-    assert all(item.state is CollaborationState.PASSED for item in operations)
+    assert all(item.state is DispatchItemState.PASSED for item in operations)
+    reopened = SessionCollaborationStore(config.pygent_root)
     sent = reopened.get_message(invoker.sent_message_id)
     assert sent.state is AgentMessageState.DELIVERED
     assert sent.target_session_id == invoker.slow_session_id

@@ -120,7 +120,7 @@ class CliScenarioTests(unittest.TestCase):
             )
             run_payload = json.loads(run.stdout)
             self.assertEqual(run_payload["status"], "passed")
-            self.assertIn("Lara agent is wired into chat", run_payload["final_answer"])
+            self.assertIn("pygent_v1 agent is wired into chat", run_payload["final_answer"])
             self.assertTrue((Path(run_payload["run_dir"]) / "case.yaml").exists())
             self.assertTrue((Path(run_payload["run_dir"]) / "run_config.json").exists())
             self.assertTrue((Path(run_payload["run_dir"]) / "events.jsonl").exists())
@@ -213,7 +213,7 @@ class CliScenarioTests(unittest.TestCase):
                         "expect:",
                         "  answer:",
                         "    contains:",
-                        "      - Lara agent is wired into chat",
+                        "      - pygent_v1 agent is wired into chat",
                         "",
                     ]
                 ),
@@ -452,7 +452,7 @@ class CliScenarioTests(unittest.TestCase):
                         "expect:",
                         "  answer:",
                         "    contains:",
-                        "      - Lara agent is wired into chat",
+                        "      - pygent_v1 agent is wired into chat",
                         "  files:",
                         "    unchanged:",
                         "      - sandbox/input.txt",
@@ -587,7 +587,7 @@ class CliScenarioTests(unittest.TestCase):
             )
             self.assertEqual(payload["status"], "passed")
             self.assertTrue(payload["execution_id"])
-            self.assertIn("Lara agent is wired into chat", payload["final_answer"])
+            self.assertIn("pygent_v1 agent is wired into chat", payload["final_answer"])
             self.assertTrue(payload["session_id"].startswith("chat-chat-"))
             self.assertTrue((run_dir / "events.jsonl").exists())
             self.assertTrue((run_dir / "messages.jsonl").exists())

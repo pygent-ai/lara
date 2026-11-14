@@ -313,7 +313,7 @@ async def test_pure_text_ending_queues_exactly_one_finalizer_round() -> None:
 
         lease = SimpleNamespace(
             runtime=SimpleNamespace(manager=manager, runtime_service=service),
-            release=asyncio.sleep(0),
+            release=lambda: asyncio.sleep(0),
         )
         coordinator = SessionExecutionCoordinator()
         try:

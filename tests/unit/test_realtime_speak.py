@@ -137,7 +137,7 @@ def test_execute_speak_attachments_need_workspace(tmp_path: Path) -> None:
 import json
 from types import SimpleNamespace
 
-from lara.runtime.service import _SpeakExecutor
+from pygent.agent.pygent_v1.runtime.service import _SpeakExecutor
 
 
 class _RecordingContext:

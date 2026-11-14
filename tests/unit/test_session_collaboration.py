@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import sqlite3
 from pathlib import Path
-from typing import cast
 
 import pytest
 
@@ -14,8 +11,6 @@ from lara.orchestration.session_collaboration import _fingerprint
 from lara.schema import RunConfig
 from lara.sessions import (
     AgentMessageState,
-    CollaborationOperation,
-    CollaborationState,
     SessionCollaborationStore,
     SessionDirectory,
     SessionManager,
@@ -30,136 +25,12 @@ def _setup(tmp_path):
     return config, manager, source, target
 
 
-def test_store_binds_idempotency_key_to_request_fingerprint(tmp_path) -> None:
-    store = SessionCollaborationStore(tmp_path / ".lara")
-    values = {
-        "submission_id": "submission-1",
-        "fingerprint": "same",
-        "source_session_id": None,
-        "target_session_id": "target-1",
-        "agent_alias": "default",
-        "case_id": "collaboration",
-        "message": "hello",
-    }
-
-    first = store.reserve(**values)
-    second = store.reserve(**values)
-
-    assert second.operation_id == first.operation_id
-    with pytest.raises(ValueError, match="different request"):
-        store.reserve(**{**values, "fingerprint": "different"})
-
-
-def test_store_persists_model_group_and_binds_it_to_the_fingerprint(tmp_path) -> None:
-    store = SessionCollaborationStore(tmp_path / ".lara")
-    values = {
-        "submission_id": "submission-1",
-        "fingerprint": "same",
-        "source_session_id": None,
-        "target_session_id": "target-1",
-        "agent_alias": "default",
-        "case_id": "collaboration",
-        "message": "hello",
-        "model_group": "coding",
-    }
-
-    first = store.reserve(**values)
-    second = store.reserve(**values)
-
-    assert first.model_group == "coding"
-    assert second.model_group == "coding"
-    assert second.operation_id == first.operation_id
-    with pytest.raises(ValueError, match="different request"):
-        store.reserve(**{**values, "fingerprint": "different"})
-
-
 def test_request_fingerprint_distinguishes_model_groups() -> None:
     base = _fingerprint(intent="start", message="task", model_group="coding")
     other = _fingerprint(intent="start", message="task", model_group="backup")
 
     assert base != other
     assert base == _fingerprint(intent="start", message="task", model_group="coding")
-
-
-def test_store_adds_model_group_to_databases_created_before_it(tmp_path) -> None:
-    database_path = tmp_path / ".lara" / "runtime" / "session-collaboration-v1.sqlite3"
-    database_path.parent.mkdir(parents=True)
-    connection = sqlite3.connect(database_path)
-    connection.execute(
-        """
-        CREATE TABLE collaboration_operations (
-            operation_id TEXT PRIMARY KEY,
-            submission_id TEXT NOT NULL UNIQUE,
-            fingerprint TEXT NOT NULL,
-            source_session_id TEXT,
-            target_session_id TEXT,
-            agent_alias TEXT NOT NULL,
-            case_id TEXT NOT NULL,
-            message TEXT NOT NULL,
-            state TEXT NOT NULL,
-            execution_id TEXT,
-            case_run_id TEXT,
-            final_answer TEXT NOT NULL DEFAULT '',
-            error TEXT,
-            owner_id TEXT,
-            lease_until_epoch REAL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )
-        """
-    )
-    connection.commit()
-    connection.close()
-
-    store = SessionCollaborationStore(tmp_path / ".lara")
-    operation = store.reserve(
-        submission_id="legacy",
-        fingerprint="legacy",
-        source_session_id=None,
-        target_session_id="target-legacy",
-        agent_alias="default",
-        case_id="collaboration",
-        message="hello",
-        model_group="coding",
-    )
-
-    assert operation.model_group == "coding"
-
-
-def test_store_lists_only_operations_related_to_the_session(tmp_path) -> None:
-    store = SessionCollaborationStore(tmp_path / ".lara")
-    first = store.reserve(
-        submission_id="first",
-        fingerprint="first",
-        source_session_id="parent",
-        target_session_id="first-child",
-        agent_alias="default",
-        case_id="collaboration",
-        message="first",
-    )
-    second = store.reserve(
-        submission_id="second",
-        fingerprint="second",
-        source_session_id="other-parent",
-        target_session_id="parent",
-        agent_alias="default",
-        case_id="collaboration",
-        message="second",
-    )
-    store.reserve(
-        submission_id="unrelated",
-        fingerprint="unrelated",
-        source_session_id="other-parent",
-        target_session_id="other-child",
-        agent_alias="default",
-        case_id="collaboration",
-        message="unrelated",
-    )
-
-    assert [item.operation_id for item in store.list_operations("parent")] == [
-        second.operation_id,
-        first.operation_id,
-    ]
 
 
 @pytest.mark.asyncio
@@ -255,20 +126,7 @@ async def test_status_prefers_the_dispatch_store(tmp_path) -> None:
     assert view.operation_id == item.item_id
     assert view.state is item.state
     assert view.done is False
-    # The legacy project table is still consulted as a fallback.
-    legacy_store = SessionCollaborationStore(config.pygent_root)
-    legacy = legacy_store.reserve(
-        submission_id="submission-legacy",
-        fingerprint="submission-legacy",
-        source_session_id=source,
-        target_session_id="target-legacy",
-        agent_alias="default",
-        case_id="collaboration",
-        message="legacy work",
-    )
-    routed = await service.status(config=config, operation_id=legacy.operation_id)
-    assert isinstance(routed, CollaborationOperation)
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(KeyError):
         await service.status(config=config, operation_id=f"op-{'a' * 32}")
     await service.aclose()
 
@@ -306,10 +164,7 @@ async def test_wait_any_returns_when_the_first_dispatch_item_finishes(tmp_path) 
     )
 
     assert timed_out is False
-    operations = cast(
-        "list[CollaborationOperation | DispatchOperationView]", list(items)
-    )
-    finished = [item for item in operations if item.done]
+    finished = [item for item in items if item.done]
     assert len(finished) == 1
     assert finished[0].operation_id == claimed_first.item_id
     await service.aclose()
@@ -352,27 +207,11 @@ async def test_list_operations_includes_dispatched_items(tmp_path) -> None:
         source_session_id=source,
         submission_id="submission-dispatch",
     )
-    SessionCollaborationStore(config.pygent_root).reserve(
-        submission_id="submission-legacy",
-        fingerprint="submission-legacy",
-        source_session_id=source,
-        target_session_id="target-legacy",
-        agent_alias="default",
-        case_id="collaboration",
-        message="legacy",
-    )
 
-    operations = cast(
-        "list[CollaborationOperation | DispatchOperationView]",
-        await service.list_operations(config=config, session_id=source),
-    )
+    operations = await service.list_operations(config=config, session_id=source)
 
-    assert [op.operation_id for op in operations] == [
-        item.item_id,
-        operations[1].operation_id,
-    ]
+    assert [op.operation_id for op in operations] == [item.item_id]
     assert isinstance(operations[0], DispatchOperationView)
-    assert isinstance(operations[1], CollaborationOperation)
     await service.aclose()
 
 
@@ -424,46 +263,6 @@ async def test_send_delivers_cross_project_messages_into_the_target_store(
     assert located is not None
     assert located.pygent_root == str((user_root / "projects" / "b").resolve())
     await service.aclose()
-
-
-@pytest.mark.asyncio
-async def test_status_routes_cross_project_items_through_the_directory(tmp_path) -> None:
-    (
-        user_root,
-        config_a,
-        config_b,
-        manager_a,
-        _manager_b,
-        source,
-        _target,
-    ) = _cross_project_setup(tmp_path)
-    service_b = SessionCollaborationService(poll_interval=0.01)
-
-    # A legacy operation registered in the user-level directory stays reachable
-    # from any project through the fallback route.
-    store_a = SessionCollaborationStore(config_a.pygent_root)
-    operation = store_a.reserve(
-        submission_id="submission-op",
-        fingerprint="submission-op",
-        source_session_id=source,
-        target_session_id=None,
-        agent_alias=config_a.agent_alias,
-        case_id="collaboration",
-        message="start work",
-    )
-    SessionDirectory(user_root).register_item(
-        item_id=operation.operation_id,
-        kind="operation",
-        pygent_root=str(config_a.pygent_root),
-        source_session_id=source,
-        target_session_id=None,
-    )
-
-    routed = await service_b.status(config=config_b, operation_id=operation.operation_id)
-    assert routed.operation_id == operation.operation_id
-    with pytest.raises(FileNotFoundError):
-        await service_b.status(config=config_b, operation_id=f"op-{'a' * 32}")
-    await service_b.aclose()
 
 
 @pytest.mark.asyncio

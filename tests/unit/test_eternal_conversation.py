@@ -1023,7 +1023,7 @@ async def test_failed_builder_keeps_pending_ut_and_recovers_without_rolling_back
 
 def test_memory_job_limits_match_the_validated_background_budget() -> None:
     from pygent.agent.pygent_v1.graph.common import DEFAULT_REACT_MAX_STEPS
-    from lara.runtime.service import MEMORY_JOB_LIMITS
+    from pygent.agent.pygent_v1.runtime.service import MEMORY_JOB_LIMITS
 
     assert MEMORY_JOB_LIMITS.max_steps == DEFAULT_REACT_MAX_STEPS
     assert MEMORY_JOB_LIMITS.max_model_calls == DEFAULT_REACT_MAX_STEPS

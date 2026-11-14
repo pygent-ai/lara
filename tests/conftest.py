@@ -29,7 +29,10 @@ def lara_project_data_in_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
             return project_pygent_root(workspace_root, tmp_path / "lara-home")
         return project_pygent_root(workspace_root, user_root)
 
-    monkeypatch.setattr("lara.schema.models.project_pygent_root", redirected)
+    # lora's RunConfig derives pygent_root inside the SDK __post_init__.
+    monkeypatch.setattr(
+        "pygent.agent.pygent_v1.schema.models.project_pygent_root", redirected
+    )
 
 
 @pytest.fixture(autouse=True)

@@ -11,7 +11,7 @@ from lara.core.io import plain_object
 from lara.dispatch import DispatchOperationView, DispatchService, DispatchStore
 from lara.orchestration import LocalExecutionHost, ManagedSessionTurn
 from lara.schema import RunConfig
-from lara.sessions import SessionManager, user_pygent_root_for
+from lara.sessions import SessionManager, collaboration_item_dict, user_pygent_root_for
 
 
 def _execution_host() -> LocalExecutionHost:
@@ -195,7 +195,7 @@ async def _enqueue_agent_message(args: argparse.Namespace) -> dict[str, Any]:
             source_agent_alias=(config.agent_alias if args.source_session else None),
             submission_id=args.submission_id,
         )
-        return message.to_dict()
+        return collaboration_item_dict(message)
 
 
 def _session_status(args: argparse.Namespace) -> dict[str, Any]:
@@ -209,7 +209,7 @@ async def _read_collaboration_status(args: argparse.Namespace) -> dict[str, Any]
             config=config,
             collaboration_id=args.collaboration_id,
         )
-        return item.to_dict()
+        return collaboration_item_dict(item)
 
 
 def _session_wait(args: argparse.Namespace) -> dict[str, Any]:
@@ -224,7 +224,7 @@ async def _wait_for_collaboration(args: argparse.Namespace) -> dict[str, Any]:
                 config=config,
                 message_id=args.collaboration_id,
             )
-            return message.to_dict()
+            return collaboration_item_dict(message)
         # Dispatched items are driven by the dispatch scheduler; waiting is
         # pure polling, there is no in-process resume anymore.
         operation = await host.collaboration.wait(

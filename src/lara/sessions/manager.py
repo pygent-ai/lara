@@ -42,6 +42,8 @@ LARA_SAYS_SESSION_MODE = PYGENT_SAYS_SESSION_MODE
 class SessionManager(_SDKSessionManager):
     """SDK session storage + lora product layer (directory index, run queries)."""
 
+    config: RunConfig  # pyright: ignore[reportIncompatibleVariableOverride] — lora's RunConfig subclasses the SDK's
+
     def __init__(self, config: RunConfig):
         super().__init__(config)
         self._directory = SessionDirectory(user_pygent_root_for(self.pygent_root))

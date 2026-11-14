@@ -10,17 +10,11 @@ from pygent.llm import ModelExecution, ModelProviderResponse
 
 from lara.config import load_run_config
 from lara.core.io import plain_data
-from lara.dispatch import DispatchItem, DispatchItemState
+from lara.dispatch import DispatchItem, DispatchItemState, DispatchOperationView
 from tests.unit.test_model_configuration import native_runtime_config
 from lara.runtime.agent_collaboration import AGENT_WAIT_TOOL_SPEC
 from lara.runtime.service import LaraRuntimeService
-from lara.sessions import (
-    AgentMessage,
-    AgentMessageState,
-    CollaborationOperation,
-    CollaborationState,
-    SessionManager,
-)
+from lara.sessions import AgentMessage, AgentMessageState, SessionManager
 
 
 def test_agent_wait_schema_is_openai_compatible() -> None:
@@ -41,12 +35,12 @@ def test_agent_wait_schema_is_openai_compatible() -> None:
 
 def _operation(
     *,
-    state: CollaborationState,
+    state: DispatchItemState,
     parent_session_id: str,
     agent_alias: str,
     operation_id: str = "op-related",
-) -> CollaborationOperation:
-    return CollaborationOperation(
+) -> DispatchOperationView:
+    return DispatchOperationView(
         operation_id=operation_id,
         submission_id="start-call",
         source_session_id=parent_session_id,
@@ -111,14 +105,14 @@ class _Collaboration:
             updated_at="now",
         )
 
-    async def item_status(self, **kwargs: Any) -> AgentMessage | CollaborationOperation:
+    async def item_status(self, **kwargs: Any) -> AgentMessage | DispatchOperationView:
         self.calls.append(("item_status", kwargs))
         operation_id = str(kwargs["collaboration_id"])
         return _operation(
             state=(
-                CollaborationState.PASSED
+                DispatchItemState.PASSED
                 if operation_id == "op-ready"
-                else CollaborationState.RUNNING
+                else DispatchItemState.RUNNING
             ),
             parent_session_id=(
                 "foreign-session"
@@ -129,11 +123,11 @@ class _Collaboration:
             operation_id=operation_id,
         )
 
-    async def list_operations(self, **kwargs: Any) -> list[CollaborationOperation]:
+    async def list_operations(self, **kwargs: Any) -> list[DispatchOperationView]:
         self.calls.append(("list_operations", kwargs))
         return [
             _operation(
-                state=CollaborationState.RUNNING,
+                state=DispatchItemState.RUNNING,
                 parent_session_id=self.parent_session_id,
                 agent_alias=self.agent_alias,
             )
@@ -141,15 +135,15 @@ class _Collaboration:
 
     async def wait_any(
         self, **kwargs: Any
-    ) -> tuple[tuple[CollaborationOperation, ...], bool]:
+    ) -> tuple[tuple[DispatchOperationView, ...], bool]:
         self.calls.append(("wait_any", kwargs))
         return (
             tuple(
                 _operation(
                     state=(
-                        CollaborationState.PASSED
+                        DispatchItemState.PASSED
                         if operation_id in {"op-related", "op-ready"}
-                        else CollaborationState.RUNNING
+                        else DispatchItemState.RUNNING
                     ),
                     parent_session_id=self.parent_session_id,
                     agent_alias=self.agent_alias,

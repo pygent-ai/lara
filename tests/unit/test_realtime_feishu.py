@@ -10,7 +10,7 @@ import pytest
 
 from lara.runtime.realtime.feishu import FeishuChannel, load_feishu_channels
 from pygent.agent.pygent_v1.runtime.realtime.speak import SILENT_ACKNOWLEDGEMENT, SPEAK_TOOL_SPEC
-from lara.runtime.service import _SpeakExecutor
+from pygent.agent.pygent_v1.runtime.service import _SpeakExecutor
 
 
 class _PostRecorder:
@@ -186,8 +186,8 @@ def test_speak_executor_forwards_delivered_text_to_channels() -> None:
     )
     events: list[dict] = []
 
-    async def emit(**kwargs):
-        events.append(kwargs)
+    async def emit(kind, data):
+        events.append({"kind": kind, "data": data})
 
     async def _run():
         result = await executor.execute(
@@ -218,8 +218,8 @@ def test_speak_executor_does_not_forward_say_nothing() -> None:
     )
     events: list[dict] = []
 
-    async def emit(**kwargs):
-        events.append(kwargs)
+    async def emit(kind, data):
+        events.append({"kind": kind, "data": data})
 
     async def _run():
         result = await executor.execute(
@@ -250,8 +250,8 @@ def test_speak_executor_appends_attachment_paths_to_channel_text(tmp_path: Path)
     )
     events: list[dict] = []
 
-    async def emit(**kwargs):
-        events.append(kwargs)
+    async def emit(kind, data):
+        events.append({"kind": kind, "data": data})
 
     async def _run():
         await executor.execute(
