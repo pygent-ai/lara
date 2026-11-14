@@ -140,7 +140,7 @@ export function modelGroupValidationError(draft) {
     const unknown = group.models.find((key) => !Object.hasOwn(models, key));
     if (unknown) return `模型组 ${name} 引用了不存在的模型 ${unknown}。`;
   }
-  if (!Object.hasOwn(groups, draft.defaultModelGroup || "")) return "请选择一个已有模型组作为默认模型组。";
+  if (Object.keys(groups).length && !Object.hasOwn(groups, draft.defaultModelGroup || "")) return "请选择一个已有模型组作为默认模型组。";
   return "";
 }
 
@@ -241,7 +241,20 @@ export function commitConnectionFields(savedDraft, previousKey, buffer, catalogs
       ...(bufferKey && buffer.models[bufferKey] ? { protocol: buffer.models[bufferKey].protocol } : {}),
     };
   }
-  return { ...savedDraft, connections, models };
+  // Carry credentialValues for referenced env names only: the backend rejects
+  // unknown envs, and other connections keep their own values.
+  const referencedEnvs = new Set(
+    Object.values(connections)
+      .map((connection) => connection?.credential?.env)
+      .filter((env) => typeof env === "string" && env.trim()),
+  );
+  const mergedCredentialValues = { ...savedDraft.credentialValues, ...buffer.credentialValues };
+  const credentialValues = Object.fromEntries(
+    Object.entries(mergedCredentialValues).filter(
+      ([env, value]) => referencedEnvs.has(env) && (value ?? "").toString().trim(),
+    ),
+  );
+  return { ...savedDraft, connections, models, credentialValues };
 }
 
 // Row save: add or update one model entry. A pending rename also remaps the

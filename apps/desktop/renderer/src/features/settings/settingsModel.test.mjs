@@ -169,6 +169,49 @@ test("connection field save carries protocols but not in-progress model edits", 
   assert.equal(modelRowDirty(next, buffer, "other"), true);
 });
 
+test("connection field save carries a newly typed API key", () => {
+  const draft = settingsToDraft({
+    connections: { service: { ...emptyNativeConnection(), credential_source: "user-file:OPENAI_API_KEY" } },
+    models: { main: { connection: "service", model_id: "main", protocol: "openai_responses", capabilities: { limits: {} } } },
+    model_groups: { coding: { models: ["main"] } },
+    default_model_group: "coding",
+  });
+  const buffer = {
+    key: "service",
+    connection: draft.connections.service,
+    models: structuredClone(draft.models),
+    renames: {},
+    credentialValues: { OPENAI_API_KEY: "rotated-secret" },
+  };
+
+  const next = commitConnectionFields(draft, "service", buffer, null);
+  assert.deepEqual(settingsPayload(next).credential_values, { OPENAI_API_KEY: "rotated-secret" });
+  // The saved baseline records the typed key, so the editor settles as clean.
+  assert.equal(connectionFieldsDirty(next, "service", buffer), false);
+});
+
+test("connection field save drops stale credential values the config no longer references", () => {
+  const draft = settingsToDraft({
+    connections: { service: { provider: "openai", credential: { env: "ANTHROPIC_API_KEY" }, credential_source: "missing", protocols: { anthropic_messages: { base_url: "https://api.anthropic.com" } } } },
+    models: { main: { connection: "service", model_id: "main", protocol: "anthropic_messages", capabilities: { limits: {} } } },
+    model_groups: { coding: { models: ["main"] } },
+    default_model_group: "coding",
+  });
+  draft.credentialValues.MAIN_KEY = "previous-secret";
+  const buffer = {
+    key: "service",
+    connection: draft.connections.service,
+    models: structuredClone(draft.models),
+    renames: {},
+    credentialValues: { MAIN_KEY: "", ANTHROPIC_API_KEY: "carried-secret" },
+  };
+
+  const next = commitConnectionFields(draft, "service", buffer, null);
+  // MAIN_KEY is no longer referenced by the committed connections, so the
+  // payload must not carry it; the backend rejects unknown env names.
+  assert.deepEqual(settingsPayload(next).credential_values, { ANTHROPIC_API_KEY: "carried-secret" });
+});
+
 test("model row save commits its entry and remaps a pending rename in groups", () => {
   const draft = settingsToDraft({
     connections: { service: emptyNativeConnection() },
