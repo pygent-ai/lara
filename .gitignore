@@ -19,8 +19,6 @@ wheels/
 
 # Local Lara runtime state
 .lara/
-# pygent 0.6.0 writes offloaded media to <workspace>/.pygent_v1/uploads (upstream issue 7)
-.pygent_v1/
 .superpowers/
 /sessions/
 /workspace/

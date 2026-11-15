@@ -13,7 +13,7 @@ from pygent import ToolKit, thaw_json
 from pygent import ToolResult as PygentToolResult
 
 from pygent.agent.pygent_v1.runtime.tools import ToolObserver
-from lara.schema import CaseRunRef
+from lara.schema import CaseRunRef, RunConfig
 from lara.tracing import DiffTool, EventStore
 
 
@@ -781,11 +781,6 @@ class FileEffectTrackerSpecTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(len(effects), 1)
                     self.assertEqual(effects[0].path, str(path.resolve()))
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="SDK gap: FileEffectTracker.IGNORED_DIRS hard-codes .pygent_v1; "
-        "lora's .lara data dir is not ignorable until pygent exposes it on RunConfig",
-    )
     def test_file_effect_tracker_ignores_runtime_directories(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             FileEffectTracker = _file_effect_tracker_class()
@@ -797,7 +792,13 @@ class FileEffectTrackerSpecTests(unittest.IsolatedAsyncioTestCase):
                 case_run_id="r1",
                 run_dir=Path(tmp) / "run",
             )
-            tracker = FileEffectTracker(workspace_root=workspace, store=EventStore(run))
+            # The pipeline passes RunConfig.workspace_runtime_dir (".lara" for
+            # lara) as the root-level exclusion; IGNORED_DIRS covers the rest.
+            tracker = FileEffectTracker(
+                workspace_root=workspace,
+                store=EventStore(run),
+                root_ignored_dirs=(RunConfig(workspace_root=str(workspace)).workspace_runtime_dir,),
+            )
             before = tracker.snapshot_workspace()
 
             for ignored in [

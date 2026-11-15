@@ -16,8 +16,7 @@ from typing import Any, cast
 from pygent import UserMessage
 from pygent.agent.pygent_v1.graph.pipeline import checkpoint_conversation_message
 from pygent.agent.pygent_v1.runtime.eternal_conversation import eternal_enabled_for
-from pygent.agent.pygent_v1.runtime.realtime.speak import SPEAK_TOOL_SPEC
-from pygent.agent.pygent_v1.runtime.service import PygentRuntimeService, _SpeakExecutor
+from pygent.agent.pygent_v1.runtime.service import PygentRuntimeService
 from pygent.runtime import ExecutionOptions
 from pygent.runtime.codec import context_to_dict, invocation_from_dict, message_to_dict
 
@@ -51,13 +50,11 @@ class LaraRuntimeService(PygentRuntimeService):
             lara_credential_environment(config.user_pygent_root),
         )
         kwargs.setdefault("run_config_loader", load_run_config)
-        super().__init__(config, **kwargs)
         # The SDK ships no speak delivery channels; lara adds Feishu.
-        self.runtime.register_tool(
-            SPEAK_TOOL_SPEC,
-            _SpeakExecutor(self, channels=load_feishu_channels(config.user_pygent_root)),
-            replace_existing=True,
+        kwargs.setdefault(
+            "speak_channels", load_feishu_channels(config.user_pygent_root)
         )
+        super().__init__(config, **kwargs)
 
     async def cancel_turn(self, execution_id: str) -> bool:
         """Request cancellation of one running execution."""

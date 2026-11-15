@@ -1,6 +1,6 @@
 # pygent 0.6.0 上游问题报告（来自 lara 迁移）
 
-> 整理日期：2026-11-14。基线：本地 `C:/Projects/pygent` 0.6.1（`699d9c6`）。#1、#4 已在 0.6.1 修复，留作记录。
+> 整理日期：2026-11-14。基线：本地 `C:/Projects/pygent` **0.6.2**（`71f2ea0`）。#1、#4 在 0.6.1 修复；#2、#3、#5、#6、#7 在 0.6.2 修复（lara 侧的临时处理已随之删除）。仍开放：#8、#9。
 > 每一项都给出 lara 侧的临时处理和"上游修复后 lara 可删什么"，便于回收代码。
 
 ## 1. ~~`AgentMessage` 缺 `to_dict`~~（0.6.1 已随协作收件箱整体删除）
@@ -24,7 +24,7 @@
   （与 `from_dict` 的键一一对应，`status` 对应 `state`。）
 - **lara 临时处理**：`src/lara/sessions/collaboration.py` 对 SDK 类打 monkeypatch。**上游修复后可整删该文件**，`lara.sessions` 直接 re-export SDK。
 
-## 2. `PygentRuntimeService._child_agent_config` 用 SDK `RunConfig.from_dict` 复制配置，拒绝宿主扩展字段（扩展性缺口）
+## 2. ~~`_child_agent_config` 用 SDK `RunConfig.from_dict`~~（0.6.2 已修：`type(self.config).from_dict`）
 
 - **位置**：`pygent/agent/pygent_v1/runtime/service.py:638-641`
   ```python
@@ -35,7 +35,7 @@
 - **建议修复**：`type(self.config).from_dict(self.config.to_dict())`，或直接 `copy.deepcopy(self.config)`；更进一步，`run_config_loader` 注入了就统一走它，不再有同 alias 的特殊分支。
 - **lara 临时处理**：`LaraRuntimeService._child_agent_config` 覆盖。上游修复后可删该方法并改为注入 `run_config_loader=load_run_config`。
 
-## 3. `FileEffectTracker.IGNORED_DIRS` 硬编码 `.pygent_v1`（配置缺口）
+## 3. ~~`FileEffectTracker.IGNORED_DIRS` 硬编码 `.pygent_v1`~~（0.6.2 已修：`RunConfig.workspace_runtime_dir` → `root_ignored_dirs`）
 
 - **位置**：`pygent/agent/pygent_v1/runtime/tools.py:36-40`
 - **现象**：宿主的数据目录不叫 `.pygent_v1`（lara 用 `.lara`，由 `RunConfig.user_pygent_root/pygent_root` 注入）时，运行时自己写的文件（sessions、索引、sqlite）被当成 agent 的文件效应记录。
@@ -53,13 +53,13 @@
 - **建议修复**：把 `fetched: dict[str, bytes | None] = {}` 提到 `offload_remote_media` 作用域，`handle` 闭包复用。
 - **lara 侧**：`tests/unit/test_media_offload.py::test_same_remote_url_downloaded_once` 标 `xfail(strict)`。
 
-## 5. `fork_model_profiles` 不在稳定面（API 面）
+## 5. ~~`fork_model_profiles` 不在稳定面~~（0.6.2 已修：`pygent.agent.pygent_v1.runtime` 导出）
 
 - **位置**：`pygent/agent/pygent_v1/runtime/realtime/fork_reasoning.py`
 - **现象**：lara 的 fork 回复要按会话模型组选 fork profile，只能 import 这个内部路径；pygent 调整内部布局会直接断。
 - **建议**：提升到 `pygent.agent.pygent_v1.runtime`（或 `pygent.agent`）的公开导出。
 
-## 6. `graph/media_offload.UPLOADS_SUBDIR` 硬编码 `<workspace>/.pygent_v1/uploads`（配置缺口）
+## 6. ~~`media_offload.UPLOADS_SUBDIR` 硬编码~~（0.6.2 已修：`RunConfig.workspace_runtime_dir` + `uploads_dir` 参数；lara 设 `.lara`，`.gitignore` 的 `.pygent_v1/` 已删）
 
 - **位置**：`pygent/agent/pygent_v1/graph/media_offload.py:30`
   ```python
@@ -69,7 +69,7 @@
 - **建议修复**：`offload_inline_media`/`offload_remote_media` 接受 `uploads_dir`（或从 `config.pygent_root` 推导目录名），默认值保持 `.pygent_v1/uploads`。
 - **lara 临时处理**：`.gitignore` 加 `.pygent_v1/`。上游修复后改回 `.lara/uploads` 并删掉这条 ignore。
 
-## 7. 同类观察：SDK 工具注册没有"宿主扩展点"
+## 7. ~~SDK 工具注册没有"宿主扩展点"~~（0.6.2 已修：`speak_channels` / `external_tools` 构造参数；lara 用 `speak_channels` 挂 Feishu）
 
 不算 bug，但迁移中反复碰到：`PygentRuntimeService.__init__` 固定注册 speak（`channels=()`）、scheduler 工具，并用这组工具构建模板 agent。宿主要换 speak 通道或改可见工具集，只能 `register_tool(..., replace_existing=True)` 再清空 `_agent_definitions` 重建。若 `__init__` 接受 `speak_channels` / `external_tools` 两个可选参数，lara 的 `LaraRuntimeService.__init__` 可再删十几行。
 

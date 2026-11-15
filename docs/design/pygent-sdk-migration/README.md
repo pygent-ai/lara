@@ -1,6 +1,6 @@
 # lora → pygent SDK 迁移进展与下一步指南
 
-> 最后更新：2026-11-14（会话 7，分支 `sdk-migration`，worktree `C:/Projects/lara-sdk-migration`）
+> 最后更新：2026-11-15（会话 8，分支 `sdk-migration`，worktree `C:/Projects/lara-sdk-migration`）
 
 > 本文档是跨 Agent 会话的交接基线。每轮工作结束后**必须**更新"当前状态"和"下一步"两节并随代码一起提交推送。
 
@@ -15,7 +15,7 @@
 
 ## 2. 当前状态（2026-11-14，会话 7）
 
-- 依赖：**`pygent-ai[video]==0.6.1`**，PyPI 未发，`[tool.uv.sources]` 钉本地 `../pygent`（editable）。发版后删掉该覆盖、`uv lock`。
+- 依赖：**`pygent-ai[video]==0.6.2`**（本地 tag `v0.6.2`），PyPI 未发，`[tool.uv.sources]` 钉本地 `../pygent`（editable）。发版后删掉该覆盖、`uv lock`。
 - `src/lara` 相对 `main`：**−2,900 行左右**（删 `dispatch/` 整包、`orchestration/session_collaboration.py`、`runtime/agent_collaboration.py`、`sessions/collaboration.py`、`sessions/directory.py`、`cli/automations.py`、`cli/projects.py`、`lara_api/routers|models/automations.py`；新增 `cli/scheduler.py` ~250 行、`lara_api/routers/scheduler.py` ~130 行）。
 - 单测：`tests/unit` **658 passed / 0 failed / 1 xfailed**（`--ignore test_eternal_conversation.py`：那 8 个依赖本机不存在的 memory-cli 脚本）。
 - `tests/scenario`：**28 passed / 0 failed**（原 7 红全部清零——它们假设的 `agent_start`/`session start` 同步语义随协作一起删了）。
@@ -64,6 +64,13 @@
 - **删掉的能力（用户已接受）**：`agent_send` 跨会话消息、子会话完成回调父会话、`fork -m` 后台分叉。模型要起后台工作 → `schedule_task` 的 `at <now>` / `on <event>`；结果看调度器 run 日志。
 - 顺带：`test_runtime_recovery.py` 的"取消进行中回合"用例改断 SDK 0.6.1 的新契约——取消时配对一条 `detached` tool 消息，不再留悬空 `tool_calls`（并修成确定性：等 `tool.authorized` 后再取消）。
 
+### 会话 8 完成（pygent 0.6.2 适配）
+- 0.6.2 是对 0.6.1 代码的 drop-in（升级后 pyright/pytest 直接全绿），变化全是 lara 提过的扩展点，适配即删 lara 侧 workaround：
+  - `speak_channels=` 构造参数：`LaraRuntimeService` 不再 `register_tool(SPEAK_TOOL_SPEC, ..., replace_existing=True)`，改 `kwargs.setdefault("speak_channels", load_feishu_channels(...))`；SDK 顺带把通道失败/拒收记到 `service.warnings` 并在 `close()` 时 drain。
+  - `RunConfig.workspace_runtime_dir`：lara 的 `RunConfig` 子类默认 `".lara"`。效果：模型媒体落盘到 `<ws>/.lara/uploads`（和 `lara_api/services/uploads.py` 的用户上传同目录），文件效应追踪在工作区根忽略 `.lara`，git 观察也排除它；项目里不再出现 `.pygent_v1/`，`.gitignore` 那条删了，`test_tools.py` 的 xfail 去掉（测试改为显式传 `root_ignored_dirs=(config.workspace_runtime_dir,)`，和 pipeline 的调用一致）。
+  - `_child_agent_config` 改用宿主 `RunConfig` 类型、`fork_model_profiles` 进稳定面、`media_offload` 单次下载：lara 无需改动，upstream-issues #2/#3/#5/#6/#7 标记已修。
+- 剩余上游项只有 #8（`SessionManager.create` 指定 id）和 #9（`realtime_enabled_for` 可配置）。
+
 ## 3. 已知 SDK 缺口（需推上游 pygent）
 
 完整报告（位置、复现、建议修复、lara 侧可回收的代码）见 [`upstream-issues.md`](upstream-issues.md)。
@@ -86,7 +93,7 @@
 ## 5. 下一步（按序）
 
 1. **pygent 0.6.1 发 PyPI 后**：删 `pyproject.toml` 的 `[tool.uv.sources] pygent-ai = { path = "../pygent" }`，`uv lock`。
-2. 向 pygent 推上游 [`upstream-issues.md`](upstream-issues.md)（现存 #2 `_child_agent_config`、#3 `IGNORED_DIRS`、#5 `fork_model_profiles` 稳定面、#6 `UPLOADS_SUBDIR`、#7 speak 通道/工具集扩展点、#8 `SessionManager.create` 指定 id、#9 `realtime_enabled_for` 可配置）。#1 和 #4 已在 0.6.1 修复。
+2. 向 pygent 推上游 [`upstream-issues.md`](upstream-issues.md) 剩余两项：#8 `SessionManager.create` 指定 id（修了可删 `SessionManager.ensure` 的 `_new_session_id` 覆盖），#9 `realtime_enabled_for` 可配置（A(b) 的前提）。其余已在 0.6.1/0.6.2 修复。
 3. 桌面端：实际跑一遍"普通会话运行中发消息 → 排队 → 跟随循环附着"的链路（只有 render 测试覆盖，没有交互验证）；`realtimeView.js` 里 `role === "automation"` 分支和 `pygent.v1.automation.trigger` 渲染已无生产者，可删。
 4. 环境项：`test_eternal_conversation.py` 8 个红依赖 `C:/Projects/memory-cli/skills/dynamic-memory-cli/scripts/dynamic_memory_cli.py`；worktree 的 Electron 二进制未装（`npm ci --ignore-scripts`）。
 5. 可选：Windows 自启动 `lara scheduler run`，让定时任务不依赖桌面 app 开着。

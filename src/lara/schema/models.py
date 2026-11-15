@@ -83,11 +83,17 @@ def default_cli_bash_presets() -> list[BashCliPreset]:
 
 @dataclass(slots=True)
 class RunConfig(_SDKRunConfig):
-    """SDK run configuration rooted at ``~/.lara`` with lara's CLI presets."""
+    """SDK run configuration rooted at ``~/.lara`` with lara's CLI presets.
+
+    ``workspace_runtime_dir`` names the one runtime-owned directory inside a
+    project (media uploads, file-effect exclusions); lara brands it ``.lara``
+    so a project never grows a second runtime directory.
+    """
 
     cli_bash_presets: list[BashCliPreset] = field(
         default_factory=default_cli_bash_presets
     )
+    workspace_runtime_dir: str = ".lara"
 
     def __post_init__(self) -> None:
         # Resolve the data root before the SDK does, or its ``~/.pygent_v1``
