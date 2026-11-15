@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from lara_api.dependencies import ApiContext, get_api_context
 from lara_api.models.requests import (
     ChatCancelRequest,
-    ChatSteeringRequest,
+    ChatMessageRequest,
     ChatTurnRequest,
     ToolApprovalRequest,
 )
@@ -41,33 +41,32 @@ async def deliver_approval(
     return {"approval_id": approval_id, "delivered": delivered}
 
 
-@router.post("/executions/{execution_id}/steering")
-async def deliver_steering(
-    execution_id: str,
-    request: ChatSteeringRequest,
+@router.post("/sessions/{session_id}/messages")
+async def deliver_message(
+    session_id: str,
+    request: ChatMessageRequest,
     context: ApiContext = Depends(get_api_context),
 ) -> dict[str, object]:
+    """Deliver a user message to a session that is already streaming a turn.
+
+    The SDK routes it: the realtime session answers through a fork reply
+    (returned here); any other session queues a turn behind the running one.
+    """
+
     try:
-        receipt = await context.chat_registry.deliver_steering(
-            execution_id, session_id=request.session_id,
-            input_id=request.input_id, message=request.message,
+        return await context.chat_registry.deliver_message(
+            context,
+            session_id=session_id,
+            scope_id=request.scope_id,
+            input_id=request.input_id,
+            message=request.message or "",
             attachments=request.attachments,
         )
-    except LookupError as exc:
+    except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if receipt.status == "execution_finished":
-        raise HTTPException(status_code=409, detail="当前执行已结束，无法追加指令；请作为新消息发送。")
-    response: dict[str, object] = {
-        "execution_id": execution_id,
-        "input_id": receipt.input_id,
-        "status": receipt.status,
-    }
-    reply = getattr(receipt, "reply", None)
-    if reply is not None:
-        response["reply"] = reply
-    return response
+
 
 @router.post("/executions/{execution_id}/cancel")
 async def cancel_execution(

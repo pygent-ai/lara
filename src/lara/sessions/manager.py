@@ -1,33 +1,17 @@
 from __future__ import annotations
 
-import hashlib
 import json
-import shutil
-import sqlite3
 from contextlib import closing
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from lara.core.io import (
-    append_jsonl,
-    read_json,
-    utc_now,
-    validate_path_id,
-    write_json,
-    write_json_atomic,
-)
-from lara.core.process import current_owner
-from pygent.agent.pygent_v1.core.redaction import redact_secrets
+from lara.core.io import read_json, validate_path_id
 from lara.schema import (
     AgentSession,
     CaseRunRef,
-    CaseRunStatus,
     RunConfig,
-    SessionRef,
     SessionSpec,
 )
-from lara.sessions.directory import SessionDirectory, user_pygent_root_for
 
 from pygent.agent.pygent_v1.sessions.manager import (
     PYGENT_SAYS_SESSION_MODE,
@@ -40,103 +24,30 @@ LARA_SAYS_SESSION_MODE = PYGENT_SAYS_SESSION_MODE
 
 
 class SessionManager(_SDKSessionManager):
-    """SDK session storage + lora product layer (directory index, run queries)."""
+    """SDK session storage + lora product layer (run queries, model selection)."""
 
     config: RunConfig  # pyright: ignore[reportIncompatibleVariableOverride] — lora's RunConfig subclasses the SDK's
 
-    def __init__(self, config: RunConfig):
-        super().__init__(config)
-        self._directory = SessionDirectory(user_pygent_root_for(self.pygent_root))
+    def ensure(self, session_id: str, *, case_id: str = "scheduler") -> AgentSession:
+        """Load ``session_id``, creating it under that exact id when missing.
 
-    def create(
-        self,
-        case_id: str,
-        mode: str = "e2e",
-        *,
-        model_group_name: str | None = None,
-        selected_model_key: str | None = None,
-        eternal_memory: bool = False,
-    ) -> SessionRef:
-        validate_path_id(case_id, "case_id")
-        selected_group, selected_model = self._selection_for_group(model_group_name)
-        # Validate before any directory is created so a bad model key cannot
-        # leave an orphan session behind.
-        if selected_model_key:
-            self._require_group_model(selected_group, selected_model_key)
-            selected_model = selected_model_key
-        session_id = (
-            LARA_SAYS_SESSION_MODE
-            if mode == LARA_SAYS_SESSION_MODE
-            else self._new_session_id(case_id, mode)
-        )
-        session_dir = self.sessions_root / session_id
-        session_dir.mkdir(parents=True, exist_ok=False)
-        for child in ("context", "state", "logs", "cases"):
-            (session_dir / child).mkdir(parents=True, exist_ok=True)
+        Scheduler tasks address sessions by a stable name (``scheduler.session``),
+        while the SDK only generates ids; the instance override routes the SDK
+        ``create`` through the requested id without copying its body.
+        """
 
-        now = utc_now()
-        session = AgentSession(
-            session_id=session_id,
-            workspace_root=str(self.workspace_root),
-            session_dir=str(session_dir),
-            created_at=now,
-            updated_at=now,
-            model_group_name=selected_group,
-            selected_model_key=selected_model,
-            metadata={
-                "active_case_id": case_id,
-                "mode": mode,
-                "eternal_memory": eternal_memory,
-            },
-        )
-        write_json_atomic(session_dir / "session.json", session.to_dict())
-        write_json(
-            session_dir / "metadata.json",
-            {
-                "session_id": session_id,
-                "case_id": case_id,
-                "mode": mode,
-                "created_at": now,
-                "updated_at": now,
-                "workspace_root": str(self.workspace_root),
-                "model_group_name": selected_group,
-                "selected_model_key": selected_model,
-            },
-        )
-        self._register_in_directory(session_id=session_id, case_id=case_id, mode=mode)
-        return SessionRef(
-            session_id=session_id,
-            session_dir=str(session_dir),
-            workspace_root=str(self.workspace_root),
-        )
-    def load(self, session_id: str) -> AgentSession:
-        session_dir = self._session_dir(session_id)
-        path = session_dir / "session.json"
-        if not path.exists():
-            raise FileNotFoundError(f"Session {session_id!r} does not exist")
-        data = read_json(path)
-        data["session_dir"] = str(session_dir)
-        session = AgentSession.from_dict(data)
-        self._resolve_missing_selection(session)
-        session = self._apply_history_checkpoints(session)
-        self._register_in_directory(
-            session_id=session_id,
-            case_id=str(session.metadata.get("active_case_id") or ""),
-            mode=str(session.metadata.get("mode") or ""),
-        )
-        return session
+        validate_path_id(session_id, "session_id")
+        try:
+            return self.load(session_id)
+        except FileNotFoundError:
+            pass
+        self._new_session_id = lambda _case_id, _mode: session_id  # type: ignore[method-assign]
+        try:
+            ref = self.create(case_id, mode="chat")
+        finally:
+            del self._new_session_id
+        return self.load(ref.session_id)
 
-    def _register_in_directory(
-        self, *, session_id: str, case_id: str, mode: str
-    ) -> None:
-        """Keep the user-level directory addressable across projects."""
-        self._directory.register_session(
-            session_id=session_id,
-            pygent_root=str(self.pygent_root),
-            workspace_root=str(self.workspace_root),
-            case_id=case_id,
-            mode=mode,
-        )
     def find_case_run(self, session_id: str, case_run_id: str) -> CaseRunRef:
         session_dir = self._session_dir(session_id)
         matches = list((session_dir / "cases").glob(f"*/runs/{case_run_id}"))

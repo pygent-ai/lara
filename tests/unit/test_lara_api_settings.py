@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -266,7 +267,7 @@ def test_update_settings_retires_runtime_scope_without_breaking_active_waiters(
     pool = _RecordingRuntimePool()
     context.attach_chat_registry(registry)
     old_scope = RuntimeScopeKey.from_config(context.config)
-    context._runtime_pool = pool
+    context._execution_host = SimpleNamespace(runtime_pool=pool)
 
     asyncio.run(context.areload({"workspace_root": str(workspace_b)}))
 

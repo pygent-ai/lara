@@ -158,7 +158,8 @@ def test_lara_control_plane_routes_scheduled_tasks_through_lara(tmp_path) -> Non
     prompt, _ = PromptComposer(build_prompt_registry()).compose_request_system(context)
 
     assert "unqualified scheduled or recurring task" in prompt
-    assert "Lara automation" in prompt
+    assert "Lara scheduler task" in prompt
+    assert "schedule_task tool" in prompt
     assert "schtasks, cron, systemd timers, or background loops" in prompt
     assert "explicitly requests an operating-system scheduler" in prompt
     assert "list or show command" in prompt
@@ -170,11 +171,12 @@ def test_lara_control_plane_routes_scheduled_tasks_through_lara(tmp_path) -> Non
     assert module.cache_scope == "request"
 
 
-def test_agent_collaboration_prompt_explains_list_and_wait_any(tmp_path) -> None:
+def test_scheduler_tools_prompt_explains_schedules_and_background_work(tmp_path) -> None:
     prompt = _render_available_tools_prompt(
-        _context(tmp_path, tool_names=["agent_start", "agent_list", "agent_wait"])
+        _context(tmp_path, tool_names=["schedule_task", "emit_event"])
     )
 
-    assert "Use agent_list to inspect related work" in prompt
-    assert "collaboration_ids to wait until any task is ready" in prompt
-    assert "single collaboration_id" in prompt
+    assert "every <n>[smhd], at <ISO>, daily HH:MM, or on <event>" in prompt
+    assert "may need user approval" in prompt
+    assert "`at <now>` runs it once" in prompt
+    assert "agent_list" not in _render_available_tools_prompt(_context(tmp_path, tool_names=["bash"]))

@@ -87,38 +87,21 @@ export function createApiClient(options = {}) {
         body: settingsPayload(settings, modelKeyRenames),
       }),
     listProjects: (options = {}) => jsonRequest("/projects", options),
-    listAutomations: (status = "", options = {}) =>
-      jsonRequest(`/automations${status ? `?status=${encodeURIComponent(status)}` : ""}`, options),
-    createAutomation: (request, options = {}) => jsonRequest("/automations", {
+    listScheduledTasks: (status = "", options = {}) =>
+      jsonRequest(`/scheduler/tasks${status ? `?status=${encodeURIComponent(status)}` : ""}`, options),
+    createScheduledTask: (request, options = {}) => jsonRequest("/scheduler/tasks", {
       ...options, method: "POST", body: request,
     }),
-    updateAutomation: (automationId, request, options = {}) =>
-      jsonRequest(`/automations/${encodeURIComponent(automationId)}`, {
-        ...options, method: "PATCH", body: request,
-      }),
-    deleteAutomation: (automationId, options = {}) =>
-      jsonRequest(`/automations/${encodeURIComponent(automationId)}`, {
-        ...options, method: "DELETE",
-      }),
-    pauseAutomation: (automationId, options = {}) =>
-      jsonRequest(`/automations/${encodeURIComponent(automationId)}/pause`, {
+    getScheduledTask: (taskId, options = {}) =>
+      jsonRequest(`/scheduler/tasks/${encodeURIComponent(taskId)}`, options),
+    // approve | reject | pause | resume | delete: a signed control submission
+    // the daemon applies on its next poll.
+    controlScheduledTask: (taskId, action, options = {}) =>
+      jsonRequest(`/scheduler/tasks/${encodeURIComponent(taskId)}/${encodeURIComponent(action)}`, {
         ...options, method: "POST",
       }),
-    resumeAutomation: (automationId, options = {}) =>
-      jsonRequest(`/automations/${encodeURIComponent(automationId)}/resume`, {
-        ...options, method: "POST",
-      }),
-    runAutomation: (automationId, options = {}) =>
-      jsonRequest(`/automations/${encodeURIComponent(automationId)}/run`, {
-        ...options, method: "POST",
-      }),
-    listAutomationRuns: (automationId, options = {}) =>
-      jsonRequest(`/automations/${encodeURIComponent(automationId)}/runs`, options),
-    cancelAutomationRun: (automationId, runId, options = {}) =>
-      jsonRequest(
-        `/automations/${encodeURIComponent(automationId)}/runs/${encodeURIComponent(runId)}/cancel`,
-        { ...options, method: "POST" },
-      ),
+    emitSchedulerEvent: (event, data = {}, options = {}) =>
+      jsonRequest("/scheduler/events", { ...options, method: "POST", body: { event, data } }),
     removeProject: (scopeId, options = {}) =>
       jsonRequest(`/projects?scope_id=${encodeURIComponent(scopeId)}`, {
         ...options,
@@ -236,11 +219,14 @@ export function createApiClient(options = {}) {
         method: "POST",
         body: { approved, comment },
       }),
-    steerChat: (executionId, { sessionId, inputId, message, attachments }, options = {}) =>
-      jsonRequest(`/chat/executions/${encodeURIComponent(executionId)}/steering`, {
+    // A user message for a session whose running turn this client already
+    // streams. The backend routes it: the realtime session answers with a
+    // fork reply (mode "interrupt"); any other session queues a turn.
+    deliverMessage: (sessionId, { scopeId, inputId, message, attachments }, options = {}) =>
+      jsonRequest(`/chat/sessions/${encodeURIComponent(sessionId)}/messages`, {
         ...options, method: "POST",
         body: {
-          session_id: sessionId,
+          ...(scopeId ? { scope_id: scopeId } : {}),
           input_id: inputId,
           message: message || null,
           ...(Array.isArray(attachments) && attachments.length ? { attachments } : {}),

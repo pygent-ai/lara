@@ -16,7 +16,7 @@ from lara.config import load_run_config
 from tests.unit.test_model_configuration import native_runtime_config
 from lara.runtime.service import LaraRuntimeService
 from lara.schema import BashCliPreset
-from lara.sessions import AgentMessageState, SessionCollaborationStore, SessionManager
+from lara.sessions import SessionManager
 from lara.tracing import EventStore
 
 
@@ -101,98 +101,6 @@ class _ProjectionInvoker:
 
     async def aclose(self) -> None:
         return None
-
-
-@pytest.mark.asyncio
-async def test_agent_message_is_appended_after_tool_result_without_starting_a_turn(
-    tmp_path: Path,
-) -> None:
-    (tmp_path / "seed.txt").write_text("seed", encoding="utf-8")
-    config = native_runtime_config(tmp_path)
-    config.eternal_conversation.enabled = False
-    config.runtime_approvals.enabled = False
-    assert config.resolved_agent is not None
-
-    manager = SessionManager(config)
-    target = manager.create(case_id="agent-message-target", mode="chat")
-    source = manager.create(case_id="agent-message-source", mode="agent")
-    run = manager.start_case_run(
-        target.session_id,
-        "agent-message-target",
-        run_config=config,
-    )
-    store = SessionCollaborationStore(config.pygent_root)
-
-    class Invoker(_ProjectionInvoker):
-        def execute(
-            self, *, message: Any, context: Any, **_kwargs: Any
-        ) -> ModelExecution:
-            index = len(self.requests)
-            self.requests.append((message, context))
-
-            async def invoke(_emit: Any) -> ModelProviderResponse:
-                if index == 0:
-                    store.enqueue_message(
-                        submission_id="agent-message-during-turn",
-                        fingerprint="agent-message-during-turn",
-                        source_session_id=source.session_id,
-                        source_agent_alias="reviewer",
-                        target_session_id=target.session_id,
-                        content="Inspect <artifact> & report back.",
-                    )
-                    answer = AIMessage(
-                        tool_calls=(
-                            ToolCall(
-                                call_id="read-before-message",
-                                name="read",
-                                arguments={"file_path": "seed.txt"},
-                            ),
-                        )
-                    )
-                else:
-                    answer = AIMessage(content="message observed")
-                return ModelProviderResponse(message=answer, usage={})
-
-            return ModelExecution(invoke)
-
-    invoker = Invoker()
-    service = LaraRuntimeService(config)
-    service._model_invokers[config.resolved_agent.alias] = invoker
-    for agent in service._agent_definitions.values():
-        agent.llm = invoker
-    try:
-        handle = await service.start_turn(
-            manager=manager,
-            message="read the seed",
-            run_ref=run,
-            turn_id="turn-agent-message",
-            interactive_approvals=False,
-            deadline=time.monotonic() + 60,
-        )
-        output, _ = await handle.result()
-    finally:
-        manager.finish_case_run(run, "passed")
-        await service.close()
-
-    assert output.content == "message observed"
-    assert len(invoker.requests) == 2
-    followup = invoker.requests[1][0]
-    assert isinstance(followup, ToolMessage)
-    assert followup.content is not None
-    assert '<runtime-context>\n  <agent-message message-id="msg-' in followup.content
-    assert f'source-session-id="{source.session_id}"' in followup.content
-    assert 'source-agent-alias="reviewer"' in followup.content
-    assert "Inspect &lt;artifact&gt; &amp; report back." in followup.content
-    message = store.enqueue_message(
-        submission_id="agent-message-during-turn",
-        fingerprint="agent-message-during-turn",
-        source_session_id=source.session_id,
-        source_agent_alias="reviewer",
-        target_session_id=target.session_id,
-        content="Inspect <artifact> & report back.",
-    )
-    assert message.state is AgentMessageState.DELIVERED
-    assert message.delivered_execution_id is not None
 
 
 @pytest.mark.asyncio

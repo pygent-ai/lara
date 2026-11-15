@@ -27,7 +27,9 @@ from pygent.llm import ModelExecution, ModelProviderResponse
 from pygent.agent.pygent_v1.orchestration.models import TurnCommand
 from pygent.agent.pygent_v1.orchestration.session_execution import SessionExecutionCoordinator
 from pygent.agent.pygent_v1.runtime.realtime.speak import SPEAK_TOOL_SPEC
+from pygent.agent.pygent_v1.runtime.realtime.envelope import EXCHANGE_MESSAGE_KIND
 from pygent.agent.pygent_v1.runtime.realtime.turn_finalizer import TURN_FINALIZER_REMINDER
+from lara.orchestration import LocalExecutionHost
 from lara.sessions import (
     LARA_SAYS_SESSION_MODE,
     SessionManager,
@@ -135,102 +137,101 @@ async def _wait_for(condition, timeout: float = 15.0) -> None:
         await asyncio.sleep(0.05)
 
 
+async def _hosted_realtime(tmp: str, invoker):
+    """lara host + the dedicated realtime session, invoker patched into the runtime.
+
+    Interrupts need the host's exchange hook (the SDK refuses them on a bare
+    service), so these scenarios drive lara's ``LocalExecutionHost`` the way
+    lara_api and the CLI do.
+    """
+
+    config, _service = _realtime_service(Path(tmp))
+    await _service.close()
+    host = LocalExecutionHost()
+    manager = SessionManager(config)
+    session = manager.create(case_id="chat", mode=LARA_SAYS_SESSION_MODE)
+    lease = await host.acquire_runtime(config=config, manager=manager)
+    service = lease.runtime.runtime_service
+    _patch_invoker(config, service, invoker)
+    for agent in service._agent_definitions.values():
+        agent.llm = invoker
+    await lease.release()
+    return host, config, manager, session.session_id
+
+
+def _exchange_contents(manager, session_id: str) -> list[str]:
+    return [
+        str(message.get("content"))
+        for message in manager.load(session_id).history
+        if message.get("kind") == EXCHANGE_MESSAGE_KIND
+    ]
+
+
 @pytest.mark.asyncio
 async def test_mid_turn_interrupt_forks_reply_and_delivers_envelope() -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        config, service = _realtime_service(Path(tmp))
+        invoker = _InterruptInvoker()
+        host, config, manager, session_id = await _hosted_realtime(tmp, invoker)
         try:
-            manager = SessionManager(config)
-            session = manager.create(case_id="chat", mode=LARA_SAYS_SESSION_MODE)
-            invoker = _InterruptInvoker()
-            _patch_invoker(config, service, invoker)
-            loop = asyncio.get_running_loop()
-
-            run_ref = manager.start_case_run(session.session_id, "chat", run_config=config)
-            handle = await service.start_turn(
-                manager=manager,
-                message="first",
-                run_ref=run_ref,
-                turn_id="turn-1",
-                interactive_approvals=False,
-                deadline=loop.time() + 60,
+            first = await host.deliver_user_message(
+                config=config, manager=manager, session_id=session_id,
+                message="first", input_id="t1", interactive_approvals=False,
             )
+            assert first.mode == "turn" and first.turn is not None
             # The bash tool is running: interrupt mid-turn.
             await _wait_for(lambda: len(invoker.calls) >= 1)
             await asyncio.sleep(0.3)
-            outcome = await service.send_interrupt(
-                manager=manager,
-                session_id=session.session_id,
-                input_id="input-1",
-                message="进度如何",
+            second = await host.deliver_user_message(
+                config=config, manager=manager, session_id=session_id,
+                message="进度如何", input_id="input-1",
             )
-            assert outcome.via == "speak"
-            assert outcome.speak_args is not None
-            assert outcome.speak_args.text == "在做了，快好了"
+            assert second.mode == "interrupt"
+            assert second.outcome is not None and second.outcome.via == "speak"
+            assert second.outcome.speak_args is not None
+            assert second.outcome.speak_args.text == "在做了，快好了"
 
-            output, _ = await handle.result()
+            output, _ = await first.turn.result()
             assert output.content == "final answer"
 
-            restored = manager.load(session.session_id)
-            tool_contents = [
-                str(message.get("content"))
-                for message in restored.history
-                if message.get("role") == "tool"
-            ]
-            joined = "\n".join(tool_contents)
-            assert "user-asked" in joined
-            assert "进度如何" in joined
-            assert "在做了，快好了" in joined
+            # The exchange reached the running turn through the react inbox and
+            # is checkpointed in the session history like a steering message.
+            exchanges = _exchange_contents(manager, session_id)
+            assert len(exchanges) == 1
+            assert "进度如何" in exchanges[0]
+            assert "在做了，快好了" in exchanges[0]
         finally:
-            await service.close()
+            await host.aclose()
 
 
 @pytest.mark.asyncio
 async def test_consecutive_interrupts_produce_two_replies_and_envelopes() -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        config, service = _realtime_service(Path(tmp))
+        invoker = _InterruptInvoker()
+        host, config, manager, session_id = await _hosted_realtime(tmp, invoker)
         try:
-            manager = SessionManager(config)
-            session = manager.create(case_id="chat", mode=LARA_SAYS_SESSION_MODE)
-            invoker = _InterruptInvoker()
-            _patch_invoker(config, service, invoker)
-            loop = asyncio.get_running_loop()
-
-            run_ref = manager.start_case_run(session.session_id, "chat", run_config=config)
-            handle = await service.start_turn(
-                manager=manager,
-                message="first",
-                run_ref=run_ref,
-                turn_id="turn-1",
-                interactive_approvals=False,
-                deadline=loop.time() + 60,
+            first = await host.deliver_user_message(
+                config=config, manager=manager, session_id=session_id,
+                message="first", input_id="t1", interactive_approvals=False,
             )
+            assert first.turn is not None
             await _wait_for(lambda: len(invoker.calls) >= 1)
             await asyncio.sleep(0.3)
-            first = await service.send_interrupt(
-                manager=manager,
-                session_id=session.session_id,
-                input_id="input-1",
-                message="进度如何",
-            )
-            second = await service.send_interrupt(
-                manager=manager,
-                session_id=session.session_id,
-                input_id="input-2",
-                message="进度如何",
-            )
-            assert first.via == "speak" and second.via == "speak"
-            await handle.result()
+            replies = []
+            for input_id in ("input-1", "input-2"):
+                delivery = await host.deliver_user_message(
+                    config=config, manager=manager, session_id=session_id,
+                    message="进度如何", input_id=input_id,
+                )
+                assert delivery.mode == "interrupt"
+                replies.append(delivery.outcome)
+            assert all(reply is not None and reply.via == "speak" for reply in replies)
+            await first.turn.result()
 
-            restored = manager.load(session.session_id)
-            joined = "\n".join(
-                str(message.get("content"))
-                for message in restored.history
-                if message.get("role") == "tool"
-            )
-            assert joined.count("user-asked") >= 2
+            exchanges = _exchange_contents(manager, session_id)
+            assert len(exchanges) == 2
+            assert all("进度如何" in item for item in exchanges)
         finally:
-            await service.close()
+            await host.aclose()
 
 
 class _SpeakInvoker(_ScriptedInvoker):

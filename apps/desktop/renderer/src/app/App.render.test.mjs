@@ -405,7 +405,7 @@ test("a render error surfaces a message instead of a blank window", () => {
   assert.match(html, /重新加载/);
 });
 
-test("running chat allows editing and offers steering", () => {
+test("running chat allows editing and queues the next message", () => {
   const html = renderToStaticMarkup(React.createElement(appModule.ChatPane, {
     activeSession: { session_id: "session-1", scope_id: "conversation" },
     messages: [{ id: "user-1", role: "user", content: "hello" }],
@@ -419,14 +419,14 @@ test("running chat allows editing and offers steering", () => {
   const textarea = html.match(/<textarea[^>]*>/)[0];
   assert.doesNotMatch(textarea, /disabled/);
   // The merged action button shows stop while the composer is empty; typing
-  // swaps it to the steering send (covered by the composerAction unit test).
+  // swaps it to send (covered by the composerAction unit test).
   assert.match(html, /aria-label="取消当前任务"/);
-  assert.doesNotMatch(html, /aria-label="追加指令"/);
-  assert.match(html, /立即打断当前步骤/);
-  // Steering accepts attachments too, so the attach button stays mounted.
+  // A plain session queues the message behind the running turn.
+  assert.match(html, /排到当前回合之后/);
+  // Queued inputs accept attachments too, so the attach button stays mounted.
   assert.match(html, /aria-label="添加附件"/);
-  // A sent steering input stays visibly pending until the runtime reports its boundary.
-  assert.match(html, /待生效 · 即将打断当前步骤/);
+  // A sent input stays visibly pending until the queued turn starts.
+  assert.match(html, /已排队 · 当前回合结束后开始/);
   assert.match(html, /未生效 · 本轮已结束/);
   assert.match(html, /focus on tests/);
   assert.match(html, /use Chinese/);
@@ -440,10 +440,23 @@ test("reconnecting sessions allow drafting but cannot steer until connected", ()
     onCancelTurn: async () => {},
   }));
   assert.doesNotMatch(html.match(/<textarea[^>]*>/)[0], /disabled/);
-  // Disconnected runs keep the single action button on stop; steering send
-  // stays unavailable until the connection is back.
+  // Disconnected runs keep the single action button on stop; sending stays
+  // unavailable until the connection is back.
   assert.match(html, /aria-label="取消当前任务"/);
-  assert.doesNotMatch(html, /aria-label="追加指令"/);
+  assert.match(html, /正在连接执行，连接后可发送/);
+});
+
+test("the realtime session tells the user a running turn answers without interruption", () => {
+  const html = renderToStaticMarkup(React.createElement(appModule.ChatPane, {
+    activeSession: { session_id: "says", scope_id: "pygent.v1-says", mode: "pygent.v1-says" },
+    messages: [{ id: "user-1", role: "user", content: "hello" }],
+    pendingSteerings: [{ inputId: "input-1", text: "进度如何", stale: false }],
+    settings: {}, status: "Running", running: true, steeringReady: true, approvals: [],
+    realtimeInteractionEnabled: true,
+    onCancelTurn: async () => {},
+  }));
+  assert.match(html, /不打断工作/);
+  assert.match(html, /已送达 · 不打断当前工作/);
 });
 
 test("the merged composer action button switches between stop and send", () => {
@@ -539,13 +552,13 @@ test("composer shows the context gauge in place of the idle hint", () => {
   assert.match(eternal, /记忆投影会话/);
   assert.doesNotMatch(eternal, /长按立即压缩上下文/);
 
-  // A running turn keeps its steering hint and the gauge stays visible.
+  // A running turn keeps its send hint and the gauge stays visible.
   const running = renderToStaticMarkup(React.createElement(appModule.ChatPane, {
     ...props({ context_last_input_tokens: 1000 }),
     running: true,
     steeringReady: true,
   }));
-  assert.match(running, /Enter 追加指令/);
+  assert.match(running, /Enter 发送/);
   assert.match(running, /任务运行中，结束后可长按立即压缩/);
 
   // Live stream events win over the persisted session record while present,
@@ -2773,9 +2786,9 @@ test("scheduled tasks render under the sidebar entry", () => {
     projects: [],
     sessionGroups: [],
     automations: [
-      { automation_id: "a-1", name: "每晚回归", status: "active" },
-      { automation_id: "a-2", name: "周报整理", status: "paused" },
-      { automation_id: "a-3", name: "迁移执行", status: "completed" },
+      { id: "a-1", name: "每晚回归", status: "approved" },
+      { id: "a-2", name: "周报整理", status: "paused" },
+      { id: "a-3", name: "迁移执行", status: "needs_review" },
     ],
     activeScopeId: "",
     activeSessionId: "",

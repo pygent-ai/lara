@@ -1,8 +1,10 @@
 # Sessions
 
-Owns session creation, loading, mutation, and on-disk persistence through `SessionManager`.
-
-It depends on core helpers and schema contracts, and stays independent of runtime orchestration.
+`SessionManager(SDK SessionManager)`: the SDK owns creation, loading, history
+checkpoints, forks and case runs; lara adds the product-level queries the API
+and CLI read (run timing, history windows, run owner, model selection changes)
+and `ensure(session_id)`, which creates a session under a stable name for the
+scheduler.
 
 Project sessions live below `~/.lara/projects/<canonical-path-hash>/sessions`;
 projectless sessions use `~/.lara/conversations/sessions`. Runtime databases and
@@ -13,16 +15,8 @@ Starting a case records its history boundary and publishes the running case ID
 in session metadata. Native assistant messages preserve usage counters and
 reasoning display metadata across checkpoints and application restarts.
 
-Cross-session collaboration operations and Agent-message inboxes are stored in
-`runtime/session-collaboration-v1.sqlite3`. Submission IDs are unique and bound to
-a request fingerprint. Renewable target-session leases serialize background-start
-operations across processes; FIFO message claims provide durable, retryable
-delivery into a target execution.
-
-Cross-project addressing runs through the user-level directory
-`~/.lara/index/session-directory-v1.sqlite3` (`SessionDirectory`). Sessions
-register themselves on create, fork, and load; collaboration items register
-when enqueued. A message for a session in another project is written directly
-into the target project's store, so delivery on the receiving side is
-unchanged. Any session recorded in the directory is addressable; unknown
-sessions fail closed.
+`LARA_SAYS_SESSION_MODE` (= the SDK's `pygent.v1-says`) marks the one session
+with realtime interaction; `realtime_enabled_for(session)` is the SDK gate.
+There is no cross-session message inbox or session directory any more: agent
+collaboration was removed together with the SDK's, and background work goes
+through the scheduler.

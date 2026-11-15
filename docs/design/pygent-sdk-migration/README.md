@@ -1,33 +1,31 @@
 # lora → pygent SDK 迁移进展与下一步指南
 
-> 最后更新：2026-11-14（会话 6，分支 `sdk-migration`，worktree `C:/Projects/lara-sdk-migration`）
+> 最后更新：2026-11-14（会话 7，分支 `sdk-migration`，worktree `C:/Projects/lara-sdk-migration`）
 
 > 本文档是跨 Agent 会话的交接基线。每轮工作结束后**必须**更新"当前状态"和"下一步"两节并随代码一起提交推送。
 
 ## 1. 目标与原则（用户已拍板，不要再议）
 
 - **pygent 是 SDK**：lora 以 `pygent-ai` 为运行时，`src/lara` 只保留 lora 的产品层/适配层，**pygent 有的就直接 import，不维护副本**。
-- **A：lora 适配层**建在 pygent 之上；**B：collaboration（agent 协作）由 lora 自研重写**，其余全部用 pygent 提供的。
+- **A：lora 适配层**建在 pygent 之上；**B（2026-11-14 改判）：agent 协作不再自研**——pygent 0.6.1 已把跨会话协作整个删掉，lara 跟进删除；所有 agent 任务派发（定时、后台起会话）统一走 **SDK scheduler**；用户消息一律走 SDK **`deliver_user_message`**（实时会话运行中 → fork 单次回复 + 信封交回主线；其他 → 排队新回合），lara 自己的 steering 删除。
 - **不要兼容逻辑**：项目处于调试阶段、无外部用户。pygent 改名/改契约 → lora 直接跟进（含数据库里的值），不留迁移/兼容代码。
 - **测试策略**：SDK 行为是基线。测试断言 lora 旧行为的 → 改成断 SDK 行为；测 lora 已删副本实现细节的 → 删除。手搓 history 字典一律改用 `message_to_dict(AIMessage(...))` 生成（与 SDK wire 合同同步）。
 - **数据根**：仍为 `~/.lara`，**已定案不迁 `~/.pygent_v1`**（2026-11-14）：pygent 只是框架给的标准名，lara 是 agent 实现的产品，数据目录跟产品走。lora 的 `RunConfig.__post_init__` 先把 `user_pygent_root` 钉到 `~/.lara` 再委托 SDK，SDK fallback 不会触发。
 - **KPI**：以删除代码量为主要考核点。
 
-## 2. 当前状态（2026-11-14）
+## 2. 当前状态（2026-11-14，会话 7）
 
-- 依赖：`pygent-ai[video]==0.6.0`（`pyproject.toml` / `uv.lock`）。
-- `src/lara`：124 → **60 个文件**；会话 5+6 相对 `main` 净删 **~980 行**（`src` −779）。
-- 单测：`tests/unit` **730 passed / 10 failed / 2 xfailed**。8 个在 `test_eternal_conversation.py`，是环境问题（依赖本机不存在的 `C:/Projects/memory-cli/.../dynamic_memory_cli.py`），HEAD 上同样红；2 个 `test_bash_background.py::test_background_completion_finalizes_audit_and_late_file_writes[cancel|restore]` 只在全量下偶发超时，单跑全绿（HEAD 同样）。第 4 节原 7 个 collaboration 失败**已清零**。
-- `pyright src/lara src/lara_api`：**0 个代码错误**（仅剩 2 个 `keyring` 可选依赖未装的 `reportMissingImports`，和 `core/io.py` 的 wildcard re-export 警告）。
-- `tests/scenario`：**25 passed / 7 failed**（原 10 红）。剩余 7 个全是 dispatch 设计遗留，见第 5 节第 1 步。
-- desktop：`npm test` 334 passed（在 `main` 工作区验证；worktree 没装 node_modules）。
-- `src/lara` 中与 SDK 同名的文件只剩：
-  - `runtime/service.py`：**适配器** `LaraRuntimeService(PygentRuntimeService)`，补 lara_api 面（`send_steering`、`cancel_turn`、`compress_session`、`execute_case`、`recovery_case_run`、`get_task*`/`cancel_task`）+ 凭据注入 + **agent 协作工具面**（`agent_start/send/status/list/wait` 的 `AgentToolExecutor`、访问控制、`_child_agent_config` 用 lora 的 `RunConfig`/`load_run_config`）。
-  - `sessions/manager.py`：SDK `SessionManager` 子类 + lora 产品层（directory 索引、run 查询、`LARA_SAYS_SESSION_MODE = PYGENT_SAYS_SESSION_MODE`）。
-  - `schema/models.py`：394 → ~190 行。**`RunConfig(SDK RunConfig)` / `DelegationConfig(SDK DelegationConfig)` 是 SDK 子类**：`RunConfig` 只重声明 `cli_bash_presets`（lora 的 CLI 预设）和 `delegation`（lora 的 `allowed_agents/max_parallel/background_enabled`），`__post_init__` 先把 `user_pygent_root` 钉到 `~/.lara` 再调 SDK 的。lora 独有域只剩 `CaseDefinition`/`CaseRunResult`/`EvaluationResult`/`WorkspaceRef` 和 `case_run_resumable(status)`。因为是子类，SDK 里所有标注为 SDK `RunConfig` 的参数都能直接传 lora 的；反向（SDK 属性 `self.config`/`manager.config` 当 lora 用）在 `LaraRuntimeService` 和 `SessionManager` 各加一行 `config: RunConfig  # pyright: ignore[reportIncompatibleVariableOverride]`。
-  - `sessions/collaboration.py`：796 → **~55 行**。只做一件事：给 SDK `AgentMessage` 打 `to_dict` 补丁（`AgentMessage.to_dict = agent_message_to_dict`，SDK pipeline 渲染收件箱时调用它但 SDK 没定义——第 3 节），外加 `collaboration_item_dict(item)` 给工具面/CLI 用。`SessionCollaborationStore`/`AgentMessageState` 直接 re-export。legacy `collaboration_operations` 表、`CollaborationOperation`/`CollaborationState` 整删，操作状态只走 `lara.dispatch`。
-  - `runtime/reminders/__init__.py`：纯 re-export。
-- 其余 lora 独有模块为薄 shim（SDK 显式 re-export + lora 独有符号）：`core/io.py`（`file_snapshot`/`read_jsonl_snapshot`）、`core/process.py`（`owner_is_foreign_and_alive`）、`runtime/model_configuration.py`（`discover_models`/`builtin_model_catalogs`/`lara_credential_environment`）、`runtime/realtime/nudge.py`（`should_nudge`）、`runtime/context.py`（`PygentContext` 别名）、`runtime/compression.py`（`SessionCompressionModule`，SDK 无手动压缩入口）。
+- 依赖：**`pygent-ai[video]==0.6.1`**，PyPI 未发，`[tool.uv.sources]` 钉本地 `../pygent`（editable）。发版后删掉该覆盖、`uv lock`。
+- `src/lara` 相对 `main`：**−2,900 行左右**（删 `dispatch/` 整包、`orchestration/session_collaboration.py`、`runtime/agent_collaboration.py`、`sessions/collaboration.py`、`sessions/directory.py`、`cli/automations.py`、`cli/projects.py`、`lara_api/routers|models/automations.py`；新增 `cli/scheduler.py` ~250 行、`lara_api/routers/scheduler.py` ~130 行）。
+- 单测：`tests/unit` **658 passed / 0 failed / 1 xfailed**（`--ignore test_eternal_conversation.py`：那 8 个依赖本机不存在的 memory-cli 脚本）。
+- `tests/scenario`：**28 passed / 0 failed**（原 7 红全部清零——它们假设的 `agent_start`/`session start` 同步语义随协作一起删了）。
+- `pyright src/lara src/lara_api`：0/0/0。
+- desktop：`npm test` 333 passed + 1 failed（`scripts/dev.test.mjs` 需要 Electron 二进制，worktree 用 `npm ci --ignore-scripts` 装的；renderer/main 全绿）。
+- `src/lara` 中与 SDK 同名的文件：
+  - `runtime/service.py`（~280 行）：`LaraRuntimeService(PygentRuntimeService)`，只做凭据注入、`run_config_loader=load_run_config`、Feishu speak 通道重注册，以及 lara_api 面（`cancel_turn`、`compress_session`、`execute_case`、task 查询、`recovery_case_run`）。**不再注册任何 lara 工具**；模型看到的额外工具就是 SDK 的 `schedule_task`/`emit_event`。
+  - `sessions/manager.py`：SDK 子类 + run 查询 + `ensure(session_id)`（给调度器按稳定名创建会话；SDK `create` 不接受指定 id，见 upstream-issues #8）。
+  - `orchestration/execution_host.py`：`LocalExecutionHost(SDK host)`，覆盖 `_build_runtime` 造 `LaraRuntimeService` 并接上 SDK 的 `on_exchange_ready`；lara_api 的 `ApiContext.execution_host` 就是它，`/chat/stream`、`/chat/sessions/{id}/messages`、Feishu bridge、CLI 全走 `deliver_user_message`。
+  - `schema/models.py`：`RunConfig(SDK RunConfig)` 只重声明 `cli_bash_presets`（lara 的 CLI 预设）；`DelegationConfig` 直接用 SDK 的（`allowed_agents/max_parallel/background_enabled` 随协作删除）。
 
 ### 本轮（会话 3）完成
 - 整删 24 个纯副本 + `tools.py` + `eternal_conversation.py` shim；5 个文件瘦身为 re-export。
@@ -57,7 +55,14 @@
 - **`AgentMessage.to_dict` 改为对 SDK 类打补丁**，删掉会话 5 的 `AgentMessage`/`SessionCollaborationStore`/`ReminderService` 三个子类；`LaraRuntimeService` 不再替换 `reminders`。
 - **再删 `runtime/service.py` 里 4 个 SDK 副本**：`_SpeakExecutor`、`_DiffExecutor`、`_uncovered_conversation_messages`、`MEMORY_JOB_LIMITS`（测试改从 SDK import）。顺带修了一个**真实回归**：lora 的 `_SpeakExecutor` 副本从没被注册过，SDK 的以 `channels=()` 注册，所以 Feishu 外发在 `main` 上是断的；现在 `__init__` 用 `replace_existing=True` 重注册 SDK `_SpeakExecutor(self, channels=load_feishu_channels(...))`。`test_realtime_feishu.py` 的 `emit` 桩改为 SDK 的位置参数签名 `(kind, data)`。
 - `tests/scenario/test_cli_flow.py` 的 4 处 `"Lara agent is wired into chat"` 改断 SDK 文案 `"pygent_v1 agent is wired into chat"`（5 个场景转绿）。
-- 评估了第 5 节原第 1 步"适配器瘦身"，**结论：不是净删除，暂不做，待与用户讨论**（见第 6 节）。`cancel_turn` 的 fallback（无活动 turn 的 durable 孤儿执行）仍需走 runtime handle，`ManagedSessionTurn.cancel()` 只能取消本地驱动任务；`send_steering` 是 lora 独有的"向运行中执行注入 steering 消息"，SDK `deliver_user_message` 只有 interrupt-or-new-turn 两条路，且语义是按 session 路由而非按 execution，替换会改 API 行为。
+- 评估了第 5 节原第 1 步"适配器瘦身"，结论：不是净删除——会话 7 用户拍板后按 A(a) 落地（见下）。`cancel_turn` 的 fallback（无活动 turn 的 durable 孤儿执行）仍需走 runtime handle，`ManagedSessionTurn.cancel()` 只能取消本地驱动任务；`send_steering` 是 lora 独有的"向运行中执行注入 steering 消息"，SDK `deliver_user_message` 只有 interrupt-or-new-turn 两条路，且语义是按 session 路由而非按 execution，替换会改 API 行为。
+
+### 会话 7 完成（用户决策：A 选 a，B 全量走 SDK scheduler）
+- **升 0.6.1**（本地路径）。0.6.1 删了 `sessions/collaboration.py`、reminders 的 agent-message 收件箱，信封改走 react steering inbox（`on_exchange_ready` 钩子）；`AgentMessage.to_dict` 问题随之消失；`offload_remote_media` 的重复下载也修了（xfail 去掉）。
+- **A(a)**：删 `send_steering`、chat_runner 的 `deliver_steering` 分流、`/chat/executions/{id}/steering`。新 `POST /chat/sessions/{id}/messages` 和 `/chat/stream` 都走 `execution_host.deliver_user_message`；实时会话运行中 → `ForkReplyRun` 把 fork 回复以一条 `pygent.v1.realtime.speak` + `execution.completed` 的合成流返回；普通会话 → 排队回合（desktop 的 pending chip 文案改为"已排队"，靠会话跟随循环在新回合开始时重新附着）。SDK 只对 `pygent.v1-says` 会话 fork；"所有会话都 fork"(b) 需要 pygent 把 `realtime_enabled_for` 做成可配置，已记 upstream-issues #9。
+- **B**：删 `lara.dispatch` 整包、`lara automation` CLI、`/automations` 路由、`agent_start/send/status/list/wait` 工具、`lara session start|send|fork|status|wait`、`SessionDirectory`、`lara projects`。新增 `lara scheduler run|init-keys|add|list|show|approve|reject|pause|resume|delete|runs|emit`（`src/lara/cli/scheduler.py`，签名的 user submission）、`/scheduler/*` 路由、桌面"定时任务"页改为 SDK 任务模型（name/schedule/prompt/instructions/session/priority，状态 approved/needs_review/paused/rejected，agent 创建的任务在这里审批）。lara-api lifespan 在后台线程跑 `SchedulerDaemon.run_forever`，任务由 `lara --workspace-root <ws> session run <task.session> -m ...` 子进程执行。
+- **删掉的能力（用户已接受）**：`agent_send` 跨会话消息、子会话完成回调父会话、`fork -m` 后台分叉。模型要起后台工作 → `schedule_task` 的 `at <now>` / `on <event>`；结果看调度器 run 日志。
+- 顺带：`test_runtime_recovery.py` 的"取消进行中回合"用例改断 SDK 0.6.1 的新契约——取消时配对一条 `detached` tool 消息，不再留悬空 `tool_calls`（并修成确定性：等 `tool.authorized` 后再取消）。
 
 ## 3. 已知 SDK 缺口（需推上游 pygent）
 
@@ -80,31 +85,19 @@
 
 ## 5. 下一步（按序）
 
-1. **`tests/scenario` 剩余 7 红需要产品决策，不是迁移问题**：`test_agent_orchestration_e2e.py`、`test_cli_flow.py::test_session_collaboration_cli_starts_background_turn_and_queues_send`、`test_session_completion_callback_cli_e2e.py` 都假设 `agent_start`/`lara session start` **同步**创建子会话并返回 `target_session_id`、`lara session wait` 无需调度器就能等到结果——这是 `64fe1fa feat(dispatch)` 之前的设计；dispatch 之后 start 只入队，要有 `DispatchScheduler`（lara-api 进程里）来驱动。两条路：CLI 的 `start/wait` 内联跑一个 scheduler，或把这三个场景改成起 `DispatchScheduler` 再断言。另外 `test_cli_flow.py` 其余 4 个和 `test_session_completion_callback` 之一也受同一假设影响，修完上面的会一起绿。
-2. 向 pygent 推上游第 3 节缺口（4 个 bug/缺口 + fork_reasoning 稳定面）。`AgentMessage.to_dict` 和 `_child_agent_config` 两项修了之后，lora 的 `sessions/collaboration.py` 补丁和 `LaraRuntimeService._child_agent_config` 覆盖可整删。
-3. 决策点：SDK 的 `pygent.v1.scheduler.*`（`schedule_task`/`emit_event`）工具目前对模型隐藏（`external_tools` 只含 lora 的 `lara.agent.*`）。若改为直接用 SDK 调度器，`lara automation` 一整套可删，但是产品行为变更。
-4. 环境项（不需要决策）：`test_eternal_conversation.py` 8 个红依赖 `C:/Projects/memory-cli/skills/dynamic-memory-cli/scripts/dynamic_memory_cli.py`，装回即可；`keyring` 属 `credentials` dependency-group，`uv sync --group credentials` 后 pyright 全绿；`test_bash_background.py::test_background_completion_finalizes_audit_and_late_file_writes` 全量下偶发超时，单跑全绿。
-5. 已完成的可选项：`examples/minimal_agent` 钉到 0.6.0（import 已验证）；`README.md` 与 `docs/design/realtime-interaction/README.md` 的旧钉版说明已更新（历史报告里的版本号是史实，保留）；`core/io.py` 去掉 wildcard import，显式 re-export。
+1. **pygent 0.6.1 发 PyPI 后**：删 `pyproject.toml` 的 `[tool.uv.sources] pygent-ai = { path = "../pygent" }`，`uv lock`。
+2. 向 pygent 推上游 [`upstream-issues.md`](upstream-issues.md)（现存 #2 `_child_agent_config`、#3 `IGNORED_DIRS`、#5 `fork_model_profiles` 稳定面、#6 `UPLOADS_SUBDIR`、#7 speak 通道/工具集扩展点、#8 `SessionManager.create` 指定 id、#9 `realtime_enabled_for` 可配置）。#1 和 #4 已在 0.6.1 修复。
+3. 桌面端：实际跑一遍"普通会话运行中发消息 → 排队 → 跟随循环附着"的链路（只有 render 测试覆盖，没有交互验证）；`realtimeView.js` 里 `role === "automation"` 分支和 `pygent.v1.automation.trigger` 渲染已无生产者，可删。
+4. 环境项：`test_eternal_conversation.py` 8 个红依赖 `C:/Projects/memory-cli/skills/dynamic-memory-cli/scripts/dynamic_memory_cli.py`；worktree 的 Electron 二进制未装（`npm ci --ignore-scripts`）。
+5. 可选：Windows 自启动 `lara scheduler run`，让定时任务不依赖桌面 app 开着。
 
-## 6. 待讨论：适配器瘦身（原第 5 节第 1 步）
+## 6. 已决策：用户消息投递（原"适配器瘦身"讨论）
 
-文档早先建议把 `LaraRuntimeService.cancel_turn` 换成 `ManagedSessionTurn.cancel()`、`send_steering` 换成 SDK `LocalExecutionHost.deliver_user_message`，我（会话 6）评估后暂不做，理由如下，待用户确认：
+用户拍板 **A(a)**：lara 不再有 steering；一律 `deliver_user_message`，SDK 现状只对「Lara说」实时会话 fork，普通会话排队。实现见会话 7。保留 `cancel_turn`（取消是另一个功能，孤儿执行仍需 runtime handle）。
 
-| 项 | 现状 | 为什么不是净删除 |
-|---|---|---|
-| `cancel_turn(execution_id)` | `ChatRunRegistry.cancel_turn` 先找活动 turn，找不到就 `acquire_runtime()` 再调 `runtime_service.cancel_turn` | `ManagedSessionTurn.cancel()` 只 `task.cancel()` 本进程驱动的任务；进程重启后留下的 durable 孤儿执行没有 `ManagedSessionTurn`，必须通过 `runtime.get_execution_handle(execution_id).cancel()`。保留 `cancel_turn` 只有 4 行。 |
-| `send_steering(execution_id, ...)` | 向**运行中的 execution** 注入一条 `pygent.v1.user.steering` 投影操作（immediate/wait 两种模式，带附件） | SDK `deliver_user_message` 是按 **session** 路由：realtime 且有活动 turn → fork interrupt；否则起新 turn。它没有"给正在跑的 execution 插一条 steering 消息"这条路。换过去等于删掉 steering 功能，是行为变更不是重构。 |
-| chat_runner 的 fork-or-turn 分流 | `deliver_steering` 里 realtime → `send_interrupt`，否则 → `send_steering` | 分流本身依赖 `send_steering` 存在；若保留 steering，这段分流就是必需的。 |
+## 7. 已决策：SDK scheduler 取代 lara dispatch
 
-如果用户决定**放弃 steering 功能**（用户插话一律走 interrupt/new turn），那三项可以一起删，`LaraRuntimeService` 再少 ~70 行，chat_runner 的 `deliver_steering` 可换成 `host.deliver_user_message`。
-
-## 7. 待讨论：SDK scheduler vs lara dispatch
-
-两套调度并存，见第 5 节第 3 步。事实整理：
-
-- **SDK**（`pygent.agent.pygent_v1.scheduler`）：独立守护进程 `pygent_v1 scheduler run`，自己的 SQLite（`<pygent_root>/scheduler/pygent.v1-scheduler.sqlite3`，签名的 `submissions` + daemon 独占的 `tasks/runs`），到点用子进程跑 `python -m pygent_v1 session run <scheduler-session> -m <prompt>`。模型工具 `schedule_task`/`emit_event` 只能**追加 submission**，由 daemon 审批/提升。只有"定时/事件 → 跑一轮会话"这一种任务。
-- **lara**（`lara.dispatch`）：`DispatchScheduler` 跑在 **lara-api 进程里**（`lara_api/app.py` lifespan 启动），轮询 `~/.lara/dispatch-v1.sqlite3` 的 `dispatch_items`，三种 kind：`turn`（automation 定时触发的一轮）、`start`（`agent_start` 后台起子会话）、`fork`。CLI `lara automation ...` / `lara session start|fork` 直接往这个 sqlite 写行；没有 lara-api 在跑时只入队不执行——这就是 `tests/scenario` 剩余 7 红的原因。
-- **差异**：SDK 没有 `start`/`fork`（agent 协作的后台启动），也没有运行中回合完成后回调父会话（`_notify_completion`）；lara 没有签名/审批门。如果换 SDK scheduler，`start`/`fork` 仍要 lara 自己调度。
+用户拍板 **B**：所有 agent 任务派发走 SDK scheduler，后续继续往这边收。实现见会话 7；两套并存的对照表作废。
 
 ## 8. 操作要点
 

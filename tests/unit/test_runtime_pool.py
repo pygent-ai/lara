@@ -59,14 +59,14 @@ async def test_same_generation_reuses_one_runtime(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_api_context_binds_collaboration_and_lara_runtime(tmp_path, monkeypatch) -> None:
+async def test_api_context_builds_lara_runtime_through_the_execution_host(tmp_path, monkeypatch) -> None:
     from lara.runtime.service import LaraRuntimeService
     from lara_api.container import ApiContext
 
     created: list[dict] = []
 
-    def fake_init(self, config, *, collaboration=None, dispatch=None, **kwargs):
-        created.append({"collaboration": collaboration, "kwargs": kwargs})
+    def fake_init(self, config, **kwargs):
+        created.append({"kwargs": kwargs})
         self.config = config
 
     async def fake_initialize(self):
@@ -84,7 +84,9 @@ async def test_api_context_binds_collaboration_and_lara_runtime(tmp_path, monkey
     lease = await context.acquire_runtime()
     try:
         assert len(created) == 1
-        assert created[0]["collaboration"] is context.session_collaboration
+        # The host wires the fork-exchange hook so realtime interrupts can
+        # hand their envelope to the running turn.
+        assert callable(created[0]["kwargs"]["on_exchange_ready"])
         assert created[0]["kwargs"]["prompt_registry"] is not None
         assert type(lease.runtime.manager).__module__ == "lara.sessions.manager"
     finally:

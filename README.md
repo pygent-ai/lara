@@ -139,7 +139,7 @@ npm --prefix apps/desktop test
 npm --prefix apps/desktop run build
 ```
 
-更多说明见 [CLI](docs/cli/lara-session.md)、[本地 API](docs/api/local-service.md)、[远程访问](docs/guides/remote-access.md) 和[开发指南](docs/guides/development-guide.md)。
+更多说明见 [会话 CLI](docs/cli/lara-session.md)、[调度 CLI](docs/cli/lara-scheduler.md)、[本地 API](docs/api/local-service.md)、[远程访问](docs/guides/remote-access.md) 和[开发指南](docs/guides/development-guide.md)。
 
 运行时依赖锁定为官方 PyPI 发布的 `pygent-ai[video]==0.6.0`（对应 [官方 v0.6.0](https://github.com/pygent-ai/pygent/releases/tag/v0.6.0)），`uv.lock` 记录下载地址和校验值，不使用 `../pygent` 本地源码覆盖。0.6.0 起 Lara 直接以 `pygent.agent.pygent_v1` 为运行时（见 [迁移文档](docs/design/pygent-sdk-migration/README.md)），`src/lara` 只保留产品层与适配层。模型配置直接采用 Pygent 的 `connections`、`models`、`model_groups` 三层契约：先定义可复用 Connection，再由模型引用并选择该连接提供的协议。
 

@@ -7,11 +7,10 @@ import threading
 import pytest
 
 from lara.runtime.reminders import BootstrapStatus, ReminderSection, ReminderService
-from pygent.agent.pygent_v1.runtime.reminders.agent_messages import render_agent_message
 from pygent.agent.pygent_v1.runtime.reminders.git_context import adaptive_check_interval
 from pygent.agent.pygent_v1.runtime.reminders.rendering import render_context_body
 from lara.schema import RunConfig
-from lara.sessions import AgentMessage, AgentMessageState, SessionManager
+from lara.sessions import SessionManager
 
 
 def _create(tmp_path):
@@ -36,33 +35,6 @@ def test_renderer_orders_sources_in_one_envelope() -> None:
         reminder.index("<cli-context")
         < reminder.index("<skills-context")
         < reminder.index("<git-context")
-    )
-
-
-def test_agent_message_renderer_preserves_nested_runtime_context_and_escapes_values() -> (
-    None
-):
-    content = render_agent_message(
-        AgentMessage(
-            message_id="msg-1",
-            submission_id="submission-1",
-            source_session_id="source-session",
-            source_agent_alias='reviewer<&"',
-            target_session_id="target-session",
-            content="Check <result> & continue.",
-            state=AgentMessageState.CLAIMED,
-            created_at="2026-09-11T00:00:00Z",
-            updated_at="2026-09-11T00:00:00Z",
-        )
-    )
-
-    assert content == (
-        "<runtime-context>\n"
-        '  <agent-message message-id="msg-1" source-session-id="source-session" '
-        'source-agent-alias="reviewer&lt;&amp;&quot;">\n'
-        "    Check &lt;result&gt; &amp; continue.\n"
-        "  </agent-message>\n"
-        "</runtime-context>"
     )
 
 

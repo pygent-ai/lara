@@ -205,12 +205,7 @@ def _default_config() -> dict[str, Any]:
             },
         },
         "mcp": {"servers": []},
-        "delegation": {
-            "allowed_agents": [],
-            "max_depth": 4,
-            "max_parallel": 4,
-            "background_enabled": True,
-        },
+        "delegation": {"max_depth": 4},
         "eternal_conversation": {
             "enabled": False,
             "extractor_agent_alias": None,
@@ -515,23 +510,11 @@ def _resolve_mcp_servers(data: dict[str, Any], root: Path) -> list[MCPServerConf
 
 
 def _resolve_delegation(data: dict[str, Any]) -> DelegationConfig:
-    agents = _dig(data, "delegation.allowed_agents") or []
-    if not isinstance(agents, list):
-        raise ValueError("delegation.allowed_agents must be a list")
     return DelegationConfig(
-        allowed_agents=tuple(str(item) for item in agents),
         max_depth=(
             4
             if _dig(data, "delegation.max_depth") is None
             else int(_dig(data, "delegation.max_depth"))
-        ),
-        max_parallel=(
-            4
-            if _dig(data, "delegation.max_parallel") is None
-            else int(_dig(data, "delegation.max_parallel"))
-        ),
-        background_enabled=_bool_config(
-            _dig(data, "delegation.background_enabled"), default=True
         ),
     )
 

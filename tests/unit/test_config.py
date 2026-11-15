@@ -277,7 +277,7 @@ def test_clear_user_model_config_preserves_non_model_settings(tmp_path: Path) ->
     assert saved == {"runtime": {"approvals": {"enabled": False}}}
 
 
-@pytest.mark.parametrize(("content", "message"), [("max_steps: 0\n", "max_steps"), ("delegation:\n  max_depth: 0\n", "delegation limits"), ("delegation:\n  max_parallel: 0\n", "delegation limits")])
+@pytest.mark.parametrize(("content", "message"), [("max_steps: 0\n", "max_steps"), ("delegation:\n  max_depth: 0\n", "delegation limits")])
 def test_zero_limits_are_rejected_instead_of_replaced(tmp_path: Path, content: str, message: str) -> None:
     home = write_user_config(tmp_path, content)
     with patch("lara.config.loader.Path.home", return_value=home), pytest.raises(ValueError, match=message):

@@ -36,28 +36,17 @@ def lara_project_data_in_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 
 
 @pytest.fixture(autouse=True)
-def lara_dispatch_store_in_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep the user-level dispatch store out of ~/.lara.
+def lara_scheduler_daemon_off_in_tests(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the API lifespan from running the scheduler daemon.
 
-    App tests exercise the real lifespan, which starts the dispatch scheduler;
-    against the real store it would materialize due tasks and claim queued
-    work belonging to production. Tests that patch Path.home themselves keep
-    working: their store path no longer matches the real one, so the
-    redirect passes through.
+    The daemon polls the workspace scheduler store and spawns `lara session
+    run` children; app tests exercise the lifespan against tmp workspaces and
+    must not start that loop. Tests that exercise the scheduler drive
+    `SchedulerDaemon.run_once` directly.
     """
-    from lara.dispatch import DispatchStore as real_store
-
-    real_dispatch_store = user_pygent_root() / "dispatch-v1.sqlite3"
-    test_home = tmp_path / "lara-home"
-
-    def redirected(path: str | Path, *, legacy_path: str | Path | None = None):
-        if Path(path).resolve() == real_dispatch_store.resolve():
-            return real_store(
-                test_home / "dispatch-v1.sqlite3", legacy_path=legacy_path
-            )
-        return real_store(path, legacy_path=legacy_path)
-
-    monkeypatch.setattr("lara.dispatch.DispatchStore", redirected)
+    monkeypatch.setattr(
+        "lara_api.container.ApiContext.start_scheduler_daemon", lambda self: None
+    )
 
 
 @pytest.fixture(autouse=True)
