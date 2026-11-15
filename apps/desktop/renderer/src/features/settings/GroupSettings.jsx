@@ -1,112 +1,167 @@
-import React, { useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, Plus, Search, X } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { ArrowDown, ArrowUp, Plus, Star, Trash2, X } from "lucide-react";
+import { SectionHead } from "./SectionHead.jsx";
+import { ConfirmDelete, errorText } from "./ConfirmDelete.jsx";
+import { capabilitySummary, commitGroup, commitGroupDelete, deletionImpact, groupDirty, groupError, uniqueKey } from "./settingsModel.js";
 
-function modelDisplay(draft, modelKey) {
-  const model = draft.models[modelKey];
-  const connection = draft.connections[model?.connection];
-  return {
-    title: model?.model_id || modelKey,
-    meta: `${connection?.provider || "未知供应商"} · ${modelKey}`,
-  };
+const NEW = "__new__";
+
+function modelLine(savedDraft, key) {
+  const model = savedDraft.models[key];
+  if (!model) return { title: key, meta: "模型已删除" };
+  const provider = savedDraft.connections[model.connection]?.provider || model.connection;
+  return { title: model.model_id || key, meta: `${provider} · ${capabilitySummary(model.capabilities)}${key !== model.model_id ? ` · ${key}` : ""}` };
 }
 
-function GroupModelSelect({ draft, groupName, selected, onSelect }) {
-  const [query, setQuery] = useState("");
-  const detailsRef = useRef(null);
-  const available = useMemo(() => Object.keys(draft.models).filter((modelKey) => {
-    if (selected.includes(modelKey)) return false;
-    const display = modelDisplay(draft, modelKey);
-    const search = `${display.title} ${display.meta}`.toLocaleLowerCase();
-    return search.includes(query.trim().toLocaleLowerCase());
-  }), [draft, query, selected]);
-  const remaining = Object.keys(draft.models).length - selected.length;
+// Model groups: a list on the left, one editor on the right. A group is a
+// primary model plus the fallbacks tried in order; the editor saves one
+// group at a time, deletion and "set default" commit immediately.
+export function GroupSettings({ savedDraft, usage, persist, reportDirty }) {
+  const groupNames = Object.keys(savedDraft.modelGroups);
+  const [selected, setSelected] = useState(() => groupNames[0] || null);
+  const [buffer, setBuffer] = useState(() => (groupNames[0] ? { name: groupNames[0], models: [...savedDraft.modelGroups[groupNames[0]].models] } : null));
+  const [nameTouched, setNameTouched] = useState(true);
+  const [confirm, setConfirm] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const previousName = selected === NEW ? null : selected;
 
-  return <details className="group-model-select" ref={detailsRef}>
-    <summary aria-label={`为 ${groupName} 添加模型`} aria-disabled={!remaining} onClick={(event) => { if (!remaining) event.preventDefault(); }}>
-      <span><Plus size={14} aria-hidden="true" />{remaining ? "添加模型" : "全部模型已加入"}</span>
-      {remaining > 0 && <><small>{remaining} 个可选</small><ChevronDown size={15} aria-hidden="true" /></>}
-    </summary>
-    {remaining > 0 && <div className="group-model-menu">
-      <label className="group-model-search">
-        <Search size={14} aria-hidden="true" />
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索模型、供应商或本地名称" autoFocus />
-      </label>
-      <div className="group-model-results" role="listbox" aria-label="可添加模型">
-        {available.map((modelKey) => {
-          const display = modelDisplay(draft, modelKey);
-          return <button key={modelKey} type="button" role="option" onClick={() => {
-            onSelect(modelKey);
-            setQuery("");
-            detailsRef.current?.removeAttribute("open");
-          }}>
-            <span><strong>{display.title}</strong><small>{display.meta}</small></span>
-            <Plus size={15} aria-hidden="true" />
-          </button>;
-        })}
-        {!available.length && <p>没有匹配的模型</p>}
-      </div>
-    </div>}
-  </details>;
-}
+  // (Re)load the buffer whenever the selection or the saved group changes.
+  useEffect(() => {
+    if (selected === NEW) { setBuffer({ name: "", models: [] }); setNameTouched(false); return; }
+    if (selected && savedDraft.modelGroups[selected]) { setBuffer({ name: selected, models: [...savedDraft.modelGroups[selected].models] }); setNameTouched(true); return; }
+    const first = Object.keys(savedDraft.modelGroups)[0] || null;
+    setSelected(first);
+    setBuffer(first ? { name: first, models: [...savedDraft.modelGroups[first].models] } : null);
+  }, [selected, savedDraft]);
 
-export function GroupSettings({ draft, setDraft, activeSection, activeModelTab, setField, renameGroup, toggleGroupModel, moveGroupModel, onSave, sectionDirty }) {
-  return <>
-    <section hidden={activeSection !== "model-config" || activeModelTab !== "groups"} className="fallback-editor" aria-label="Model groups">
-      <div className="model-group-heading">
-        <div>
-          <strong>模型组</strong>
-          <span>选择组内模型并排列调用顺序；第一项为主模型，其余按顺序回退。</span>
-        </div>
-        {sectionDirty && <span className="connection-editor-dirty">未保存</span>}
-        <button type="button" className="route-add section-save" disabled={!sectionDirty} onClick={onSave} aria-label="保存模型组">保存</button>
-      </div>
-      {!Object.keys(draft.modelGroups).length && <p className="settings-inline-empty">先在“模型资源池”中添加模型，再在这里把模型加入模型组并排列调用顺序。</p>}
-      <div className="model-group-list">
-        {Object.entries(draft.modelGroups).map(([groupName, group]) => {
-          const route = group.models.map((key) => modelDisplay(draft, key).title);
-          return <div className="model-group-card" key={groupName}>
-            <label className="group-name-field">
-              <span>组名</span>
-              <input defaultValue={groupName} onBlur={(event) => renameGroup(groupName, event.target.value)} />
-              <small>{draft.defaultModelGroup === groupName ? "默认模型组 · " : ""}{route.length ? `${route.length} 个模型 · ${route.join(" → ")}` : "请至少选择一个模型"}</small>
-            </label>
-            <div className="group-model-picker" aria-label={`${groupName} models`}>
-              <div className="group-model-picker-heading"><span>调用顺序</span><small>从上到下依次尝试</small></div>
-              {group.models.map((modelKey, order) => {
-                const display = modelDisplay(draft, modelKey);
-                return <div className="group-model-option selected" key={modelKey}>
-                  <span className="group-model-rank">{order + 1}</span>
-                  <span className="group-model-copy"><strong>{display.title}</strong><small>{order === 0 ? "主模型" : `备用 ${order}`} · {display.meta}</small></span>
-                  <div className="fallback-order-actions">
-                    <button type="button" disabled={order === 0} onClick={() => moveGroupModel(groupName, modelKey, -1)} title="提高优先级" aria-label={`提高 ${display.title} 的优先级`}><ArrowUp /></button>
-                    <button type="button" disabled={order === group.models.length - 1} onClick={() => moveGroupModel(groupName, modelKey, 1)} title="降低优先级" aria-label={`降低 ${display.title} 的优先级`}><ArrowDown /></button>
-                    <button type="button" onClick={() => toggleGroupModel(groupName, modelKey)} title="从模型组移除" aria-label={`从 ${groupName} 移除 ${display.title}`}><X /></button>
-                  </div>
-                </div>;
-              })}
-              {!group.models.length && <div className="group-model-empty">选择一个模型作为主模型</div>}
-              <GroupModelSelect draft={draft} groupName={groupName} selected={group.models} onSelect={(modelKey) => toggleGroupModel(groupName, modelKey)} />
+  const dirty = Boolean(buffer) && groupDirty(buffer, savedDraft, previousName);
+  useEffect(() => { reportDirty("groups", dirty); return () => reportDirty("groups", false); }, [dirty, reportDirty]);
+
+  const validation = buffer ? groupError(buffer, savedDraft, previousName) : "";
+  const available = Object.keys(savedDraft.models).filter((key) => !buffer?.models.includes(key));
+
+  function update(patch) {
+    setError("");
+    setBuffer((current) => ({ ...current, ...patch }));
+  }
+
+  // Picking a primary that already sits among the fallbacks promotes it; an
+  // untouched name follows the primary so most groups never need naming.
+  function setPrimary(key) {
+    const rest = buffer.models.slice(1).filter((item) => item !== key);
+    update({ models: key ? [key, ...rest] : rest, ...(nameTouched || !key ? {} : { name: previousName === key ? key : uniqueKey(key, savedDraft.modelGroups) }) });
+  }
+
+  function move(index, offset) {
+    const models = [...buffer.models];
+    const target = index + offset;
+    if (target < 0 || target >= models.length) return;
+    [models[index], models[target]] = [models[target], models[index]];
+    update({ models });
+  }
+
+  async function save() {
+    setError("");
+    setBusy(true);
+    try {
+      await persist(commitGroup(savedDraft, previousName, buffer));
+      setSelected(buffer.name.trim());
+    } catch (saveError) {
+      setError(errorText(saveError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(name) {
+    setBusy(true);
+    try {
+      await persist(commitGroupDelete(savedDraft, name));
+      setConfirm(null);
+      if (selected === name) setSelected(null);
+    } catch (deleteError) {
+      setError(errorText(deleteError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setDefault(name) {
+    setError("");
+    try {
+      await persist({ ...savedDraft, defaultModelGroup: name });
+    } catch (saveError) {
+      setError(errorText(saveError));
+    }
+  }
+
+  if (!Object.keys(savedDraft.models).length) {
+    return <section className="settings-card" aria-label="模型组">
+      <SectionHead title="模型组" description="一个模型组由一个主模型和按顺序回退的备用模型组成，对话创建时选定模型组。" />
+      <p className="settings-empty">还没有可用的模型。先在「连接与模型」中添加并保存模型，再回到这里组织模型组。</p>
+    </section>;
+  }
+
+  return <section className="settings-card group-settings" aria-label="模型组">
+    <SectionHead title="模型组" description="一个模型组由一个主模型和按顺序回退的备用模型组成；对话创建时选定模型组，之后可在组内切换首选模型。" />
+    <div className="group-layout">
+      <aside className="group-list" aria-label="模型组列表">
+        {groupNames.map((name) => {
+          const group = savedDraft.modelGroups[name];
+          const isDefault = savedDraft.defaultModelGroup === name;
+          return <div key={name} className={`group-list-item${selected === name ? " selected" : ""}`}>
+            <button type="button" className="group-list-main" aria-current={selected === name ? "true" : undefined} onClick={() => { setSelected(name); setConfirm(null); }}>
+              <strong>{name}{isDefault && <span className="default-chip">默认</span>}</strong>
+              <small>{group.models.map((key) => modelLine(savedDraft, key).title).join(" → ")}</small>
+            </button>
+            <div className="group-list-actions">
+              {!isDefault && <button type="button" className="icon-action" title="设为默认模型组" aria-label={`设为默认模型组 ${name}`} onClick={() => setDefault(name)}><Star size={14} aria-hidden="true" /></button>}
+              <button type="button" className="icon-action" title="删除模型组" aria-label={`删除模型组 ${name}`} onClick={() => setConfirm(name)}><Trash2 size={14} aria-hidden="true" /></button>
             </div>
+            {confirm === name && <ConfirmDelete title={`删除模型组 ${name}？`} impact={deletionImpact("group", name, savedDraft, usage)} busy={busy} error={error} onConfirm={() => remove(name)} onCancel={() => { setConfirm(null); setError(""); }} />}
           </div>;
         })}
-      </div>
-      <button className="plain-action" disabled={!Object.keys(draft.models).length} type="button" onClick={() => setDraft((current) => {
-        let index = Object.keys(current.modelGroups).length + 1;
-        while (Object.hasOwn(current.modelGroups, `group-${index}`)) index += 1;
-        const name = `group-${index}`;
-        return { ...current, modelGroups: { ...current.modelGroups, [name]: { models: Object.keys(current.models).slice(0, 1) } }, defaultModelGroup: current.defaultModelGroup || name };
-      })}><Plus aria-hidden="true" /> 添加模型组</button>
-      <label><span>Agent 默认模型组</span><select value={draft.defaultModelGroup} onChange={(event) => setField("defaultModelGroup", event.target.value)}>{Object.keys(draft.modelGroups).map((name) => <option key={name} value={name}>{name}</option>)}</select></label>
-      <details className="settings-disclosure settings-retry">
-        <summary>重试与切换 <span>全局生效</span></summary>
-        <div className="settings-disclosure-body">
-          <p className="settings-inline-empty" id="model-retry-scope">适用于所有模型组。这里调整的是全局重试参数，不会为单个模型组保存独立策略。</p>
-          <div className="retry-grid" aria-describedby="model-retry-scope">
-            <label><span>每个模型尝试次数</span><input min="1" type="number" value={draft.retry.max_attempts_per_model} onChange={(event) => setField("retry", { ...draft.retry, max_attempts_per_model: event.target.value })} /></label>
-            <label><span>空闲超时（秒）</span><input min="0.1" step="0.1" type="number" value={draft.retry.attempt_idle_timeout_seconds} onChange={(event) => setField("retry", { ...draft.retry, attempt_idle_timeout_seconds: event.target.value })} /></label>
-          </div>
+        <button type="button" className={`group-list-new${selected === NEW ? " selected" : ""}`} onClick={() => { setSelected(NEW); setConfirm(null); }}><Plus size={14} aria-hidden="true" /> 新建模型组</button>
+      </aside>
+
+      {buffer && <div className="group-editor" aria-label={previousName ? `编辑模型组 ${previousName}` : "新建模型组"}>
+        <SectionHead title={previousName ? previousName : "新建模型组"} dirty={dirty} onSave={save} saveLabel={previousName ? `保存模型组 ${previousName}` : "保存新模型组"} saveDisabled={Boolean(validation) || busy} saveTitle={validation} />
+        {error && !confirm && <p className="editor-error" role="alert">{error}</p>}
+        <label>
+          <span>名称</span>
+          <input value={buffer.name} onChange={(event) => { setNameTouched(true); update({ name: event.target.value }); }} placeholder="例如 coding" aria-label="模型组名称" />
+        </label>
+        <label>
+          <span>主模型</span>
+          <select value={buffer.models[0] || ""} onChange={(event) => setPrimary(event.target.value)} aria-label="主模型">
+            <option value="">请选择主模型</option>
+            {Object.keys(savedDraft.models).map((key) => <option key={key} value={key}>{modelLine(savedDraft, key).title}{key !== savedDraft.models[key].model_id ? ` (${key})` : ""}</option>)}
+          </select>
+          {buffer.models[0] && <small>{modelLine(savedDraft, buffer.models[0]).meta}</small>}
+        </label>
+        <div className="fallback-list" aria-label="备用模型">
+          <span className="field-label">备用模型 <small>主模型失败后按顺序尝试</small></span>
+          {buffer.models.slice(1).map((key, index) => {
+            const line = modelLine(savedDraft, key);
+            const position = index + 1;
+            return <div className="fallback-item" key={key}>
+              <span className="fallback-rank">{position}</span>
+              <span className="fallback-copy"><strong>{line.title}</strong><small>{line.meta}</small></span>
+              <span className="fallback-actions">
+                <button type="button" className="icon-action" disabled={position === 1} title="提前" aria-label={`提前 ${line.title}`} onClick={() => move(position, -1)}><ArrowUp size={14} aria-hidden="true" /></button>
+                <button type="button" className="icon-action" disabled={position === buffer.models.length - 1} title="推后" aria-label={`推后 ${line.title}`} onClick={() => move(position, 1)}><ArrowDown size={14} aria-hidden="true" /></button>
+                <button type="button" className="icon-action" title="移出模型组" aria-label={`移出 ${line.title}`} onClick={() => update({ models: buffer.models.filter((item) => item !== key) })}><X size={14} aria-hidden="true" /></button>
+              </span>
+            </div>;
+          })}
+          {buffer.models.length <= 1 && <p className="field-note">没有备用模型；主模型失败时直接报错。</p>}
+          {available.length > 0 && <select className="fallback-add" value="" aria-label="添加备用模型" onChange={(event) => { if (event.target.value) update({ models: [...buffer.models, event.target.value] }); }}>
+            <option value="">+ 添加备用模型…</option>
+            {available.map((key) => <option key={key} value={key}>{modelLine(savedDraft, key).title}{key !== savedDraft.models[key].model_id ? ` (${key})` : ""}</option>)}
+          </select>}
         </div>
-      </details>
-    </section>
-  </>;
+      </div>}
+    </div>
+  </section>;
 }

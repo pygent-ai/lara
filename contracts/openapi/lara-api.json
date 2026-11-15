@@ -1018,6 +1018,65 @@
         }
       }
     },
+    "/sessions/{session_id}/compress": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Compress Session",
+        "description": "Run one on-demand context compression round for the session.",
+        "operationId": "compress_session_sessions__session_id__compress_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "scope_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scope Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionCompressResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/sessions/{session_id}": {
       "get": {
         "tags": [
@@ -1976,6 +2035,35 @@
         }
       }
     },
+    "/settings/model-usage": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Get Model Usage",
+        "description": "Count the persisted sessions bound to each model key and model group.\n\nThe settings UI shows these counts before a deletion so the user knows\nhow many chats the save will move onto another selection.",
+        "operationId": "get_model_usage_settings_model_usage_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "additionalProperties": {
+                      "type": "integer"
+                    },
+                    "type": "object"
+                  },
+                  "type": "object",
+                  "title": "Response Get Model Usage Settings Model Usage Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/settings/models/discover": {
       "post": {
         "tags": [
@@ -2868,9 +2956,9 @@
             ],
             "title": "Workspace Root"
           },
-          "lara_root": {
+          "pygent_root": {
             "type": "string",
-            "title": "Lara Root"
+            "title": "Pygent Root"
           },
           "tooltip": {
             "type": "string",
@@ -2883,7 +2971,7 @@
           "scope_id",
           "label",
           "workspace_root",
-          "lara_root"
+          "pygent_root"
         ],
         "title": "ProjectResponse"
       },
@@ -2933,9 +3021,9 @@
             "type": "string",
             "title": "Workspace Root"
           },
-          "lara_root": {
+          "pygent_root": {
             "type": "string",
-            "title": "Lara Root"
+            "title": "Pygent Root"
           },
           "agent": {
             "type": "string",
@@ -2996,9 +3084,9 @@
             "type": "object",
             "title": "Retry"
           },
-          "user_lara_root": {
+          "user_pygent_root": {
             "type": "string",
-            "title": "User Lara Root"
+            "title": "User Pygent Root"
           },
           "max_steps": {
             "type": "integer",
@@ -3018,13 +3106,18 @@
           "context_compression_trigger_ratio": {
             "type": "number",
             "title": "Context Compression Trigger Ratio"
+          },
+          "realtime_interaction_enabled": {
+            "type": "boolean",
+            "title": "Realtime Interaction Enabled",
+            "default": false
           }
         },
         "type": "object",
         "required": [
           "approvals_enabled",
           "workspace_root",
-          "lara_root",
+          "pygent_root",
           "agent",
           "model_configuration_status",
           "model_configuration_error",
@@ -3033,7 +3126,7 @@
           "model_groups",
           "default_model_group",
           "retry",
-          "user_lara_root",
+          "user_pygent_root",
           "max_steps",
           "context_window",
           "context_compression_trigger_ratio"
@@ -3071,6 +3164,29 @@
           "events"
         ],
         "title": "SessionActivityResponse"
+      },
+      "SessionCompressResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "compression_count": {
+            "type": "integer",
+            "title": "Compression Count"
+          },
+          "message_count": {
+            "type": "integer",
+            "title": "Message Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "compression_count",
+          "message_count"
+        ],
+        "title": "SessionCompressResponse"
       },
       "SessionDetailResponse": {
         "properties": {
@@ -3368,9 +3484,9 @@
             ],
             "title": "Workspace Root"
           },
-          "lara_root": {
+          "pygent_root": {
             "type": "string",
-            "title": "Lara Root"
+            "title": "Pygent Root"
           },
           "runtime_workspace_root": {
             "type": "string",
@@ -3383,7 +3499,7 @@
           "label",
           "tooltip",
           "workspace_root",
-          "lara_root",
+          "pygent_root",
           "runtime_workspace_root"
         ],
         "title": "SessionScopeResponse"

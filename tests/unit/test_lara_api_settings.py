@@ -569,31 +569,6 @@ def test_update_settings_rejects_unreferenced_credential_values(
     assert "must-not-be-written" not in str(captured.value.detail)
 
 
-def test_update_settings_rejects_removing_a_session_model(tmp_path: Path) -> None:
-    from lara_api.models.requests import UpdateSettingsRequest
-    from lara_api.routers.settings import update_settings
-    from tests.unit.test_session_manager import native_run_config
-
-    config = native_run_config(tmp_path)
-    config.user_pygent_root = str(tmp_path / "user")
-    context = ApiContext(
-        workspace_root=str(tmp_path),
-        state_path=str(tmp_path / "state.json"),
-        _config=config,
-    )
-    session = context.manager.create("chat", mode="chat")
-    context.manager.set_selected_model(session.session_id, "backup")
-    replacement = native_mapping(group=("main",))
-    request = UpdateSettingsRequest(
-        model_config=replacement,
-        default_model_group="coding",
-    )
-
-    with pytest.raises(HTTPException) as captured:
-        asyncio.run(update_settings(request, context=context))
-    assert captured.value.status_code == 409
-
-
 def _rename_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     from tests.unit.test_session_manager import native_run_config
 
@@ -643,6 +618,99 @@ def test_update_settings_renames_session_model_key(
     assert metadata["selected_model_key"] == "primary"
     reloaded = manager.load(session.session_id)
     assert reloaded.selected_model_key == "primary"
+
+
+def _session_selection(manager: Any, session_id: str) -> tuple[str, str]:
+    metadata = read_json(Path(manager.sessions_root) / session_id / "metadata.json")
+    reloaded = manager.load(session_id)
+    assert (reloaded.model_group_name, reloaded.selected_model_key) == (
+        metadata["model_group_name"],
+        metadata["selected_model_key"],
+    )
+    return metadata["model_group_name"], metadata["selected_model_key"]
+
+
+def test_model_usage_counts_sessions_per_model_and_group(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lara_api.routers.settings import get_model_usage
+
+    context = _rename_context(tmp_path, monkeypatch)
+    manager = context.manager
+    first = manager.create("chat", mode="chat")
+    manager.set_selected_model(first.session_id, "backup")
+    manager.create("chat", mode="chat")
+
+    usage = get_model_usage(context=context)
+
+    assert usage == {"models": {"backup": 1, "main": 1}, "groups": {"coding": 2}}
+
+
+def test_update_settings_removing_a_session_model_falls_back_within_group(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lara_api.models.requests import UpdateSettingsRequest
+    from lara_api.routers.settings import update_settings
+
+    context = _rename_context(tmp_path, monkeypatch)
+    manager = context.manager
+    affected = manager.create("chat", mode="chat")
+    manager.set_selected_model(affected.session_id, "backup")
+    untouched = manager.create("chat", mode="chat")
+    manager.set_selected_model(untouched.session_id, "main")
+    request = UpdateSettingsRequest(
+        model_config=native_mapping(group=("main",)),
+        default_model_group="coding",
+    )
+
+    response = asyncio.run(update_settings(request, context=context))
+
+    assert response.model_groups["coding"]["models"] == ["main"]
+    assert _session_selection(manager, affected.session_id) == ("coding", "main")
+    assert _session_selection(manager, untouched.session_id) == ("coding", "main")
+
+
+def test_update_settings_removing_a_session_group_falls_back_to_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lara_api.models.requests import UpdateSettingsRequest
+    from lara_api.routers.settings import update_settings
+
+    context = _rename_context(tmp_path, monkeypatch)
+    manager = context.manager
+    session = manager.create("chat", mode="chat", model_group_name="coding")
+    replacement = native_mapping(group=("backup", "main"))
+    replacement["model_groups"] = {"review": {"models": ["backup", "main"]}}
+    request = UpdateSettingsRequest(
+        model_config=replacement,
+        default_model_group="review",
+    )
+
+    response = asyncio.run(update_settings(request, context=context))
+
+    assert response.default_model_group == "review"
+    assert _session_selection(manager, session.session_id) == ("review", "backup")
+
+
+def test_update_settings_removing_every_group_clears_session_selection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lara_api.models.requests import UpdateSettingsRequest
+    from lara_api.routers.settings import update_settings
+
+    context = _rename_context(tmp_path, monkeypatch)
+    manager = context.manager
+    session = manager.create("chat", mode="chat")
+    replacement = native_mapping(group=("main", "backup"))
+    replacement["model_groups"] = {}
+    request = UpdateSettingsRequest(model_config=replacement)
+
+    asyncio.run(update_settings(request, context=context))
+
+    metadata = read_json(
+        Path(manager.sessions_root) / session.session_id / "metadata.json"
+    )
+    assert (metadata["model_group_name"], metadata["selected_model_key"]) == ("", "")
 
 
 def test_update_settings_rename_without_referencing_session_saves_cleanly(

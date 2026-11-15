@@ -75,6 +75,7 @@ export function createApiClient(options = {}) {
       }),
     getSettings: (options = {}) => jsonRequest("/settings", options),
     getModelCatalogs: (options = {}) => jsonRequest("/settings/model-catalogs", options),
+    getModelUsage: (options = {}) => jsonRequest("/settings/model-usage", options),
     discoverModels: (request, options = {}) =>
       jsonRequest("/settings/models/discover", {
         ...options, method: "POST", body: request,

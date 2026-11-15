@@ -1,23 +1,19 @@
 import React from "react";
+import { SectionHead } from "./SectionHead.jsx";
 
-export function WorkspaceSettings({ draft, setField, activeSection, onSave, sectionDirty }) {
-  return <>
-          <section className="settings-disclosure settings-workspace" hidden={activeSection !== "workspace"}>
-          <div className="section-save-row">
-          <h4>项目默认值</h4>
-          {sectionDirty && <span className="connection-editor-dirty">未保存</span>}
-          <button type="button" className="route-add section-save" disabled={!sectionDirty} onClick={onSave} aria-label="保存项目与 Agent">保存</button>
-          </div>
-          <div className="settings-disclosure-body">
-          <label>
-            <span>工作目录</span>
-            <input value={draft.workspaceRoot} onChange={(event) => setField("workspaceRoot", event.target.value)} />
-          </label>
-          <label>
-            <span>Agent</span>
-            <input value={draft.agent} onChange={(event) => setField("agent", event.target.value)} />
-          </label>
-          </div>
-          </section>
-  </>;
+export function WorkspaceSettings({ fields, setField, dirty, onSave }) {
+  return <section className="settings-card" aria-label="项目与 Agent">
+    <SectionHead title="项目默认值" dirty={dirty} onSave={onSave} saveLabel="保存项目与 Agent" />
+    <div className="settings-card-body">
+      <label>
+        <span>工作目录</span>
+        <input value={fields.workspaceRoot} onChange={(event) => setField("workspaceRoot", event.target.value)} />
+      </label>
+      <label>
+        <span>Agent</span>
+        <input value={fields.agent} onChange={(event) => setField("agent", event.target.value)} />
+        <small>切换工作目录时，未修改的 Agent 会重置为新项目的默认值。</small>
+      </label>
+    </div>
+  </section>;
 }
