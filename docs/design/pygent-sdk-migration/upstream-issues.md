@@ -73,15 +73,20 @@
 
 不算 bug，但迁移中反复碰到：`PygentRuntimeService.__init__` 固定注册 speak（`channels=()`）、scheduler 工具，并用这组工具构建模板 agent。宿主要换 speak 通道或改可见工具集，只能 `register_tool(..., replace_existing=True)` 再清空 `_agent_definitions` 重建。若 `__init__` 接受 `speak_channels` / `external_tools` 两个可选参数，lara 的 `LaraRuntimeService.__init__` 可再删十几行。
 
-## 8. `SessionManager.create` 不接受指定 `session_id`（API 面）
+## 8. `SessionManager.create` 不接受指定 `session_id`（SDK 自身契约不自洽，bug）
 
-- **位置**：`pygent/agent/pygent_v1/sessions/manager.py` `create()`：id 只能由 `_new_session_id` 生成，唯一例外是 `pygent.v1-says` 模式。
-- **现象**：调度器任务用稳定的会话名（`SchedulerConfig.session`，daemon 执行 `session run <task.session>`），宿主没法用该名字创建会话；`load_or_create(SessionSpec(session_id=...))` 在 `new` 模式下也忽略 `session_id`。
-- **建议修复**：`create(..., session_id: str | None = None)`，给定时校验 `validate_path_id` 并直接使用。
-- **lara 临时处理**：`SessionManager.ensure(session_id)` 用实例属性覆盖 `_new_session_id` 后调 SDK `create`。上游修复后改为一行 `create(case_id, mode="chat", session_id=...)`。
+- **位置**：`pygent/agent/pygent_v1/sessions/manager.py` `create()`：id 只能由 `_new_session_id` 生成（`<mode>-<case>-<时间戳>-<hash>`），唯一例外是 `pygent.v1-says` 模式。
+- **现象**：SDK 自己的调度器把"任务在哪个会话跑"定义为**稳定名字**（`SchedulerConfig.session` 默认 `"scheduler"`；`SubprocessTaskRunner` 执行 `session run <task.session> -m ...`），但 SDK 的 `SessionManager` 不能按给定名字建会话，`load_or_create(SessionSpec(session_id=...))` 在 `new` 模式下也忽略 `session_id`。即：不靠宿主打补丁，调度器第一次跑任务时无法创建它指定的会话。这是 scheduler 与 sessions 两个 SDK 模块之间的接口没对上，不是宿主产品需求。
+- **旁证**：`scheduler/daemon.py:74` 默认子进程命令是 `python -m pygent_v1`，而 SDK 里没有 `pygent_v1` 顶层模块（`src/` 下只有 `pygent`），说明这条"daemon → 子进程 → 命名会话"链在 SDK 内从未端到端跑过。
+- **建议修复**：`create(..., session_id: str | None = None)`，给定时 `validate_path_id` 后直接使用；`load_or_create` 的 `new` 模式尊重 `SessionSpec.session_id`。
+- **lara 临时处理**：`SessionManager.ensure(session_id)` 用实例属性临时覆盖 `_new_session_id` 后调 SDK `create`（`src/lara/sessions/manager.py`）。上游修复后改为一行 `create(case_id, mode="chat", session_id=...)`。
+- **结论**：该 SDK 修，没有争议。
 
-## 9. `realtime_enabled_for` 只认 `pygent.v1-says`（产品需求）
+## 9. `realtime_enabled_for` 把产品策略写死在 SDK 里（策略扩展点，非 bug）
 
-- **位置**：`pygent/agent/pygent_v1/sessions/manager.py:35`
-- **现象**：`deliver_user_message` 只对这一个会话走 fork 路径；lara 希望将来所有会话在运行中收到用户消息都 fork 回复。
-- **建议**：让 realtime 判定可配置（`RunConfig.realtime_interaction` 已有 `enabled`，但 0.6.x 改成了按会话模式门控），例如 `realtime_interaction.sessions: "says" | "all"`。
+- **位置**：`pygent/agent/pygent_v1/sessions/manager.py:35`，`return session.metadata["mode"] == PYGENT_SAYS_SESSION_MODE`。
+- **现象**：用户消息在运行中是 **fork 回复**还是**排队新回合**，唯一依据是这个函数；它被 SDK 内部 7 处调用（`execution_host.deliver_user_message` 路由、`session_execution` 的信封投递 ×2、`runtime/service.py` 的 interrupt/recover/prepare ×4），宿主没有注入点，monkeypatch 7 个模块也不可靠。lara 想做 A(b)（所有会话运行中都 fork）只能等 SDK。
+- **性质判断**：机制（fork 上下文、单次回复、信封交回主线）是 SDK 该提供的，也提供了；**哪些会话走 fork是宿主的产品决定**，SDK 却写死了，而且写死的是 lara 的产品概念（`PYGENT_SAYS_SESSION_MODE`、docstring 里的 "the dedicated sidebar entry"）——这是产品概念下沉进了 SDK。
+- **另一面**：0.6.0 把它从全局开关改成按会话模式门控是有意设计（"Every other session keeps the live-work behavior regardless of the realtime runtime config"），作者可能认为普通会话插话要的是"改方向"而 fork 回复做不到。所以这一条应提为**请求一个宿主可配置的策略点**，不是报 bug；开了口子之后用不用，是 lara 的产品决策（见 README 第 6 节 A(b) 未定）。
+- **建议**：`RunConfig.realtime_interaction.sessions: "says" | "all"`（或一个 `realtime_policy: Callable[[AgentSession], bool]` 注入点），`realtime_enabled_for` 读它；默认保持 `"says"`，现有行为不变。
+- **lara 侧**：修了之后 `load_run_config` 设一个值即可，不改代码路径。
