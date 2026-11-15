@@ -11,15 +11,16 @@ function fixture(overrides = {}) {
   const resumed = [];
   const detail = { session: { session_id: "child", last_case_run_id: "new-run" }, history: [] };
   const trace = { events: [{ id: "new-event" }], context_snapshots: [{ id: "new-context" }] };
-  const activity = { events: [{ id: "activity-event" }], events_total: 1, events_truncated: false };
   const controller = new AbortController();
   return {
-    snapshots, resumed, detail, trace, activity, controller,
+    snapshots, resumed, detail, trace, controller,
     options: {
       api: {
         getSession: async () => detail,
         getTraceEvents: async () => trace,
-        getSessionActivity: async () => activity,
+        // The session activity feed is not part of a snapshot: it is followed
+        // separately by the inspector's useActivityFeed.
+        getSessionActivity: () => assert.fail("snapshot must not fetch the activity feed"),
         ...overrides,
       },
       sessionId: "child", scopeId: "conversation", signal: controller.signal,
@@ -34,7 +35,6 @@ test("a background-completed run refreshes trace and context for the open sessio
   const f = fixture();
   let sessionOptions;
   let traceOptions;
-  let activityOptions;
   f.options.api.getSession = async (_sessionId, options) => {
     sessionOptions = options;
     return f.detail;
@@ -45,17 +45,11 @@ test("a background-completed run refreshes trace and context for the open sessio
     traceOptions = options;
     return f.trace;
   };
-  f.options.api.getSessionActivity = async (sessionId, options) => {
-    assert.equal(sessionId, "child");
-    activityOptions = options;
-    return f.activity;
-  };
   await refreshActiveSession(f.options);
   assert.equal(sessionOptions.historyLimit, 200);
   assert.equal(traceOptions.eventLimit, 500);
   assert.equal(traceOptions.contextSnapshotLimit, 50);
-  assert.equal(activityOptions.eventLimit, 500);
-  assert.deepEqual(f.snapshots, [[f.detail, f.trace, f.activity]]);
+  assert.deepEqual(f.snapshots, [[f.detail, f.trace]]);
 });
 
 test("a collapsed trace panel skips context snapshot payloads", async () => {
@@ -170,11 +164,11 @@ test("switching sessions or aborting during trace loading discards the stale sna
   }
 });
 
-test("a session without a run clears previous trace and keeps session activity", async () => {
+test("a session without a run clears the previous trace", async () => {
   const f = fixture({ getTraceEvents: () => assert.fail("no run") });
   f.detail.session.last_case_run_id = null;
   await refreshActiveSession(f.options);
-  assert.deepEqual(f.snapshots[0][2], f.activity);
+  assert.equal(f.snapshots[0].length, 2);
   assert.deepEqual(f.snapshots[0][1], {
     events: [],
     events_total: 0,
@@ -269,7 +263,6 @@ function controllerFixture({
         events: [], events_total: 0, events_truncated: false,
         context_snapshots: [], context_snapshots_total: 0, context_snapshots_truncated: false,
       }),
-      getSessionActivity: async () => ({ events: [], events_total: 0, events_truncated: false }),
       ...overrides,
     },
     onAttach: (value) => state.attached.push(value),

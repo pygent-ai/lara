@@ -192,10 +192,13 @@ export function createApiClient(options = {}) {
         })}`,
         options,
       ),
-    getSessionActivity: (sessionId, { eventLimit, ...options } = {}) =>
+    // `after` is the cursor of a previous page: the response then carries only
+    // the rows appended since, so a running turn can be followed cheaply.
+    getSessionActivity: (sessionId, { eventLimit, after, ...options } = {}) =>
       jsonRequest(
         `/traces/${encodeURIComponent(sessionId)}/activity${queryString({
           event_limit: eventLimit,
+          after,
         })}`,
         options,
       ),

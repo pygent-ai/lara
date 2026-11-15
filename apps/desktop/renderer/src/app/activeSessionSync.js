@@ -3,7 +3,6 @@ export const TRACE_EVENT_LIMIT = 500;
 export const CONTEXT_SNAPSHOT_LIMIT = 50;
 const EXECUTION_ID_POLL_MS = 2500;
 
-const EMPTY_ACTIVITY = { events: [], events_total: 0, events_truncated: false };
 const EMPTY_TRACE = {
   events: [],
   events_total: 0,
@@ -100,31 +99,20 @@ export async function refreshActiveSession({
     return "attached";
   }
   const runId = detail.session.last_case_run_id;
-  // The run trace is the raw-event window for one turn; the session activity
-  // feed aggregates tool and file history across every run of the session.
-  const [trace, activity] = await Promise.all([
-    runId
-      ? api.getTraceEvents(sessionId, runId, {
-          eventLimit: TRACE_EVENT_LIMIT,
-          // 0 makes the API skip the snapshot read entirely: every journal
-          // snapshot row carries a full request payload.
-          contextSnapshotLimit: includeContextSnapshots ? CONTEXT_SNAPSHOT_LIMIT : 0,
-          signal,
-        })
-      : Promise.resolve(EMPTY_TRACE),
-    api
-      .getSessionActivity(sessionId, { eventLimit: TRACE_EVENT_LIMIT, signal })
-      .catch((err) => {
-        // A turn that just started has no run directory yet; the periodic
-        // refresh retries, so a missing trace is not a user-facing error.
-        if (err?.status === 404) {
-          return EMPTY_ACTIVITY;
-        }
-        throw err;
-      }),
-  ]);
+  // The run trace is the raw-event window for one turn. The session-wide
+  // activity feed is not part of this snapshot: it follows the session logs
+  // on its own cadence (features/inspector/useActivityFeed.js).
+  const trace = runId
+    ? await api.getTraceEvents(sessionId, runId, {
+        eventLimit: TRACE_EVENT_LIMIT,
+        // 0 makes the API skip the snapshot read entirely: every journal
+        // snapshot row carries a full request payload.
+        contextSnapshotLimit: includeContextSnapshots ? CONTEXT_SNAPSHOT_LIMIT : 0,
+        signal,
+      })
+    : EMPTY_TRACE;
   if (current()) {
-    onSnapshot(detail, trace, activity);
+    onSnapshot(detail, trace);
     return "applied";
   }
   return "dropped";
@@ -255,9 +243,9 @@ export function createActiveSessionSync({
             viewDetails.set(sessionId, detail);
             onAttach(detail);
           },
-          onSnapshot: (detail, trace, activity) => {
+          onSnapshot: (detail, trace) => {
             viewDetails.set(sessionId, detail);
-            onSnapshot(detail, trace, activity);
+            onSnapshot(detail, trace);
           },
           includeContextSnapshots: includeContextSnapshots(),
           executionIdPollMs,

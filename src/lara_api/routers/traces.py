@@ -16,7 +16,11 @@ from lara_api.models.responses import (
     TurnPatchResponse,
 )
 from lara_api.services.file_changes import session_file_changes, turn_patch
-from lara_api.services.session_activity import recent_jsonl_records, session_activity_events
+from lara_api.services.session_activity import (
+    ActivityCursor,
+    recent_jsonl_records,
+    session_activity_page,
+)
 
 router = APIRouter(prefix="/traces", tags=["traces"])
 
@@ -28,6 +32,7 @@ def get_session_activity(
     session_id: str,
     context: ApiContext = Depends(get_api_context),
     event_limit: int | None = None,
+    after: str | None = None,
 ) -> SessionActivityResponse:
     try:
         session = context.manager.load(session_id)
@@ -35,14 +40,23 @@ def get_session_activity(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    shown, events_total = session_activity_events(
-        Path(session.session_dir), event_limit=event_limit
-    )
+    # A stale or foreign cursor is a client error: the renderer drops it and
+    # reloads the initial window.
+    try:
+        cursor = ActivityCursor.decode(after) if after else None
+        page = session_activity_page(
+            Path(session.session_dir), event_limit=event_limit, after=cursor
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return SessionActivityResponse(
         session_id=session_id,
-        events=shown,
-        events_total=events_total,
-        events_truncated=len(shown) < events_total,
+        events=page.events,
+        events_total=page.events_total,
+        events_truncated=page.events_truncated,
+        cursor=page.cursor.encode(),
+        tool_calls_total=page.tool_calls_total,
+        file_events_total=page.file_events_total,
     )
 
 

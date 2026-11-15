@@ -161,6 +161,11 @@ class SessionActivityResponse(BaseModel):
     events: list[dict[str, Any]]
     events_total: int = 0
     events_truncated: bool = False
+    # Opaque position after the last row of this page; pass it back as
+    # ``after`` to receive only the rows appended since.
+    cursor: str = ""
+    tool_calls_total: int = 0
+    file_events_total: int = 0
 
 
 class SessionFileChangesResponse(BaseModel):

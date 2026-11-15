@@ -428,6 +428,68 @@ def test_session_activity_can_limit_large_event_windows(tmp_path) -> None:
     assert response.events_total == 3
     assert response.events_truncated is True
     assert len(response.events) == 2
+    # Totals cover the whole log, not the window, so the renderer can show the
+    # real tool-call count next to a truncated list.
+    assert response.tool_calls_total == 3
+    assert response.file_events_total == 0
+
+
+def test_session_activity_cursor_returns_only_rows_appended_since(tmp_path) -> None:
+    context = ApiContext(
+        workspace_root=str(tmp_path), state_path=str(tmp_path / "state.json")
+    )
+    session = context.manager.create("chat", mode="chat")
+    run = context.manager.start_case_run(
+        session.session_id, "chat", run_config=context.config
+    )
+    store = EventStore(run)
+    store.append("tool.call", actor="assistant", payload={"tool_name": "read", "model_tool_call_id": "call-1"})
+    store.append("tool.result", actor="tool", payload={"model_tool_call_id": "call-1", "result": "ok"})
+
+    first = get_session_activity(session.session_id, event_limit=1, context=context)
+    assert [event["type"] for event in first.events] == ["tool.result"]
+    assert first.events_truncated is True
+    assert first.cursor
+
+    # Nothing new: an empty page, same position, totals unchanged.
+    idle = get_session_activity(session.session_id, after=first.cursor, context=context)
+    assert idle.events == []
+    assert idle.cursor == first.cursor
+    assert idle.events_total == 2
+    assert idle.tool_calls_total == 1
+    assert idle.events_truncated is False
+
+    store.append("tool.call", actor="assistant", payload={"tool_name": "bash", "model_tool_call_id": "call-2"})
+    store.append("file.write", actor="tool", payload={"path": str(tmp_path / "a.txt")})
+    # A row still being written (no trailing newline) is left for the next read.
+    logs_dir = Path(session.session_dir) / "logs"
+    with (logs_dir / "tool_results.jsonl").open("ab") as handle:
+        handle.write(b'{"model_tool_call_id": "call-2", "resu')
+
+    page = get_session_activity(session.session_id, after=first.cursor, context=context)
+    assert [event["type"] for event in page.events] == ["tool.call", "file.write"]
+    assert page.events[0]["payload"]["tool_call_id"] == "call-2"
+    assert page.tool_calls_total == 2
+    assert page.file_events_total == 1
+    assert page.cursor != first.cursor
+
+    with (logs_dir / "tool_results.jsonl").open("ab") as handle:
+        handle.write(b'lt": "done"}\n')
+    completed = get_session_activity(session.session_id, after=page.cursor, context=context)
+    assert [event["type"] for event in completed.events] == ["tool.result"]
+    assert completed.events[0]["payload"]["result"] == "done"
+
+    # A cursor the logs cannot satisfy is a client error, not a server fault.
+    with pytest.raises(HTTPException) as malformed:
+        get_session_activity(session.session_id, after="nonsense", context=context)
+    assert malformed.value.status_code == 400
+    with pytest.raises(HTTPException) as beyond:
+        get_session_activity(
+            session.session_id,
+            after=page.cursor.replace("tool_calls.jsonl=", "tool_calls.jsonl=9999"),
+            context=context,
+        )
+    assert beyond.value.status_code == 400
 
 
 def test_recent_jsonl_records_parses_only_the_requested_tail(tmp_path) -> None:

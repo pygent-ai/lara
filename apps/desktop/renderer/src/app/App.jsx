@@ -49,6 +49,8 @@ import {
 import { loadWorkbenchPreferences, saveWorkbenchPreferences } from "./workbenchPreferences.js";
 import { DEFAULT_PANEL_WIDTHS, PANEL_LIMITS, normalizePanelWidths, fitPanelWidths } from "./panelWidths.js";
 import { projectPathKey } from "../features/projects/projectPaths.js";
+import { useActivityFeed } from "../features/inspector/useActivityFeed.js";
+import { isTelemetryEventKind } from "../features/inspector/eventKinds.js";
 import { activityHeaderText, runTimingFields } from "./runTiming.js";
 import { changeTypeBadge, changeTypeLabel, summarizeRunTurns, summarizeTurns, turnChangesForMessage } from "./fileChangesState.js";
 import { dataTransferHasFiles, filesFromDataTransfer } from "./pasteFiles.js";
@@ -133,7 +135,6 @@ const TRANSCRIPT_AUTO_LOAD_TOP_PX = 160;
 // live, and while catching up the view paints at most once per flush window.
 const REPLAY_LIVE_THRESHOLD_MS = 15000;
 const REPLAY_VIEW_FLUSH_MS = 1000;
-const EMPTY_SESSION_ACTIVITY = { events: [], shown: 0, total: 0, truncated: false };
 const EMPTY_TRACE_WINDOW = { shown: 0, total: 0, truncated: false };
 
 export function App() {
@@ -190,7 +191,6 @@ export function App() {
   const [activityCollapseToken, setActivityCollapseToken] = useState(0);
   const [pendingSteerings, setPendingSteerings] = useState({});
   const [traceEvents, setTraceEvents] = useState([]);
-  const [sessionActivity, setSessionActivity] = useState(EMPTY_SESSION_ACTIVITY);
   const [traceWindow, setTraceWindow] = useState(EMPTY_TRACE_WINDOW);
   const [liveEvents, setLiveEvents] = useState([]);
   const [contextSnapshots, setContextSnapshots] = useState([]);
@@ -237,7 +237,6 @@ export function App() {
   const traceLoadTokenRef = useRef(0);
   const activeSessionSignatureRef = useRef("");
   const traceEventsSignatureRef = useRef("");
-  const activitySignatureRef = useRef("");
   const contextSnapshotsSignatureRef = useRef("");
   const messagesHistorySignatureRef = useRef("");
   const traceCollapsedRef = useRef(layout.traceCollapsed);
@@ -264,9 +263,13 @@ export function App() {
     [generalGroups, runningSessionIds],
   );
   const visibleTraceEvents = useMemo(() => [...traceEvents, ...liveEvents], [traceEvents, liveEvents]);
+  // Session-wide tool and file history comes from the append-only session
+  // logs and keeps following them while the turn runs; the live stream only
+  // overlays the calls still in flight, which the feed has not recorded yet.
+  const activityFeed = useActivityFeed({ api, sessionId: activeSessionId, running });
   const visibleActivityEvents = useMemo(
-    () => dedupeTraceEvents([...sessionActivity.events, ...liveEvents]),
-    [sessionActivity.events, liveEvents],
+    () => dedupeTraceEvents([...activityFeed.events, ...liveEvents]),
+    [activityFeed.events, liveEvents],
   );
 
   useEffect(() => {
@@ -313,39 +316,31 @@ export function App() {
     setRunningSessionIds(next);
   }, []);
 
+  // The run trace is the raw-event window of one turn; the session-wide
+  // activity feed is owned by useActivityFeed and follows the session logs.
   const loadTrace = useCallback(
     async (session, token = traceLoadTokenRef.current) => {
       if (!session?.session_id) {
         return;
       }
       const runId = session.last_case_run_id || "";
-      const [traceResponse, activityResponse] = await Promise.all([
-        runId
-          ? api
-            .getTraceEvents(session.session_id, runId, {
-              eventLimit: TRACE_EVENT_LIMIT,
-              // Collapsed panel skips the snapshot payloads entirely: every
-              // journal snapshot row carries a full request context.
-              contextSnapshotLimit: traceCollapsedRef.current ? 0 : CONTEXT_SNAPSHOT_LIMIT,
-            })
-            .catch((err) => {
-              // A turn that just started has no run directory yet; the periodic
-              // refresh retries, so a missing trace is not a user-facing error.
-              if (err?.status === 404) {
-                return null;
-              }
-              throw err;
-            })
-          : Promise.resolve(null),
-        api
-          .getSessionActivity(session.session_id, { eventLimit: TRACE_EVENT_LIMIT })
+      const traceResponse = runId
+        ? await api
+          .getTraceEvents(session.session_id, runId, {
+            eventLimit: TRACE_EVENT_LIMIT,
+            // Collapsed panel skips the snapshot payloads entirely: every
+            // journal snapshot row carries a full request context.
+            contextSnapshotLimit: traceCollapsedRef.current ? 0 : CONTEXT_SNAPSHOT_LIMIT,
+          })
           .catch((err) => {
+            // A turn that just started has no run directory yet; the periodic
+            // refresh retries, so a missing trace is not a user-facing error.
             if (err?.status === 404) {
               return null;
             }
             throw err;
-          }),
-      ]);
+          })
+        : null;
       if (token !== traceLoadTokenRef.current) {
         return;
       }
@@ -365,14 +360,6 @@ export function App() {
         setTraceWindow(EMPTY_TRACE_WINDOW);
         setContextSnapshots([]);
       }
-      setSessionActivity(activityResponse
-        ? {
-            events: activityResponse.events || [],
-            shown: (activityResponse.events || []).length,
-            total: activityResponse.events_total || 0,
-            truncated: Boolean(activityResponse.events_truncated),
-          }
-        : EMPTY_SESSION_ACTIVITY);
     },
     [api],
   );
@@ -472,7 +459,6 @@ export function App() {
       setMessages(previewMessages);
       setTraceEvents([]);
       setTraceWindow(EMPTY_TRACE_WINDOW);
-      setSessionActivity(EMPTY_SESSION_ACTIVITY);
       setLiveEvents(previewLiveEvents);
       setContextSnapshots([]);
       let detail;
@@ -496,7 +482,6 @@ export function App() {
         setHistoryEarlier({ remaining: 0, loading: false });
         setTraceEvents([]);
         setTraceWindow(EMPTY_TRACE_WINDOW);
-        setSessionActivity(EMPTY_SESSION_ACTIVITY);
         setLiveEvents([]);
         setContextSnapshots([]);
         setNotice("当前项目中找不到此对话，请选择其他对话或新建一个。");
@@ -653,7 +638,6 @@ export function App() {
         setHistoryEarlier({ remaining: 0, loading: false });
         setTraceEvents([]);
         setTraceWindow(EMPTY_TRACE_WINDOW);
-        setSessionActivity(EMPTY_SESSION_ACTIVITY);
         setLiveEvents([]);
         setContextSnapshots([]);
       }
@@ -706,7 +690,6 @@ export function App() {
       setHistoryEarlier({ remaining: 0, loading: false });
       setTraceEvents([]);
       setTraceWindow(EMPTY_TRACE_WINDOW);
-      setSessionActivity(EMPTY_SESSION_ACTIVITY);
       setLiveEvents([]);
       setContextSnapshots([]);
       setStatus("Ready");
@@ -1162,9 +1145,10 @@ export function App() {
                 // with a stop button that has nothing left to cancel.
                 setSessionRunning(streamSessionId, false);
               }
-              // Usage events are gauge signals, not transcript history: keep
-              // them out of the trace list entirely.
-              if (eventKind !== "pygent.v1.context.usage") {
+              // Telemetry (deltas, spans, effect bookkeeping, usage gauges)
+              // outnumbers readable events many to one; the bounded live
+              // trace keeps only what a person reads a trace for.
+              if (!isTelemetryEventKind(eventKind)) {
                 streamEvents = appendSessionLiveTraceEvent(
                   sessionLiveEventsRef.current,
                   streamSessionId,
@@ -1334,7 +1318,7 @@ export function App() {
         setActiveSession(sessionFromDetail(detail));
         resumeSessionRef.current?.(detail);
       },
-      onSnapshot: (detail, trace, activity) => {
+      onSnapshot: (detail, trace) => {
         traceLoadTokenRef.current += 1;
         const sessionId = activeSessionIdRef.current;
         const loadedSession = sessionFromDetail(detail);
@@ -1357,16 +1341,6 @@ export function App() {
         if (contextSnapshotsSignatureRef.current !== contextSnapshotsSignature) {
           contextSnapshotsSignatureRef.current = contextSnapshotsSignature;
           setContextSnapshots(trace.context_snapshots || []);
-        }
-        const activitySignature = traceResponseSignature(activity, "events");
-        if (activitySignatureRef.current !== activitySignature) {
-          activitySignatureRef.current = activitySignature;
-          setSessionActivity({
-            events: activity.events || [],
-            shown: (activity.events || []).length,
-            total: activity.events_total || 0,
-            truncated: Boolean(activity.events_truncated),
-          });
         }
         sessionLiveEventsRef.current.delete(sessionId);
         setLiveEvents((current) => current.length ? [] : current);
@@ -1676,7 +1650,7 @@ export function App() {
         contextSnapshots={contextSnapshots}
         events={visibleTraceEvents}
         activityEvents={visibleActivityEvents}
-        activityMeta={sessionActivity}
+        activityMeta={activityFeed}
         traceMeta={traceWindow}
         settings={settings}
         fileChanges={fileChanges}
@@ -4259,6 +4233,11 @@ export function TracePanel({ api, collapsed, contextSnapshots, events, activityE
   );
   const expandedCount = renderedEventKeys.filter((key) => expandedEventKeys.has(key)).length;
   const sourceMeta = tab === "Tools" || tab === "Changes" ? activityMeta : traceMeta;
+  // Overview counts are session totals from the feed; the loaded window plus
+  // the calls still in flight only ever exceed them for a brand-new session.
+  const toolCallCount = Math.max(overviewTools.length, Number(activityMeta?.toolCallsTotal) || 0);
+  const fileEventCount = Math.max(traceTabEvents("Changes", sessionEvents).length, Number(activityMeta?.fileEventsTotal) || 0);
+  const rawEventCount = Math.max(events.length, Number(traceMeta?.total) || 0);
   const projectScopeId = activeSession?.scope_id === "conversation"
     ? ""
     : activeSession?.scope_id || scopeIdFromWorkspace(settings.workspace_root);
@@ -4326,9 +4305,9 @@ export function TracePanel({ api, collapsed, contextSnapshots, events, activityE
             <h4>{activeSession?.title || "还没有任务"}</h4>
             <p className="overview-status">{!events.length && !sessionEvents.length ? "执行任务后，这里会显示工具活动与文件记录。" : "执行记录已就绪，可按需查看工具结果与原始事件。"}</p>
             <div className="overview-metrics">
-              <button type="button" onClick={() => setTab("Tools")}><strong>{overviewTools.length}</strong><span>工具调用</span></button>
-              <button type="button" onClick={() => setTab("Changes")}><strong>{traceTabEvents("Changes", sessionEvents).length}</strong><span>文件活动</span></button>
-              <button type="button" onClick={() => setTab("Events")}><strong>{events.length}</strong><span>原始事件</span></button>
+              <button type="button" onClick={() => setTab("Tools")}><strong>{toolCallCount}</strong><span>工具调用</span></button>
+              <button type="button" onClick={() => setTab("Changes")}><strong>{fileEventCount}</strong><span>文件活动</span></button>
+              <button type="button" onClick={() => setTab("Events")}><strong>{rawEventCount}</strong><span>原始事件</span></button>
             </div>
             <h5>最近工具活动</h5>
             {overviewTools.slice(-6).map((event, index) => { const key = `overview-${event.id || index}`; return <TraceEventRow key={key} event={event} tab="Tools" expanded={expandedEventKeys.has(key)} onToggle={() => setExpandedEventKeys((current) => toggleSetValue(current, key))} />; })}
