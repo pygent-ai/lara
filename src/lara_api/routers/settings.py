@@ -14,7 +14,6 @@ from lara.runtime.model_configuration import (
     builtin_model_catalogs,
     discover_models,
 )
-from lara.core.io import read_json
 from lara_api.dependencies import ApiContext, get_api_context
 from lara_api.models.requests import DiscoverModelsRequest, UpdateSettingsRequest
 from lara_api.models.responses import RuntimeConfigResponse
@@ -73,6 +72,27 @@ async def update_settings(
 @router.get("/model-catalogs")
 def get_model_catalogs() -> dict[str, Any]:
     return builtin_model_catalogs()
+
+
+@router.get("/model-usage")
+def get_model_usage(
+    context: ApiContext = Depends(get_api_context),
+) -> dict[str, dict[str, int]]:
+    """Count the persisted sessions bound to each model key and model group.
+
+    The settings UI shows these counts before a deletion so the user knows
+    how many chats the save will move onto another selection.
+    """
+
+    models: dict[str, int] = {}
+    groups: dict[str, int] = {}
+    for manager in _session_managers(context):
+        for group_name, model_key in manager.model_selections():
+            if group_name:
+                groups[group_name] = groups.get(group_name, 0) + 1
+            if model_key:
+                models[model_key] = models.get(model_key, 0) + 1
+    return {"models": models, "groups": groups}
 
 
 @router.post("/models/discover")
@@ -153,7 +173,6 @@ def _replace_native_model_settings(
             raise ValueError(
                 f"default_model_group references unknown model group {group_name!r}"
             )
-        _guard_persisted_session_selections(context, group_models, renames)
         referenced_credentials = {
             credential["env"]
             for connection in connections.values()
@@ -187,7 +206,9 @@ def _replace_native_model_settings(
                 set_user_credential(user_pygent_root, env_name, secret)
         # Migrate before the config replacement: sessions then never reference
         # keys that are missing from whichever configuration is on disk.
+        # Renames go first so a renamed key counts as kept, not removed.
         _migrate_model_key_renames(context, renames)
+        _rebind_session_selections(context, group_models, group_name or "")
         replace_user_model_config(
             user_pygent_root,
             model_config=native,
@@ -208,7 +229,7 @@ def _validate_native_model_config(
     connections: dict[str, Any],
     models: dict[str, Any],
     groups: dict[str, Any],
-) -> dict[str, set[str]]:
+) -> dict[str, list[str]]:
     """Validate the native subtree layer by layer.
 
     Pygent's ``ModelConfig.from_mapping()`` rejects empty ``connections`` and
@@ -239,7 +260,7 @@ def _validate_native_model_config(
                 f"connection {entry.connection_key!r} does not provide protocol "
                 f"{entry.protocol!r}"
             )
-    group_models: dict[str, set[str]] = {}
+    group_models: dict[str, list[str]] = {}
     for name, item in groups.items():
         _require_native_name(name, "model group name")
         if not isinstance(item, dict):
@@ -251,7 +272,7 @@ def _validate_native_model_config(
                 "model group references an unknown model: "
                 + ", ".join(sorted(unknown_models))
             )
-        group_models[name] = set(group.model_keys)
+        group_models[name] = list(group.model_keys)
     return group_models
 
 
@@ -339,48 +360,18 @@ def _migrate_model_key_renames(context: ApiContext, renames: dict[str, str]) -> 
             manager.rename_model_key(previous, current)
 
 
-def _guard_persisted_session_selections(
-    context: ApiContext,
-    group_models: dict[str, set[str]],
-    renames: dict[str, str] | None = None,
+def _rebind_session_selections(
+    context: ApiContext, group_models: dict[str, list[str]], default_group: str
 ) -> None:
-    from lara_api.project_state import build_session_scopes
+    """Keep every persisted session runnable after models or groups vanish.
 
-    roots = [Path(context.config.pygent_root) / "sessions"]
-    roots.extend(
-        Path(scope.pygent_root) / "sessions"
-        for scope in build_session_scopes(
-            context.project_state,
-            active_workspace_root=context.config.workspace_root,
-        )
-    )
-    checked_roots: set[Path] = set()
-    for root in roots:
-        sessions_root = root.resolve()
-        if sessions_root in checked_roots or not sessions_root.is_dir():
-            continue
-        checked_roots.add(sessions_root)
-        for metadata_path in sessions_root.glob("*/metadata.json"):
-            metadata = read_json(metadata_path)
-            group_name = metadata.get("model_group_name")
-            model_key = metadata.get("selected_model_key")
-            if not isinstance(group_name, str) or not group_name:
-                continue
-            model_keys = group_models.get(group_name)
-            if model_keys is None:
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"Model group {group_name!r} is used by an existing session",
-                )
-            if isinstance(model_key, str):
-                # A rename migrates the stored selection, so the guard judges
-                # the key the session will hold after the save, not the stale one.
-                effective_key = (renames or {}).get(model_key, model_key)
-                if effective_key not in model_keys:
-                    raise HTTPException(
-                        status_code=409,
-                        detail=f"Model {model_key!r} is used by an existing session",
-                    )
+    Deleting a model or group that sessions still point at is allowed; the
+    affected sessions are moved onto a selection the new configuration can
+    serve instead of blocking the save.
+    """
+
+    for manager in _session_managers(context):
+        manager.rebind_model_selections(group_models, default_group)
 
 
 def _settings_overrides(request: UpdateSettingsRequest) -> dict[str, Any]:

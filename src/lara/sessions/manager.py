@@ -278,6 +278,27 @@ class SessionManager(_SDKSessionManager):
         config = RunConfig.from_dict(read_json(Path(ref.run_dir) / "run_config.json"))
         del credential_source
         return config
+    def model_selections(self) -> list[tuple[str, str]]:
+        """Return the persisted ``(model_group_name, selected_model_key)`` of
+        every session under this root, read from the metadata mirror so no
+        session is loaded (and re-registered) just to inspect its selection.
+        """
+
+        selections: list[tuple[str, str]] = []
+        for metadata_path in sorted(self.sessions_root.glob("*/metadata.json")):
+            if not (metadata_path.parent / "session.json").is_file():
+                continue
+            metadata = read_json(metadata_path)
+            group_name = metadata.get("model_group_name")
+            model_key = metadata.get("selected_model_key")
+            selections.append(
+                (
+                    group_name if isinstance(group_name, str) else "",
+                    model_key if isinstance(model_key, str) else "",
+                )
+            )
+        return selections
+
     def rename_model_key(self, previous: str, current: str) -> int:
         """Point persisted session selections at a renamed model key.
 
@@ -300,6 +321,43 @@ class SessionManager(_SDKSessionManager):
             self.save(session)
             renamed += 1
         return renamed
+
+    def rebind_model_selections(
+        self, group_models: dict[str, list[str]], default_group: str
+    ) -> int:
+        """Re-point sessions whose selection vanished from a new configuration.
+
+        A removed model falls back to the first model of the session's group;
+        a removed group falls back to ``default_group`` and its first model.
+        With no groups left both fields are cleared so ``load`` resolves them
+        against whichever configuration is active later.
+        """
+
+        rebound = 0
+        for metadata_path in sorted(self.sessions_root.glob("*/metadata.json")):
+            if not (metadata_path.parent / "session.json").is_file():
+                continue
+            metadata = read_json(metadata_path)
+            group_name = metadata.get("model_group_name")
+            model_key = metadata.get("selected_model_key")
+            if not isinstance(group_name, str) or not group_name:
+                continue
+            target_group = group_name if group_name in group_models else default_group
+            target_models = group_models.get(target_group, [])
+            target_model = (
+                model_key
+                if target_group == group_name and model_key in target_models
+                else (target_models[0] if target_models else "")
+            )
+            if target_group == group_name and target_model == model_key:
+                continue
+            session = self.load(str(metadata["session_id"]))
+            session.model_group_name = target_group if target_models else ""
+            session.selected_model_key = target_model
+            self.save(session)
+            rebound += 1
+        return rebound
+
     def run_owner(self, ref: CaseRunRef) -> dict[str, Any] | None:
         """Return the process stamp recorded when the run started, if any."""
 
