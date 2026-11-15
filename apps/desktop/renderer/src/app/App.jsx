@@ -1308,10 +1308,18 @@ export function App() {
   // convergence target, attach and snapshot outcomes are explicit, and a
   // dropped attempt re-runs at once instead of waiting for an unrelated
   // state change to retrigger it.
+  // The loop's own currency check compares against the effect-fed inputs,
+  // which lag a session switch by one render; the ref is updated synchronously
+  // by loadSession. A detail that resolves inside that window belongs to the
+  // previous session and must not be rendered (or merged into the history
+  // cache) under the new one.
+  const detailIsForActiveSession = (detail) =>
+    String(detail?.session?.session_id || "") === String(activeSessionIdRef.current || "");
   const activeSessionSync = useMemo(
     () => createActiveSessionSync({
       api,
       onAttach: (detail) => {
+        if (!detailIsForActiveSession(detail)) return;
         // The live stream owns the trace from here: invalidate any in-flight
         // trace load so the replay cannot paint over the stream's events.
         traceLoadTokenRef.current += 1;
@@ -1319,6 +1327,7 @@ export function App() {
         resumeSessionRef.current?.(detail);
       },
       onSnapshot: (detail, trace) => {
+        if (!detailIsForActiveSession(detail)) return;
         traceLoadTokenRef.current += 1;
         const sessionId = activeSessionIdRef.current;
         const loadedSession = sessionFromDetail(detail);
