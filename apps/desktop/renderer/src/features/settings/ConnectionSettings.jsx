@@ -1,680 +1,402 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, ChevronRight, KeyRound, Pencil, Plus, RefreshCw, SlidersHorizontal, Trash2 } from "lucide-react";
-import { AddModelForm } from "./AddModelForm.jsx";
+import { ChevronRight, Plus, Trash2 } from "lucide-react";
+import { ModelPicker } from "./ModelPicker.jsx";
 import { ModelCapabilitiesEditor } from "./ModelCapabilitiesEditor.jsx";
+import { SectionHead } from "./SectionHead.jsx";
+import { ConfirmDelete, errorText } from "./ConfirmDelete.jsx";
 import {
-  changeConnectionProtocol,
-  connectionFieldsDirty,
-  connectionSliceDirty,
-  emptyNativeConnection,
-  emptyNativeModel,
+  capabilitySummary,
+  catalogCapabilities,
+  commitConnection,
+  commitConnectionDelete,
+  commitModelDelete,
+  connectionBuffer,
+  connectionDirty,
+  connectionError,
+  credentialEnvFor,
+  defaultProtocolFor,
+  deletionImpact,
   modelDiscoveryRequest,
-  modelRowDirty,
-  nextConnectionKey,
-  nextModelKey,
+  newConnectionBuffer,
+  newModel,
   originalModelKey,
-  protocolChoicesForConnection,
+  protocolChoices,
   protocolLabel,
-  providerSelectionValue,
+  removeBufferModel,
+  renameBufferModel,
+  switchBufferProvider,
+  uniqueKey,
 } from "./settingsModel.js";
 
-const TEST_STATUS_TEXT = {
-  empty: "连接可用，但服务未返回模型列表",
-  error: "连接失败，请检查地址与密钥",
-};
-
-// The first problem with the connection fields themselves; model rows carry
-// their own save state, so their content does not block the head save.
-function connectionSaveError(savedDraft, previousKey, buffer) {
-  if (!buffer.key.trim()) return "请填写连接名称。";
-  if (Object.hasOwn(savedDraft.connections, buffer.key.trim()) && buffer.key.trim() !== previousKey) return "连接名称已存在。";
-  const connection = buffer.connection;
-  const protocols = Object.entries(connection.protocols || {});
-  if (!connection.provider) return "请选择供应商。";
-  if (!protocols.length || protocols.some(([, endpoint]) => !endpoint?.base_url?.trim())) return "请填写 Base URL。";
-  if (!connection.credential?.none && !connection.credential?.env?.trim()) return "连接需要凭据名称或“无需认证”设置。";
-  if (!connection.credential?.none && connection.credential_source === "missing" && !buffer.credentialValues[connection.credential.env]?.trim()) return "请填写 API Key。";
-  return "";
+function providerName(provider, catalogs) {
+  return catalogs?.providers?.[provider]?.display_name || provider;
 }
 
-// One connection editor with a local buffer and its own save button, so an
-// unsaved connection never leaks into another connection's save. `savedDraft`
-// is the last persisted state: validity, dirty checks and key generation all
-// compare against it, not against the live draft with its pending edits.
-export function ConnectionEditor({ connectionKey, previousKey, connection, models, catalogs, api, savedDraft, collapse, onPersist, onDirtyChange, open = false, onToggle = () => {}, onRemove = () => {}, removeDisabled = false, removeTitle = "" }) {
-  const [buffer, setBuffer] = useState(() => ({
-    key: connectionKey,
-    connection: structuredClone(connection),
-    models: structuredClone(models),
-    renames: {},
-    credentialValues: previousKey && connection.credential?.env ? { [connection.credential.env]: savedDraft.credentialValues[connection.credential.env] || "" } : {},
-  }));
-  const [testState, setTestState] = useState(null);
-  const [addingModel, setAddingModel] = useState(false);
-  const [saveError, setSaveError] = useState("");
-  const [expandedModel, setExpandedModel] = useState(null);
-  const [modelDiscovered, setModelDiscovered] = useState({});
-  const [modelDiscoveryState, setModelDiscoveryState] = useState({});
-  // Read-only rows with per-row edit states: the key row and one endpoint row
-  // at a time can switch from summary display into their inline editor.
-  const [authEditing, setAuthEditing] = useState(false);
-  const [editingEndpoint, setEditingEndpoint] = useState(null);
-  const [editingName, setEditingName] = useState(false);
-  const [providerMenuOpen, setProviderMenuOpen] = useState(false);
-  const nameMenuRef = useRef(null);
-  const metaRef = useRef(null);
+function credentialChip(connection, credentialValue) {
+  if (connection.credential?.none) return ["none", "无需认证"];
+  if (credentialValue?.trim()) return ["pending", "API Key 待保存"];
+  if (connection.credential_source && connection.credential_source !== "missing") return ["ok", "已配置"];
+  return ["missing", "缺少 API Key"];
+}
 
-  useEffect(() => {
-    if (!providerMenuOpen) return;
-    function onDocMouseDown(event) {
-      if (nameMenuRef.current && !nameMenuRef.current.contains(event.target)) setProviderMenuOpen(false);
-    }
-    document.addEventListener("mousedown", onDocMouseDown);
-    return () => document.removeEventListener("mousedown", onDocMouseDown);
-  }, [providerMenuOpen]);
+// One model inside the connection editor: a one-line summary that expands
+// into the local name, protocol and capability editor.
+function ModelRow({ modelKey, model, protocols, catalogs, provider, open, onToggle, onRename, onChange, onRemove, saved }) {
+  const multiProtocol = protocols.length > 1 || !protocols.includes(model.protocol);
+  return <article className={`model-row${open ? " open" : ""}`}>
+    <div className="model-row-head">
+      <button type="button" className="model-row-toggle" aria-expanded={open} onClick={onToggle}>
+        <ChevronRight size={16} aria-hidden="true" />
+        <span className="model-row-copy">
+          <strong>{model.model_id || "未填写模型 ID"}{modelKey !== model.model_id && <small className="model-key"> {modelKey}</small>}{!saved && <span className="unsaved-chip">未保存</span>}</strong>
+          <small>{multiProtocol ? `${protocolLabel(model.protocol)} · ` : ""}{capabilitySummary(model.capabilities)}</small>
+        </span>
+      </button>
+      <button type="button" className="icon-action" title="删除模型" aria-label={`删除模型 ${modelKey}`} onClick={onRemove}><Trash2 size={14} aria-hidden="true" /></button>
+    </div>
+    {open && <div className="model-row-body">
+      <div className="field-grid">
+        <label>
+          <span>模型 ID</span>
+          <input value={model.model_id} onChange={(event) => onChange({ model_id: event.target.value, ...(catalogCapabilities(catalogs, provider, model.protocol, event.target.value) ? { capabilities: catalogCapabilities(catalogs, provider, model.protocol, event.target.value) } : {}) })} aria-label="模型 ID" />
+          <small>发送给服务商的真实模型名。</small>
+        </label>
+        <label>
+          <span>本地名称</span>
+          <input defaultValue={modelKey} key={modelKey} onBlur={(event) => onRename(event.target.value)} aria-label="本地名称" />
+          <small>仅在本地引用（模型组、对话选择），重命名会同步已有对话。</small>
+        </label>
+        {multiProtocol && <label>
+          <span>API 协议</span>
+          <select value={model.protocol} onChange={(event) => onChange({ protocol: event.target.value })} aria-label="API 协议">
+            {!protocols.includes(model.protocol) && <option value={model.protocol}>{protocolLabel(model.protocol)}（接口已移除）</option>}
+            {protocols.map((key) => <option key={key} value={key}>{protocolLabel(key)}</option>)}
+          </select>
+        </label>}
+      </div>
+      <ModelCapabilitiesEditor value={model.capabilities} catalogs={catalogs} provider={provider} protocol={model.protocol} onChange={(capabilities) => onChange({ capabilities })} />
+    </div>}
+  </article>;
+}
 
-  // The key row and endpoint rows fall back to their read-only summary as soon
-  // as the pointer leaves the editable area; the buffer keeps pending changes.
-  useEffect(() => {
-    if (!authEditing && editingEndpoint === null) return;
-    function onDocMouseDown(event) {
-      if (metaRef.current && !metaRef.current.contains(event.target)) {
-        setAuthEditing(false);
-        setEditingEndpoint(null);
-      }
-    }
-    document.addEventListener("mousedown", onDocMouseDown);
-    return () => document.removeEventListener("mousedown", onDocMouseDown);
-  }, [authEditing, editingEndpoint]);
+// Editor for one connection and its models. Everything edits a local buffer
+// and one 保存 commits it; deleting a saved model asks first and commits at
+// once. `previousKey` is null for a connection being created.
+export function ConnectionEditor({ previousKey, initialBuffer, savedDraft, catalogs, usage, api, persist, reportDirty, onCreated, onCancelCreate, autoPick = null }) {
+  const [buffer, setBuffer] = useState(initialBuffer);
+  const [picking, setPicking] = useState(Boolean(autoPick));
+  useEffect(() => { autoPick?.(); }, []);
+  const [openModel, setOpenModel] = useState(null);
+  const [confirmModel, setConfirmModel] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [test, setTest] = useState(null);
+  const editorId = previousKey || "__new__";
 
-  const connectionWithoutSource = (({ credential_source: _source, ...rest }) => rest)(buffer.connection);
-  const provider = buffer.connection.provider;
-  const protocols = Object.entries(buffer.connection.protocols || {});
-  const credentialEnv = buffer.connection.credential?.env || "";
-  const authMode = buffer.connection.credential?.none ? "none" : "api-key";
-  const providerSelection = providerSelectionValue(provider, catalogs);
-  const isCustomProvider = providerSelection === "__custom__";
-  // "已配置" covers a saved credential_source and a key typed in this editor
-  // session; the backend only confirms the source after the next full reload.
-  const savedKey = Boolean((buffer.connection.credential_source && buffer.connection.credential_source !== "missing") || buffer.credentialValues[credentialEnv]?.trim());
-  const protocolChoices = protocolChoicesForConnection("__custom__", catalogs);
-  const addableProtocols = protocolChoices.filter((protocol) => !buffer.connection.protocols?.[protocol]);
-  // Existing editors compare against the saved slice; the create form counts
-  // as dirty only after the user changes something, so an untouched abandoned
-  // form never trips the close guard.
-  const initialBufferJsonRef = useRef(null);
-  if (initialBufferJsonRef.current === null) initialBufferJsonRef.current = JSON.stringify(buffer);
-  const dirty = previousKey
-    ? connectionSliceDirty(savedDraft, previousKey, buffer)
-    : JSON.stringify(buffer) !== initialBufferJsonRef.current;
+  const dirty = connectionDirty(buffer, savedDraft, previousKey);
+  useEffect(() => { reportDirty(editorId, dirty); return () => reportDirty(editorId, false); }, [dirty, editorId, reportDirty]);
 
-  useEffect(() => {
-    onDirtyChange?.(connectionKey, dirty);
-    return () => onDirtyChange?.(connectionKey, false);
-  }, [dirty, connectionKey, onDirtyChange]);
+  const connection = buffer.connection;
+  const protocols = Object.keys(connection.protocols || {});
+  const chosen = Boolean(connection.provider);
+  const custom = chosen && !catalogs?.providers?.[connection.provider];
+  const validation = connectionError(buffer, savedDraft, previousKey);
+  const savedModels = savedDraft.models;
+  const [chipKind, chipText] = credentialChip(connection, buffer.credentialValue);
+  const addableProtocols = protocolChoices(custom ? "" : connection.provider, catalogs).filter((protocol) => !connection.protocols[protocol]);
 
-  // Connection fields and every model report dirtiness separately: the head
-  // save grays out until the connection changes, and each model row saves
-  // independently. Row saves wait for the connection itself because model
-  // entries reference its key and protocol list.
-  const connectionMissing = connectionSaveError(savedDraft, previousKey, buffer);
-  const headDirty = connectionFieldsDirty(savedDraft, previousKey, buffer);
-  const missing = previousKey
-    ? connectionMissing
-    : connectionMissing || (Object.entries(buffer.models).find(([, model]) => !model.model_id?.trim()) ? "每个模型都需要填写模型 ID。" : "");
-  const headSaveDisabled = Boolean(missing) || (Boolean(previousKey) && !headDirty);
-  const headSaveTitle = missing
-    || (previousKey && !headDirty
-      ? "连接信息未修改"
-      : previousKey
-        ? "保存连接信息（协议变更会一并更新引用它的模型）"
-        : "保存连接与模型");
-
-  function updateConnection(field, value) {
-    setBuffer((current) => ({ ...current, connection: { ...current.connection, [field]: value } }));
+  function update(patch) {
+    setError("");
+    setBuffer((current) => ({ ...current, ...patch }));
   }
 
-  function updateModel(modelKey, field, value) {
-    setBuffer((current) => {
-      const model = current.models[modelKey];
-      if (!model) return current;
-      if (field === "context_tokens" || field === "max_output_tokens") {
-        return { ...current, models: { ...current.models, [modelKey]: { ...model, capabilities: { ...model.capabilities, limits: { ...model.capabilities?.limits, [field]: Number(value) || null } } } } };
-      }
-      return { ...current, models: { ...current.models, [modelKey]: { ...model, [field]: value } } };
-    });
+  function updateConnection(patch) {
+    update({ connection: { ...connection, ...patch } });
   }
 
-  function updateModelId(modelKey, modelId) {
-    setBuffer((current) => {
-      const model = current.models[modelKey];
-      if (!model) return current;
-      const known = catalogs?.model_capabilities?.find((item) => item.provider === provider && item.protocol === model.protocol && item.model_id === modelId);
-      return { ...current, models: { ...current.models, [modelKey]: { ...model, model_id: modelId, ...(known?.capabilities ? { capabilities: structuredClone(known.capabilities) } : {}) } } };
-    });
-  }
-
-  function renameModelKey(previousModelKey, nextKey) {
-    const key = nextKey.trim();
-    if (!key || key === previousModelKey || Object.hasOwn(buffer.models, key)) return;
-    setBuffer((current) => {
-      const models = {};
-      for (const [name, model] of Object.entries(current.models)) models[name === previousModelKey ? key : name] = model;
-      // Keep the original key so commit can remap model-group membership.
-      const renamedFrom = Object.keys(current.renames).find((original) => current.renames[original] === previousModelKey) || previousModelKey;
-      return { ...current, models, renames: { ...current.renames, [renamedFrom]: key } };
-    });
-    setExpandedModel((current) => current === previousModelKey ? key : current);
-  }
-
-  function removeModel(modelKey) {
-    setBuffer((current) => {
-      const { [modelKey]: _removed, ...models } = current.models;
-      const renames = { ...current.renames };
-      for (const [original, renamed] of Object.entries(renames)) if (renamed === modelKey) delete renames[original];
-      return { ...current, models, renames };
-    });
-    setExpandedModel((current) => current === modelKey ? null : current);
-  }
-
-  async function addModel(draft) {
-    if (!draft.protocol || !draft.modelId) return;
-    // A typed local name must stay unique across every model; duplicates fall
-    // back to the next generated key instead of overwriting an entry.
-    const scope = { ...savedDraft.models, ...buffer.models };
-    const key = draft.key && !Object.hasOwn(scope, draft.key) ? draft.key : nextModelKey(scope);
-    const next = { ...buffer, models: { ...buffer.models, [key]: { ...emptyNativeModel(buffer.key, draft.protocol), model_id: draft.modelId, capabilities: draft.capabilities } } };
-    setBuffer(next);
-    // The saved row joins the list expanded, so its discover button and
-    // capability form are immediately reachable like every other model row.
-    setExpandedModel(key);
-    setAddingModel(false);
-    // On a saved connection the form's 保存 persists the model right away; the
-    // create form and a connection with unsaved fields keep it in the buffer
-    // (its row 保存 stays enabled) until the connection itself is saved.
-    if (!previousKey || headDirty) return;
-    setSaveError("");
-    try {
-      await onPersist(previousKey, next, catalogs, "model", key);
-    } catch (error) {
-      setSaveError(typeof error?.message === "string" && error.message ? error.message : "保存失败，请稍后再试。");
-    }
-  }
-
-  function selectProvider(value) {
+  function chooseProvider(value) {
     if (!value) return;
-    if (value === "__custom__") {
-      setBuffer((current) => ({ ...current, connection: { ...current.connection, provider: current.key } }));
-      return;
-    }
+    setError("");
     setBuffer((current) => {
-      const providerCatalog = catalogs?.providers?.[value];
-      if (!providerCatalog) return { ...current, connection: { ...current.connection, provider: value } };
-      const nextProtocols = Object.fromEntries(Object.entries(providerCatalog.protocols || {}).map(([key, item]) => [key, { base_url: item.base_url || "" }]));
-      const defaultProtocol = providerCatalog.default_protocol || Object.keys(nextProtocols)[0] || "";
-      const apiKeyEnv = providerCatalog.protocols?.[defaultProtocol]?.api_key_env;
-      const previousEnv = current.connection.credential?.env;
-      const previousValue = previousEnv ? current.credentialValues[previousEnv] : "";
-      const credentialValues = previousValue && apiKeyEnv
-        ? { ...current.credentialValues, [apiKeyEnv]: current.credentialValues[apiKeyEnv] || previousValue }
-        : current.credentialValues;
-      return {
-        ...current,
-        connection: {
-          ...current.connection,
-          provider: value,
-          protocols: nextProtocols,
-          credential: apiKeyEnv ? { env: apiKeyEnv } : { none: true },
-          credential_source: apiKeyEnv === previousEnv ? current.connection.credential_source : "missing",
-        },
-        models: Object.fromEntries(Object.entries(current.models).map(([key, model]) => [key, nextProtocols[model.protocol] ? model : { ...model, protocol: defaultProtocol }])),
-        credentialValues,
-      };
+      // A new connection takes the provider's key as its name until renamed.
+      const key = previousKey ? current.key : uniqueKey(value === "__custom__" ? "custom" : value, savedDraft.connections);
+      return switchBufferProvider({ ...current, key }, value === "__custom__" ? key : value, catalogs);
     });
   }
 
-  function renameConnectionKey(nextKey) {
-    const key = nextKey.trim();
+  function renameConnection(value) {
+    const key = value.trim();
     if (!key || key === buffer.key) return;
-    if (Object.hasOwn(savedDraft.connections, key) && key !== previousKey) {
-      setSaveError("连接名称已存在。");
-      return;
-    }
-    setSaveError("");
-    setBuffer((current) => ({
-      ...current,
-      key,
-      connection: { ...current.connection, ...(providerSelection === "__custom__" ? { provider: key } : {}) },
-      models: Object.fromEntries(Object.entries(current.models).map(([modelKey, model]) => [modelKey, { ...model, connection: key }])),
-    }));
+    update({ key, connection: custom ? { ...connection, provider: key } : connection });
   }
 
-  async function testConnection() {
-    const request = modelDiscoveryRequest({ connections: { [buffer.key]: connectionWithoutSource }, credentialValues: buffer.credentialValues }, buffer.key);
-    if (!request || !api?.discoverModels) return;
-    setTestState({ status: "loading" });
-    try {
-      const response = await api.discoverModels(request);
-      const count = Array.isArray(response?.models) ? response.models.length : 0;
-      setTestState({ status: count ? "ready" : "empty", count });
-    } catch {
-      setTestState({ status: "error" });
-    }
-  }
-
-  async function discoverModelIds(modelKey) {
-    const model = buffer.models[modelKey];
-    if (!api?.discoverModels || !model) return;
-    const request = modelDiscoveryRequest({ connections: { [buffer.key]: connectionWithoutSource }, credentialValues: buffer.credentialValues }, buffer.key);
-    if (!request) return;
-    // Discovery results (fetched IDs and status text) render inside the
-    // model body, so discovering from a folded row expands it first.
-    setExpandedModel(modelKey);
-    setModelDiscoveryState((current) => ({ ...current, [modelKey]: { loading: true } }));
-    try {
-      const response = await api.discoverModels({ ...request, protocol: model.protocol });
-      setModelDiscovered((current) => ({ ...current, [modelKey]: response.models || [] }));
-      setModelDiscoveryState((current) => ({ ...current, [modelKey]: { message: response.models?.length ? `已获取 ${response.models.length} 个模型，请在模型 ID 输入框中选择。` : "未获取到模型，可手动填写模型 ID。" } }));
-    } catch {
-      setModelDiscoveryState((current) => ({ ...current, [modelKey]: { message: "获取失败，请检查连接地址与凭据，或手动填写模型 ID。" } }));
-    }
-  }
-
-  function discardEdits() {
-    const savedConnection = savedDraft.connections[previousKey];
-    if (!savedConnection) return;
-    const savedModels = Object.fromEntries(Object.entries(savedDraft.models).filter(([, model]) => model.connection === previousKey));
-    setBuffer({
-      key: previousKey,
-      connection: structuredClone(savedConnection),
-      models: structuredClone(savedModels),
-      renames: {},
-      credentialValues: savedConnection.credential?.env ? { [savedConnection.credential.env]: savedDraft.credentialValues[savedConnection.credential.env] || "" } : {},
+  function addModels(entries) {
+    setBuffer((current) => {
+      const models = { ...current.models };
+      for (const { modelId, protocol } of entries) {
+        const key = uniqueKey(modelId, { ...savedModels, ...models });
+        models[key] = newModel(current.key, current.connection, modelId, protocol, catalogs);
+      }
+      return { ...current, models };
     });
-    setTestState(null);
-    setAddingModel(false);
-    setSaveError("");
-    setAuthEditing(false);
-    setEditingEndpoint(null);
-    setEditingName(false);
-    setProviderMenuOpen(false);
-    setModelDiscovered({});
-    setModelDiscoveryState({});
-    setExpandedModel(null);
+    setPicking(false);
+  }
+
+  function isSavedModel(modelKey) {
+    return Object.hasOwn(savedModels, originalModelKey(buffer.renames, modelKey));
+  }
+
+  async function removeModel(modelKey) {
+    if (!isSavedModel(modelKey)) { update(removeBufferModel(buffer, modelKey)); return; }
+    setBusy(true);
+    try {
+      await persist(commitModelDelete(savedDraft, originalModelKey(buffer.renames, modelKey)));
+      setBuffer((current) => removeBufferModel(current, modelKey));
+      setConfirmModel(null);
+    } catch (deleteError) {
+      setError(errorText(deleteError));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function save() {
-    if (headSaveDisabled) return;
-    setSaveError("");
+    if (validation) return;
+    setError("");
+    setBusy(true);
     try {
-      await onPersist(previousKey, buffer, catalogs, previousKey ? "connection" : "slice");
-      // The create form closes on its first save because the saved row joins
-      // the list below; existing editors stay open so models stay testable
-      // and the saved view matches the editing view.
-      if (!previousKey) collapse();
-    } catch (error) {
-      setSaveError(typeof error?.message === "string" && error.message ? error.message : "保存失败，请稍后再试。");
+      const renames = Object.fromEntries(Object.entries(buffer.renames).filter(([original]) => Object.hasOwn(savedModels, original)));
+      const rebased = await persist(commitConnection(savedDraft, previousKey, buffer), { modelKeyRenames: Object.keys(renames).length ? renames : undefined });
+      const key = buffer.key.trim();
+      if (previousKey) setBuffer(connectionBuffer(key, rebased));
+      else onCreated(key, Object.keys(buffer.models).length === 0);
+    } catch (saveError) {
+      setError(errorText(saveError));
+    } finally {
+      setBusy(false);
     }
   }
 
-  // One model row commits on its own. Unsaved rows cannot commit here — they
-  // either ride the create-form save or leave the buffer through the trash icon.
-  async function saveModelRow(modelKey) {
-    setSaveError("");
+  async function testConnection() {
+    const request = modelDiscoveryRequest(connection, defaultProtocolFor(connection, catalogs), buffer.credentialValue);
+    if (!request || !api?.discoverModels) return;
+    setTest({ status: "loading" });
     try {
-      await onPersist(previousKey, buffer, catalogs, "model", modelKey);
-    } catch (error) {
-      setSaveError(typeof error?.message === "string" && error.message ? error.message : "保存失败，请稍后再试。");
+      const response = await api.discoverModels(request);
+      const count = Array.isArray(response?.models) ? response.models.length : 0;
+      setTest({ status: "ok", text: count ? `连接可用，服务商返回 ${count} 个模型` : "连接可用，但服务商没有返回模型列表" });
+    } catch {
+      setTest({ status: "error", text: "连接失败，请检查地址与密钥" });
     }
   }
 
-  // The trash icon deletes a saved model in one step. The deletion only
-  // touches the saved entry and its group memberships, so unlike a row save
-  // it does not wait for unsaved connection fields.
-  async function deleteModelRow(modelKey) {
-    setSaveError("");
-    try {
-      await onPersist(previousKey, buffer, catalogs, "delete", modelKey);
-      removeModel(modelKey);
-    } catch (error) {
-      setSaveError(typeof error?.message === "string" && error.message ? error.message : "保存失败，请稍后再试。");
-    }
-  }
+  const providerOptions = Object.entries(catalogs?.providers || {});
+  const modelEntries = Object.entries(buffer.models);
 
-  function commitRename(nextKey) {
-    setEditingName(false);
-    setProviderMenuOpen(false);
-    if (nextKey !== buffer.key) renameConnectionKey(nextKey);
-  }
-
-  // The head's 添加接口 expands the row and opens the new endpoint in edit state.
-  function addEndpointRow() {
-    const protocol = addableProtocols[0];
-    if (!protocol) return;
-    setBuffer((current) => {
-      if (current.connection.protocols?.[protocol]) return current;
-      const baseUrl = catalogs?.providers?.[current.connection.provider]?.protocols?.[protocol]?.base_url || "";
-      return { ...current, connection: { ...current.connection, protocols: { ...current.connection.protocols, [protocol]: { base_url: baseUrl } } } };
-    });
-    setEditingEndpoint(protocol);
-    if (!open) onToggle();
-  }
-
-  // Endpoint deletion is reachable from the summary row as well as the inline
-  // editor, so an endpoint added by mistake never needs a second edit step.
-  // The last endpoint and endpoints still referenced by a model stay.
-  function removeEndpointButton(protocol) {
-    const last = protocols.length === 1;
-    const referenced = Object.values(buffer.models).some((model) => model.protocol === protocol);
-    return <button
-      className="route-remove"
-      disabled={last || referenced}
-      type="button"
-      onClick={() => {
-        setEditingEndpoint((current) => (current === protocol ? null : current));
-        setBuffer((current) => {
-          const { [protocol]: _removed, ...nextProtocols } = current.connection.protocols || {};
-          return { ...current, connection: { ...current.connection, protocols: nextProtocols } };
-        });
-      }}
-      aria-label={`Remove ${protocol}`}
-      title={last ? "至少保留一个接口" : referenced ? "先修改引用此接口的模型" : "删除接口"}
-    ><Trash2 aria-hidden="true" /></button>;
-  }
-
-  function protocolSelect(protocol) {
-    return <label>
-      <span>协议名称</span>
-      <select value={protocol} onChange={(event) => {
-        setEditingEndpoint(event.target.value);
-        setBuffer((current) => {
-          const next = changeConnectionProtocol({ connections: { [current.key]: current.connection }, models: current.models, modelGroups: {}, credentialValues: current.credentialValues }, current.key, protocol, event.target.value);
-          return { ...current, connection: next.connections[current.key], models: next.models };
-        });
-      }}>
-        {protocolChoices.map((key) => <option key={key} value={key} disabled={key !== protocol && Boolean(buffer.connection.protocols?.[key])}>{protocolLabel(key)}</option>)}
-      </select>
-    </label>;
-  }
-
-  // The row head is part of the editor because the name, badges, save and
-  // discard state all live in the buffer; collapsed and expanded states share
-  // this exact head and collapsed rows show nothing else. The name is plain
-  // text (double-click renames custom providers) and the caret opens the
-  // provider switch menu.
-  const headName = isCustomProvider || !provider ? buffer.key : (catalogs?.providers?.[provider]?.display_name || provider);
-  const providerMenuItems = [
-    ...Object.entries(catalogs?.providers || {}).map(([key, item]) => ({ value: key, label: item.display_name || key, group: "Pygent 内置" })),
-    ...(provider && providerSelection !== "__custom__" && !Object.hasOwn(catalogs?.providers || {}, provider) ? [{ value: provider, label: provider, group: "当前" }] : []),
-    { value: "__custom__", label: "自定义供应商", group: "" },
-  ];
-  return <>
-    <div className="pool-row-head connection-row-head">
-      <button type="button" className="pool-row-main" aria-expanded={open} onClick={onToggle}>
-        <ChevronRight size={16} aria-hidden="true" />
-      </button>
-      <div className="head-name-wrap" ref={nameMenuRef}>
-        {editingName
-          ? <div className="head-name-input-wrap">
-              <input className="head-name-input" defaultValue={buffer.key} key={buffer.key} autoFocus aria-label="供应商名称"
-                onKeyDown={(event) => { if (event.key === "Enter") commitRename(event.currentTarget.value); if (event.key === "Escape") { setEditingName(false); setProviderMenuOpen(false); } }}
-                onBlur={(event) => { if (nameMenuRef.current?.contains(event.relatedTarget)) return; commitRename(event.currentTarget.value); }} />
-              {/* preventDefault keeps the input focused, so opening the menu does not end the edit */}
-              <button type="button" className="head-caret" aria-label="选择服务商" title="选择服务商" onMouseDown={(event) => event.preventDefault()} onClick={() => setProviderMenuOpen((current) => !current)}><ChevronDown size={14} aria-hidden="true" /></button>
-            </div>
-          : !provider
-            ? <select className="head-provider-select" value="" aria-label="选择服务商" title="选择服务商" onChange={(event) => { setProviderMenuOpen(false); selectProvider(event.target.value); }}>
-                <option value="" disabled>请选择服务商</option>
-                <optgroup label="Pygent 内置">{Object.entries(catalogs?.providers || {}).map(([key, item]) => <option key={key} value={key}>{item.display_name || key}</option>)}</optgroup>
-                <option value="__custom__">自定义供应商…</option>
-              </select>
-            : <button type="button" className="head-name" onDoubleClick={isCustomProvider ? () => setEditingName(true) : undefined} title={isCustomProvider ? "双击重命名" : undefined}>{headName}</button>}
-        {providerMenuOpen && <div className="head-provider-menu" role="menu">
-          {providerMenuItems.map((item, index) => (
-            <React.Fragment key={item.value}>
-              {(item.group && (index === 0 || providerMenuItems[index - 1].group !== item.group)) && <div className="menu-group">{item.group}</div>}
-              <button type="button" role="menuitem" className={item.value === providerSelection ? "selected" : ""} onClick={() => { setProviderMenuOpen(false); setEditingName(false); selectProvider(item.value); }}>{item.label}</button>
-            </React.Fragment>
-          ))}
-        </div>}
+  return <div className="connection-editor">
+    {error && !confirmModel && <p className="editor-error" role="alert">{error}</p>}
+    <div className="connection-fields">
+      <div className="field-grid">
+        <label>
+          <span>服务商</span>
+          <select value={chosen ? (custom ? "__custom__" : connection.provider) : ""} onChange={(event) => chooseProvider(event.target.value)} aria-label="服务商">
+            {!chosen && <option value="" disabled>请选择服务商</option>}
+            {providerOptions.map(([key, item]) => <option key={key} value={key}>{item.display_name || key}</option>)}
+            <option value="__custom__">自定义（OpenAI 兼容等）</option>
+          </select>
+        </label>
+        {chosen && <label>
+          <span>连接名称</span>
+          <input defaultValue={buffer.key} key={buffer.key} onBlur={(event) => renameConnection(event.target.value)} aria-label="连接名称" />
+          <small>本地标识，模型通过它引用连接。</small>
+        </label>}
       </div>
-      <span className="head-count-badge">{protocols.length} 个接口</span>
-      <span className="head-count-badge">{Object.keys(buffer.models).length} 个模型</span>
-      <button type="button" className="head-add-endpoint" disabled={!addableProtocols.length} title={addableProtocols.length ? "添加接口" : "所有协议均已添加"} onClick={addEndpointRow}><Plus size={14} aria-hidden="true" /> 添加接口</button>
-      <button type="button" className="send" disabled={headSaveDisabled} title={headSaveTitle} onClick={save}>保存</button>
-      {dirty && previousKey && <button type="button" className="link-action" onClick={discardEdits}>放弃</button>}
-      <button className="route-remove" disabled={removeDisabled} type="button" onClick={onRemove} aria-label={`Remove ${connectionKey}`} title={removeTitle || "删除连接"}><Trash2 aria-hidden="true" /></button>
-    </div>
-    <div className="pool-editor-shell">
-      <div className="pool-editor-inner">
-        <div className="connection-route-card connection-editor">
-          {missing && <div className="connection-missing" role="status">{missing}</div>}
-          {saveError && <div className="connection-missing" role="status">{saveError}</div>}
-
-          <div className="connection-meta" ref={metaRef}>
-            <div className="connection-key-row" onDoubleClick={authEditing ? undefined : () => setAuthEditing(true)}>
-              <KeyRound size={14} aria-hidden="true" />
-              <span className="auth-label">API Key</span>
-              {authEditing ? (authMode === "api-key" ? <>
-                <input disabled={!credentialEnv} type="password" autoComplete="off" aria-label="API Key" placeholder={savedKey ? "留空保留已有密钥" : "填写 API Key"} value={buffer.credentialValues[credentialEnv] || ""} onChange={(event) => setBuffer((current) => ({ ...current, credentialValues: { ...current.credentialValues, [credentialEnv]: event.target.value } }))} autoFocus />
-                <button type="button" className="link-action" onClick={() => updateConnection("credential", { none: true })}>切换为无需认证</button>
-              </> : <>
-                <span className="key-env">此连接无需密钥</span>
-                <button type="button" className="link-action" onClick={() => updateConnection("credential", { env: credentialEnv || `${buffer.key.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_API_KEY` })}>改用 API Key</button>
-              </>)
-                : (authMode === "api-key" ? <>
-                  <span className={`key-state ${savedKey ? "ok" : "required"}`}>{savedKey ? "已配置" : "必填"}</span>
-                  <span className="key-env">{credentialEnv}</span>
-                </> : <span className="key-env">无需认证</span>)}
-              <button type="button" className="row-edit-action" aria-label={authEditing ? "完成凭据编辑" : "编辑凭据"} title={authEditing ? "完成" : "编辑"} onClick={() => setAuthEditing((current) => !current)}>
-                {authEditing ? <Check size={14} aria-hidden="true" /> : <Pencil size={14} aria-hidden="true" />}
-              </button>
-            </div>
-            <div className="protocol-interface-list">
-              {protocols.map(([protocol, endpoint]) => editingEndpoint === protocol ? (
-                <div className="protocol-interface-row" key={protocol}>
-                  {protocolSelect(protocol)}
-                  <label><span>Base URL</span><input placeholder="https://api.example.com/v1" value={endpoint?.base_url || ""} onChange={(event) => setBuffer((current) => ({ ...current, connection: { ...current.connection, protocols: { ...current.connection.protocols, [protocol]: { base_url: event.target.value } } } }))} /></label>
-                  {removeEndpointButton(protocol)}
-                  <button type="button" className="row-edit-action" aria-label="完成接口编辑" title="完成" onClick={() => setEditingEndpoint(null)}><Check size={14} aria-hidden="true" /></button>
-                </div>
-              ) : (
-                <div className="protocol-summary-row" key={protocol} onDoubleClick={() => setEditingEndpoint(protocol)}>
-                  <span className="protocol-summary-text">{protocolLabel(protocol)} · {endpoint?.base_url}</span>
-                  <span className="protocol-summary-actions">
-                    <button type="button" className="row-edit-action" aria-label={`编辑接口 ${protocolLabel(protocol)}`} title="编辑" onClick={() => setEditingEndpoint(protocol)}><Pencil size={14} aria-hidden="true" /></button>
-                    {removeEndpointButton(protocol)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-    <div className="connection-models">
-      <div className="connection-section-heading">
-        <strong>模型</strong>
-        <button type="button" className="plain-action connection-add-model" disabled={addingModel || !protocols.length} onClick={() => setAddingModel(true)}><Plus size={14} aria-hidden="true" /> 添加模型</button>
-      </div>
-      {addingModel && <AddModelForm connection={buffer.connection} credentialValue={buffer.credentialValues[credentialEnv] || ""} catalogs={catalogs} api={api} defaultModelKey={nextModelKey({ ...savedDraft.models, ...buffer.models })} onAdd={addModel} onCancel={() => setAddingModel(false)} />}
-      {Object.keys(buffer.models).length > 0 && <div className="model-route-list connection-model-list">
-        {Object.entries(buffer.models).map(([modelKey, model]) => {
-          const protocolSelectable = protocols.length > 1 || (Boolean(model.protocol) && !protocols.includes(model.protocol));
-          const open = expandedModel === modelKey;
-          const rowDirty = modelRowDirty(savedDraft, buffer, modelKey);
-          const rowSaveDisabled = !previousKey || connectionFieldsDirty(savedDraft, previousKey, buffer) || !rowDirty || !model.model_id?.trim();
-          const rowSaveTitle = !previousKey
-            ? "随连接一起保存"
-            : connectionFieldsDirty(savedDraft, previousKey, buffer)
-              ? "先保存连接信息"
-              : !rowDirty
-                ? "模型未修改"
-                : !model.model_id?.trim()
-                  ? "填写模型 ID 后保存"
-                  : "保存此模型";
-          return <article className={`model-route-card pool-row${open ? " pool-row-open" : ""}`} key={modelKey}>
-            <div className="pool-row-head model-row-head">
-              <button type="button" className="pool-row-main" aria-expanded={open} title={open ? "收起能力配置" : "展开能力配置"} onClick={() => setExpandedModel(open ? null : modelKey)}><ChevronRight size={16} aria-hidden="true" /></button>
-              <div className="head-field field-id">
-                <div className="model-id-control">
-                  <input list={`models-${modelKey}`} placeholder="填写模型 ID" value={model.model_id || ""} onChange={(event) => updateModelId(modelKey, event.target.value)} aria-label="服务商模型 ID" title="服务商模型 ID（服务商文档或“发现模型”返回的真实 ID）" />
-                  <button className="discover-action" disabled={!api?.discoverModels || modelDiscoveryState[modelKey]?.loading} type="button" onClick={() => discoverModelIds(modelKey)} aria-label="通过连接发现模型 ID" title="通过连接发现模型 ID"><RefreshCw size={14} aria-hidden="true" /></button>
-                </div>
-              </div>
-              <datalist id={`models-${modelKey}`}>{(modelDiscovered[modelKey] || []).map((item) => <option key={item.id} value={item.id} />)}</datalist>
-              <div className="head-field field-name">
-                <span className="head-tag">名称</span>
-                <input defaultValue={modelKey} key={modelKey} aria-label="本地名称" title="本地名称（仅本地引用，不会发送给服务商）" onBlur={(event) => renameModelKey(modelKey, event.target.value)} />
-              </div>
-              {protocolSelectable && <div className="head-field field-protocol">
-                <span className="head-tag">协议</span>
-                <select value={model.protocol || ""} onChange={(event) => updateModel(modelKey, "protocol", event.target.value)} aria-label="API 协议" title="只能选择当前连接提供的协议">{!protocols.includes(model.protocol) && <option value={model.protocol}>{protocolLabel(model.protocol)}</option>}{protocols.map(([key]) => <option key={key} value={key}>{protocolLabel(key)}</option>)}</select>
-              </div>}
-              <div className="model-head-actions">
-                <button type="button" className="send model-save" disabled={rowSaveDisabled} title={rowSaveTitle} onClick={() => saveModelRow(modelKey)}>保存</button>
-                <button
-                  className="route-remove"
-                  type="button"
-                  onClick={() => {
-                    if (previousKey && savedDraft.models[originalModelKey(buffer.renames, modelKey)]) deleteModelRow(modelKey);
-                    else removeModel(modelKey);
-                  }}
-                  aria-label={`Remove ${modelKey}`}
-                  title="删除模型"
-                ><Trash2 aria-hidden="true" /></button>
-              </div>
-            </div>
-            <div className="pool-editor-shell">
-              <div className="pool-editor-inner">
-                <div className="model-config-block">
-                  {modelDiscoveryState[modelKey]?.message && <small className="route-secret" role="status">{modelDiscoveryState[modelKey].message}</small>}
-                  <ModelCapabilitiesEditor value={model.capabilities} catalogs={catalogs} provider={provider} protocol={model.protocol || ""} onChange={(value) => updateModel(modelKey, "capabilities", value)} />
-                </div>
-              </div>
-            </div>
-          </article>;
-        })}
+      {chosen && <div className="credential-row">
+        <label className="credential-field">
+          <span>API Key <span className={`credential-chip ${chipKind}`}>{chipText}</span></span>
+          <input type="password" autoComplete="off" disabled={Boolean(connection.credential?.none)} placeholder={connection.credential?.none ? "此服务无需密钥" : chipKind === "ok" ? "留空保留已有密钥" : "粘贴 API Key"} value={buffer.credentialValue} onChange={(event) => update({ credentialValue: event.target.value })} aria-label="API Key" />
+        </label>
+        <label className="credential-none">
+          <input type="checkbox" checked={Boolean(connection.credential?.none)} onChange={(event) => updateConnection({ credential: event.target.checked ? { none: true } : { env: credentialEnvFor(buffer.key) } })} />
+          <span>无需认证</span>
+        </label>
       </div>}
-      {!Object.keys(buffer.models).length && !addingModel && <p className="settings-inline-empty">此连接下还没有模型，点击“添加模型”。</p>}
+      {chosen && <div className="endpoint-list" aria-label="接口">
+        <span className="field-label">接口 <small>协议与地址</small></span>
+        {protocols.map((protocol) => {
+          const referenced = modelEntries.some(([, model]) => model.protocol === protocol);
+          return <div className="endpoint-row" key={protocol}>
+            <select value={protocol} aria-label="API 协议" onChange={(event) => {
+              const next = event.target.value;
+              const nextProtocols = Object.fromEntries(Object.entries(connection.protocols).map(([key, value]) => [key === protocol ? next : key, value]));
+              update({ connection: { ...connection, protocols: nextProtocols }, models: Object.fromEntries(modelEntries.map(([key, model]) => [key, model.protocol === protocol ? { ...model, protocol: next } : model])) });
+            }}>
+              {protocolChoices(custom ? "" : connection.provider, catalogs).map((key) => <option key={key} value={key} disabled={key !== protocol && Boolean(connection.protocols[key])}>{protocolLabel(key)}</option>)}
+            </select>
+            <input placeholder="https://api.example.com/v1" value={connection.protocols[protocol]?.base_url || ""} aria-label={`${protocolLabel(protocol)} Base URL`} onChange={(event) => updateConnection({ protocols: { ...connection.protocols, [protocol]: { base_url: event.target.value } } })} />
+            <button type="button" className="icon-action" disabled={protocols.length === 1 || referenced} title={protocols.length === 1 ? "至少保留一个接口" : referenced ? "有模型使用此接口" : "删除接口"} aria-label={`删除接口 ${protocolLabel(protocol)}`} onClick={() => { const { [protocol]: _removed, ...rest } = connection.protocols; updateConnection({ protocols: rest }); }}><Trash2 size={14} aria-hidden="true" /></button>
+          </div>;
+        })}
+        {addableProtocols.length > 0 && <button type="button" className="link-action" onClick={() => updateConnection({ protocols: { ...connection.protocols, [addableProtocols[0]]: { base_url: catalogs?.providers?.[connection.provider]?.protocols?.[addableProtocols[0]]?.base_url || "" } } })}><Plus size={12} aria-hidden="true" /> 添加接口</button>}
+      </div>}
     </div>
 
-    <details className="connection-advanced settings-detail">
-      <summary><SlidersHorizontal size={14} aria-hidden="true" /> 高级配置 <span className="advanced-hint">认证 · 代理 · TLS <ChevronRight size={14} className="chev" aria-hidden="true" /></span></summary>
-      <div className="connection-test-row">
-        <button type="button" className="plain-action" disabled={!modelDiscoveryRequest({ connections: { [buffer.key]: connectionWithoutSource }, credentialValues: buffer.credentialValues }, buffer.key) || !api?.discoverModels || testState?.status === "loading"} onClick={testConnection}>{testState?.status === "loading" ? "测试中…" : "测试连接方案"}</button>
-        {testState && testState.status !== "loading" && <span className={`connection-test-status ${testState.status}`} role="status">{testState.status === "ready" ? `连接可用，发现 ${testState.count} 个模型` : TEST_STATUS_TEXT[testState.status]}</span>}
+    {chosen && <div className="connection-models">
+      <div className="connection-models-head">
+        <span className="field-label">模型 <small>{modelEntries.length ? `${modelEntries.length} 个` : "还没有模型"}</small></span>
+        <button type="button" className="plain-action" disabled={picking || !protocols.length} onClick={() => setPicking(true)}><Plus size={14} aria-hidden="true" /> 添加模型</button>
       </div>
-      <div className="model-route-grid">
-        {authMode === "api-key" && <label><span>凭据名称</span><input value={credentialEnv} onChange={(event) => updateConnection("credential", event.target.value ? { env: event.target.value } : { none: true })} /><small>配置只保存名称，不保存密钥。</small></label>}
-        <label><span>代理（可选）</span><input placeholder="http://127.0.0.1:7890" value={buffer.connection.proxy || ""} onChange={(event) => updateConnection("proxy", event.target.value)} /></label>
-        <label><span>TLS 证书验证</span><select value={buffer.connection.verify_ssl === false ? "off" : "on"} onChange={(event) => updateConnection("verify_ssl", event.target.value === "on")}><option value="on">开启（推荐）</option><option value="off">关闭</option></select></label>
+      {picking && <ModelPicker connection={connection} credentialValue={buffer.credentialValue} existingIds={modelEntries.map(([, model]) => model.model_id)} api={api} onAdd={addModels} onCancel={() => setPicking(false)} />}
+      {modelEntries.map(([modelKey, model]) => <React.Fragment key={modelKey}>
+        <ModelRow
+          modelKey={modelKey}
+          model={model}
+          protocols={protocols}
+          catalogs={catalogs}
+          provider={connection.provider}
+          open={openModel === modelKey}
+          saved={isSavedModel(modelKey)}
+          onToggle={() => setOpenModel((current) => (current === modelKey ? null : modelKey))}
+          onRename={(value) => { const next = renameBufferModel(buffer, modelKey, value); if (next !== buffer) { update(next); if (openModel === modelKey) setOpenModel(value.trim()); } }}
+          onChange={(patch) => update({ models: { ...buffer.models, [modelKey]: { ...model, ...patch } } })}
+          onRemove={() => (isSavedModel(modelKey) ? setConfirmModel(modelKey) : removeModel(modelKey))}
+        />
+        {confirmModel === modelKey && <ConfirmDelete title={`删除模型 ${model.model_id || modelKey}？`} impact={deletionImpact("model", modelKey, savedDraft, usage)} busy={busy} error={error} onConfirm={() => removeModel(modelKey)} onCancel={() => { setConfirmModel(null); setError(""); }} />}
+      </React.Fragment>)}
+      {!modelEntries.length && !picking && <p className="field-note">点击「添加模型」从服务商获取模型列表并勾选。</p>}
+    </div>}
+
+    {chosen && <details className="connection-advanced">
+      <summary>高级 <span>凭据名称 · 代理 · TLS · 测试连接</span></summary>
+      <div className="field-grid">
+        {!connection.credential?.none && <label>
+          <span>凭据名称</span>
+          <input value={connection.credential?.env || ""} onChange={(event) => updateConnection({ credential: { env: event.target.value } })} aria-label="凭据名称" />
+          <small>密钥保存在本机凭据文件中，配置只记录这个名称。</small>
+        </label>}
+        <label>
+          <span>代理（可选）</span>
+          <input placeholder="http://127.0.0.1:7890" value={connection.proxy || ""} onChange={(event) => updateConnection({ proxy: event.target.value || undefined })} />
+        </label>
+        <label>
+          <span>TLS 证书验证</span>
+          <select value={connection.verify_ssl === false ? "off" : "on"} onChange={(event) => updateConnection({ verify_ssl: event.target.value === "on" })}>
+            <option value="on">开启（推荐）</option>
+            <option value="off">关闭</option>
+          </select>
+        </label>
       </div>
-    </details>
-        </div>
+      <div className="connection-test">
+        <button type="button" className="plain-action" disabled={!api?.discoverModels || test?.status === "loading" || Boolean(connectionError({ ...buffer, models: {} }, savedDraft, previousKey))} onClick={testConnection}>{test?.status === "loading" ? "测试中…" : "测试连接"}</button>
+        {test && test.status !== "loading" && <span className={`connection-test-result ${test.status}`} role="status">{test.text}</span>}
       </div>
+    </details>}
+
+    <div className="editor-footer">
+      {validation && chosen && <span className="editor-hint">{validation}</span>}
+      {previousKey
+        ? dirty && <button type="button" className="plain-action" onClick={() => { setBuffer(connectionBuffer(previousKey, savedDraft)); setPicking(false); setError(""); }}>放弃修改</button>
+        : <button type="button" className="plain-action" onClick={onCancelCreate}>取消</button>}
+      <button type="button" className="primary-action" disabled={!dirty || Boolean(validation) || busy} title={validation || undefined} onClick={save} aria-label={previousKey ? `保存连接 ${previousKey}` : "保存新连接"}>{busy ? "保存中…" : previousKey ? "保存" : "创建连接"}</button>
     </div>
-  </>;
+  </div>;
 }
 
-// Merged pool: connection rows expand in place into their editor; collapsed
-// and expanded states share one identical row head.
-export function ConnectionSettings({ draft, setDraft, savedDraft, catalogs, api, activeSection, activeModelTab, onPersist, onDirtyChange }) {
-  // Several rows can be open at once and every editor stays mounted, so a
-  // folded row keeps its buffer until 放弃 discards it. Each editor owns its
-  // buffer, row head and save button, so one connection's unsaved edits never
-  // touch another. The not-yet-created connection lives outside the draft
-  // until it is saved.
+// Connections and their models. Each saved connection is a row that expands
+// into its editor; a new connection opens at the top and joins the list once
+// created. Deleting a connection removes its models and asks first.
+export function ConnectionSettings({ savedDraft, catalogs, usage, api, persist, reportDirty }) {
   const [openKeys, setOpenKeys] = useState([]);
-  const [newOpen, setNewOpen] = useState(false);
-  const [newExpanded, setNewExpanded] = useState(false);
-  const dirtyByEditorRef = useRef({});
+  const [creating, setCreating] = useState(null);
+  const [confirm, setConfirm] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  // The editor of a freshly created connection opens its model picker so the
+  // next step (adding models) is on screen without another click.
+  const autoPickRef = useRef(null);
+  // Row heads show which collapsed editors still hold unsaved edits.
+  const [dirtyKeys, setDirtyKeys] = useState({});
+  const reportEditorDirty = useCallback((id, value) => {
+    setDirtyKeys((current) => (current[id] === value ? current : { ...current, [id]: value }));
+    reportDirty(id, value);
+  }, [reportDirty]);
 
-  const reportEditorDirty = useCallback((editorKey, value) => {
-    dirtyByEditorRef.current[editorKey] = value;
-    onDirtyChange?.(Object.values(dirtyByEditorRef.current).some(Boolean));
-  }, [onDirtyChange]);
+  const toggle = useCallback((key) => setOpenKeys((current) => (current.includes(key) ? current.filter((item) => item !== key) : [...current, key])), []);
 
-  // The create form mounts closed so grid-template-rows can animate it open.
-  useEffect(() => {
-    if (!newOpen) { setNewExpanded(false); return; }
-    const frame = requestAnimationFrame(() => setNewExpanded(true));
-    return () => cancelAnimationFrame(frame);
-  }, [newOpen]);
-
-  const modelCount = (connectionKey) => Object.values(draft.models).filter((model) => model.connection === connectionKey).length;
-
-  function addConnection() {
-    const key = nextConnectionKey(draft.connections);
-    let credentialIndex = 1;
-    const used = new Set([...Object.values(draft.connections).map(connection => connection.credential?.env), ...Object.keys(draft.credentialValues)]);
-    while (used.has(`LARA_PROVIDER_${credentialIndex}_API_KEY`)) credentialIndex += 1;
-    setNewOpen({ key, connection: { ...emptyNativeConnection(key), provider: "", credential: { env: `LARA_PROVIDER_${credentialIndex}_API_KEY` }, credential_source: "missing", protocols: { openai_chat_completions: { base_url: "" } } }, models: {} });
+  async function removeConnection(key) {
+    setBusy(true);
+    try {
+      await persist(commitConnectionDelete(savedDraft, key));
+      setConfirm(null);
+      setOpenKeys((current) => current.filter((item) => item !== key));
+    } catch (deleteError) {
+      setError(errorText(deleteError));
+    } finally {
+      setBusy(false);
+    }
   }
 
-  function removeConnection(connectionKey) {
-    setDraft((current) => {
-      if (Object.values(current.models).some((model) => model.connection === connectionKey)) return current;
-      const { [connectionKey]: _removed, ...connections } = current.connections;
-      return { ...current, connections };
-    });
-  }
+  const keys = Object.keys(savedDraft.connections);
 
-  function toggleConnection(connectionKey) {
-    setOpenKeys((current) => current.includes(connectionKey) ? current.filter((key) => key !== connectionKey) : [...current, connectionKey]);
-  }
-
-  const connectionKeys = Object.keys(draft.connections);
-
-  return <section hidden={activeSection !== "model-config" || activeModelTab !== "pool"} className="model-group-editor" aria-label="Native Pygent connections">
-    <div className="model-group-heading">
-      <div><strong>模型资源池</strong></div>
-      <button className="route-add" type="button" disabled={newOpen} onClick={addConnection}><Plus aria-hidden="true" /> 添加连接</button>
-    </div>
-    {!connectionKeys.length && !newOpen && <p className="settings-inline-empty">还没有服务连接，请点击“添加连接”开始。</p>}
-    <div className="model-route-list">
-      {newOpen && <article className={`model-route-card connection-route-card pool-row${newExpanded ? " pool-row-open" : ""}`}>
-        <ConnectionEditor
-          key={`new-${newOpen.key}`}
-          connectionKey={newOpen.key}
-          previousKey={null}
-          connection={newOpen.connection}
-          models={newOpen.models}
-          catalogs={catalogs}
-          api={api}
-          savedDraft={savedDraft}
-          collapse={() => setNewOpen(false)}
-          onPersist={onPersist}
-          onDirtyChange={reportEditorDirty}
-          open={newExpanded}
-          onToggle={() => {}}
-          onRemove={() => setNewOpen(false)}
-          removeTitle="放弃创建"
-        />
-      </article>}
-      {connectionKeys.map((connectionKey) => {
-        const connection = draft.connections[connectionKey];
-        const referenced = modelCount(connectionKey) > 0;
-        const open = openKeys.includes(connectionKey);
-        return <article className={`model-route-card pool-row${open ? " pool-row-open" : ""}`} key={connectionKey}>
+  return <section className="settings-card" aria-label="连接与模型">
+    <SectionHead title="连接与模型" description="每个连接对应一个服务商和它的 API Key；在连接下添加要使用的模型，再到「模型组」里组织主模型与回退顺序。">
+      <button type="button" className="plain-action" disabled={Boolean(creating)} onClick={() => setCreating(newConnectionBuffer("", savedDraft, catalogs))}><Plus size={14} aria-hidden="true" /> 添加连接</button>
+    </SectionHead>
+    {creating && <article className="connection-row open creating">
+      <div className="connection-row-head"><strong>新连接</strong></div>
+      <ConnectionEditor
+        key="new"
+        previousKey={null}
+        initialBuffer={creating}
+        savedDraft={savedDraft}
+        catalogs={catalogs}
+        usage={usage}
+        api={api}
+        persist={persist}
+        reportDirty={reportEditorDirty}
+        onCreated={(key, empty) => {
+          setCreating(null);
+          setOpenKeys((current) => [...current, key]);
+          if (empty) autoPickRef.current = key;
+          requestAnimationFrame(() => document.querySelector(`[data-connection="${CSS.escape(key)}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" }));
+        }}
+        onCancelCreate={() => setCreating(null)}
+      />
+    </article>}
+    {!keys.length && !creating && <p className="settings-empty">还没有连接。点击「添加连接」，选择服务商并填写 API Key。</p>}
+    {keys.map((key) => {
+      const connection = savedDraft.connections[key];
+      const models = Object.values(savedDraft.models).filter((model) => model.connection === key);
+      const open = openKeys.includes(key);
+      const [chipKind, chipText] = credentialChip(connection, "");
+      const custom = !catalogs?.providers?.[connection.provider];
+      return <article className={`connection-row${open ? " open" : ""}`} key={key} data-connection={key}>
+        <div className="connection-row-head">
+          <button type="button" className="connection-row-toggle" aria-expanded={open} onClick={() => toggle(key)}>
+            <ChevronRight size={16} aria-hidden="true" />
+            <strong>{custom ? key : providerName(connection.provider, catalogs)}{!custom && key !== connection.provider && <small className="model-key"> {key}</small>}</strong>
+            <span className={`credential-chip ${chipKind}`}>{chipText}</span>
+            <span className="count-chip">{models.length ? `${models.length} 个模型` : "没有模型"}</span>
+            {dirtyKeys[key] && <span className="unsaved-chip">未保存</span>}
+          </button>
+          <button type="button" className="icon-action" title="删除连接及其模型" aria-label={`删除连接 ${key}`} onClick={() => setConfirm(key)}><Trash2 size={14} aria-hidden="true" /></button>
+        </div>
+        {confirm === key && <ConfirmDelete title={`删除连接 ${key} 及其 ${models.length} 个模型？`} impact={deletionImpact("connection", key, savedDraft, usage)} busy={busy} error={error} onConfirm={() => removeConnection(key)} onCancel={() => { setConfirm(null); setError(""); }} />}
+        <div hidden={!open}>
           <ConnectionEditor
-            key={connectionKey}
-            connectionKey={connectionKey}
-            previousKey={connectionKey}
-            connection={connection}
-            models={Object.fromEntries(Object.entries(draft.models).filter(([, model]) => model.connection === connectionKey))}
-            catalogs={catalogs}
-            api={api}
+            key={key}
+            previousKey={key}
+            initialBuffer={connectionBuffer(key, savedDraft)}
             savedDraft={savedDraft}
-            collapse={() => setOpenKeys((current) => current.filter((key) => key !== connectionKey))}
-            onPersist={onPersist}
-            onDirtyChange={reportEditorDirty}
-            open={open}
-            onToggle={() => toggleConnection(connectionKey)}
-            onRemove={() => removeConnection(connectionKey)}
-            removeDisabled={referenced}
-            removeTitle={referenced ? "先删除此连接下的模型" : "删除连接"}
+            catalogs={catalogs}
+            usage={usage}
+            api={api}
+            persist={persist}
+            reportDirty={reportEditorDirty}
+            autoPick={autoPickRef.current === key ? () => { autoPickRef.current = null; } : null}
           />
-        </article>;
-      })}
-    </div>
+        </div>
+      </article>;
+    })}
   </section>;
 }

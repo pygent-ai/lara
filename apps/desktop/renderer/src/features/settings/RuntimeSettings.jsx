@@ -1,51 +1,42 @@
 import React from "react";
+import { SectionHead } from "./SectionHead.jsx";
 
-export function RuntimeSettings({ draft, setField, activeSection, disabled, onSave, sectionDirty }) {
-  return <>
-          <section hidden={activeSection !== "runtime"} className="settings-disclosure">
-          <div className="section-save-row">
-          <h4>运行参数</h4>
-          {sectionDirty && <span className="connection-editor-dirty">未保存</span>}
-          <button type="button" className="route-add section-save" disabled={!sectionDirty} onClick={onSave} aria-label="保存运行与权限">保存</button>
-          </div>
-          <div className="settings-disclosure-body">
-
-          <label>
-            <span>最大执行步数（-1 表示不限）</span>
-            <input
-              type="number"
-              value={draft.maxSteps}
-              onChange={(event) => setField("maxSteps", Number(event.target.value))}
-            />
-          </label>
-          <label>
-            <span>上下文窗口（tokens）</span>
-            <input
-              min="1"
-              placeholder="留空使用模型默认值"
-              type="number"
-              value={draft.contextWindow}
-              onChange={(event) => setField("contextWindow", event.target.value)}
-            />
-          </label>
-          </div></section>
-          <div hidden={activeSection !== "runtime"} className="settings-permissions">
-          <label>
-            <span>Tool permissions / 工具权限</span>
-            <select
-              value={draft.approvalsEnabled ? "approval" : "full-access"}
-              disabled={disabled}
-              aria-describedby="tool-permissions-help"
-              onChange={(event) => setField("approvalsEnabled", event.target.value === "approval")}
-            >
-              <option value="approval">Require approval / 逐次审批</option>
-              <option value="full-access">Full access / 完全访问</option>
-            </select>
-          </label>
-          <p id="tool-permissions-help">
-            完全访问会自动允许所有工具调用；逐次审批会要求确认写入和外部操作（已预授权的工具除外）。
-            保存后对所有工作区的新运行生效，正在运行的任务保留原权限。
-          </p>
-          </div>
-  </>;
+export function RuntimeSettings({ fields, setField, dirty, onSave }) {
+  const retry = fields.retry;
+  return <section className="settings-card" aria-label="运行与权限">
+    <SectionHead title="运行参数" dirty={dirty} onSave={onSave} saveLabel="保存运行与权限" />
+    <div className="settings-card-body">
+      <div className="field-grid">
+        <label>
+          <span>最大执行步数</span>
+          <input type="number" value={fields.maxSteps} onChange={(event) => setField("maxSteps", Number(event.target.value))} />
+          <small>-1 表示不限制。</small>
+        </label>
+        <label>
+          <span>上下文窗口（tokens）</span>
+          <input min="1" placeholder="留空使用模型默认值" type="number" value={fields.contextWindow} onChange={(event) => setField("contextWindow", event.target.value)} />
+        </label>
+      </div>
+      <label>
+        <span>工具权限</span>
+        <select value={fields.approvalsEnabled ? "approval" : "full-access"} aria-describedby="tool-permissions-help" onChange={(event) => setField("approvalsEnabled", event.target.value === "approval")}>
+          <option value="approval">逐次审批</option>
+          <option value="full-access">完全访问</option>
+        </select>
+        <small id="tool-permissions-help">完全访问会自动允许所有工具调用；逐次审批会要求确认写入和外部操作（已预授权的工具除外）。保存后对所有工作区的新运行生效。</small>
+      </label>
+      <h5>模型重试与切换</h5>
+      <p className="field-note">所有模型组共用这组参数：一个模型连续失败达到次数后，切换到模型组里的下一个模型。</p>
+      <div className="field-grid">
+        <label>
+          <span>每个模型尝试次数</span>
+          <input min="1" type="number" value={retry.max_attempts_per_model} onChange={(event) => setField("retry", { ...retry, max_attempts_per_model: event.target.value })} />
+        </label>
+        <label>
+          <span>空闲超时（秒）</span>
+          <input min="0.1" step="0.1" type="number" value={retry.attempt_idle_timeout_seconds} onChange={(event) => setField("retry", { ...retry, attempt_idle_timeout_seconds: event.target.value })} />
+        </label>
+      </div>
+    </div>
+  </section>;
 }

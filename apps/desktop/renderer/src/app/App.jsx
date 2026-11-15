@@ -1,6 +1,5 @@
 import { SettingsPage as SettingsPanel } from "../features/settings/SettingsPage.jsx";
 export { SettingsPanel };
-export { modelGroupValidationError, settingsForSave, protocolLabel, providerSelectionValue, renamedConnectionValue, protocolChoicesForConnection, capabilityPresetLabel, commitConnectionBuffer } from "../features/settings/settingsModel.js";
 import React, { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
@@ -1505,11 +1504,13 @@ export function App() {
       settingsSaveBusyRef.current = true;
       setSavingSettings(true);
       try {
-        setSettings(await api.updateSettings(draft, { modelKeyRenames }));
+        const saved = await api.updateSettings(draft, { modelKeyRenames });
+        setSettings(saved);
         if (workspaceChanged) {
           await refreshWorkbench({ selectFirst: true, preserveSessionId: "" });
         }
         setNotice("设置已保存，新运行将使用新配置；正在运行的任务继续使用原配置。");
+        return saved;
       } catch (err) {
         throw new Error(readableError(err));
       } finally {
