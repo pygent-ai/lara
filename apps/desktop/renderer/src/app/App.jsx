@@ -5943,8 +5943,10 @@ function cleanContent(content) {
   return (match ? match[1] : content).trim();
 }
 
+// Scheduler runs reach a session as a plain user turn wrapped in the SDK's
+// <task-context> envelope (lara session run <task.session> -m ...).
 function messageDisplayRole(message) {
-  if (message?.kind === "pygent.v1.automation.trigger" || message?.data?.origin === "automation") {
+  if (/^\s*<task-context>/.test(String(message?.content || ""))) {
     return "automation";
   }
   if (message?.kind === "lara.user.resume" || message?.data?.origin === "resume") {
@@ -5954,12 +5956,6 @@ function messageDisplayRole(message) {
 }
 
 function displayMessageContent(message) {
-  if (messageDisplayRole(message) === "automation") {
-    const raw = message?.data?.raw_content;
-    if (typeof raw === "string" && raw.trim()) return raw.trim();
-    const match = String(message?.content || "").match(/<instructions>\s*([\s\S]*?)\s*<\/instructions>/);
-    return (match ? match[1] : message?.content || "").trim();
-  }
   return cleanContent(String(message?.content || ""));
 }
 

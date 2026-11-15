@@ -2495,16 +2495,23 @@ test("the transient model-call state shows wherever no other live state does", (
   assert.doesNotMatch(streaming, /Waiting for model output/);
 });
 
-test("automation triggers render as system-origin cards with the raw instruction", () => {
+test("scheduler task turns render as system-origin cards with the task prompt", () => {
   const [message] = appModule.historyToMessages([{
     role: "user",
-    kind: "pygent.v1.automation.trigger",
-    content: "<automation-trigger><instructions>escaped</instructions></automation-trigger>",
-    data: { origin: "automation", raw_content: "检查构建状态" },
+    content: [
+      "<task-context>",
+      '  <task id="t-1" name="nightly" source="user" />',
+      "  <instructions>guidance</instructions>",
+      "  <user-message>检查构建状态</user-message>",
+      "</task-context>",
+    ].join("\n"),
   }]);
 
   assert.equal(message.role, "automation");
   assert.equal(message.content, "检查构建状态");
+  // Ordinary turns keep the user role even when the envelope is mentioned in text.
+  const [plain] = appModule.historyToMessages([{ role: "user", content: "what is <task-context>?" }]);
+  assert.equal(plain.role, "user");
 });
 
 test("restored user turns keep their attachments and steerings stay chip-free", () => {
