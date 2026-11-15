@@ -80,18 +80,21 @@ class ChatTurnRequest(BaseModel):
         return self
 
 
-class ChatSteeringRequest(BaseModel):
+class ChatMessageRequest(BaseModel):
+    """A user message for a session whose running turn the client already streams."""
+
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    session_id: str = Field(min_length=1)
+    scope_id: str | None = None
     input_id: str = Field(min_length=1, max_length=128)
     message: str | None = Field(default=None, min_length=1)
     attachments: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def validate_message_or_attachments(self) -> "ChatSteeringRequest":
+    def validate_message_or_attachments(self) -> "ChatMessageRequest":
         if not self.message and not self.attachments:
-            raise ValueError("provide message or attachments")
+            raise ValueError("message or attachments is required")
         return self
+
 
 class ChatCancelRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)

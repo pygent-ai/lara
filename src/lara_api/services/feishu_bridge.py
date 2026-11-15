@@ -21,11 +21,10 @@ import threading
 import uuid
 from collections import deque
 
-from lara.core.io import read_json
 from lara.runtime.realtime.feishu import FeishuBridgeConfig, load_feishu_bridge_config
 from lara.sessions import LARA_SAYS_SESSION_MODE
-from lara_api.models.requests import ChatTurnRequest
 from lara_api.project_state import LARA_SAYS_SCOPE_ID
+from lara_api.services.chat_runner import ActiveChatRun, fork_reply_payload
 from lara_api.services.session_service import session_service_for_scope
 
 _logger = logging.getLogger(__name__)
@@ -151,32 +150,26 @@ class FeishuBridge:
             record = service.create_session(mode=LARA_SAYS_SESSION_MODE)
         session_id = record.session_id
 
-        execution_id = self._active_execution_id(service, session_id)
-        if execution_id is not None:
-            try:
-                receipt = await self._context.chat_registry.deliver_steering(
-                    execution_id,
-                    session_id=session_id,
-                    input_id=f"feishu-{uuid.uuid4().hex[:12]}",
-                    message=text,
-                )
-            except LookupError:
-                execution_id = None  # the run is not actually live anymore
-            else:
-                reply = receipt.reply
-                reply_text = str(reply.get("text") or "").strip()
-                if reply_text and not reply.get("say_nothing"):
-                    await self._send_to_feishu(reply_text)
-                return
-        if execution_id is None:
-            request = ChatTurnRequest(
-                session_id=session_id, scope_id=LARA_SAYS_SCOPE_ID, message=text
-            )
-            run = await self._context.chat_registry.resolve(self._context, request)
-            # The turn runs on the session lane; observing its stream keeps the
-            # bridge's stake in it alive until completion.
-            async for _ in run.events(after=0):
-                pass
+        # The SDK entry decides: a running turn answers through a fork reply
+        # (relayed back to the chat); otherwise the message starts a turn whose
+        # stream the bridge observes to keep its stake in it alive.
+        delivery = await self._context.execution_host.deliver_user_message(
+            config=service.manager.config,
+            manager=service.manager,
+            session_id=session_id,
+            input_id=f"feishu-{uuid.uuid4().hex[:12]}",
+            message=text,
+        )
+        if delivery.mode == "interrupt":
+            reply = fork_reply_payload(delivery)
+            reply_text = str(reply.get("text") or "").strip()
+            if reply_text and not reply.get("say_nothing"):
+                await self._send_to_feishu(reply_text)
+            return
+        assert delivery.turn is not None
+        await delivery.turn.wait_ready()
+        async for _ in ActiveChatRun(delivery.turn).events(after=0):
+            pass
 
     async def _send_to_feishu(self, text: str) -> None:
         from lara.runtime.realtime.feishu import FeishuChannel
@@ -191,29 +184,3 @@ class FeishuBridge:
             )
             await asyncio.to_thread(channel.deliver, text)
 
-    def _active_execution_id(self, service, session_id: str) -> str | None:
-        record = next(
-            (
-                item
-                for item in service.list_chat_sessions()
-                if item.session_id == session_id
-            ),
-            None,
-        )
-        if (
-            record is None
-            or record.last_case_run_status != "running"
-            or not record.last_case_run_id
-        ):
-            return None
-        run_metadata = read_json(
-            service.manager.sessions_root
-            / session_id
-            / "cases"
-            / record.case_id
-            / "runs"
-            / record.last_case_run_id
-            / "run_metadata.json",
-            default={},
-        )
-        return str(run_metadata.get("runtime_execution_id") or "") or None

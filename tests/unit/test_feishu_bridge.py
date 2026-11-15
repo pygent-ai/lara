@@ -70,88 +70,102 @@ def test_event_filter_relays_only_user_text_from_bound_chats(
     assert relayed == ["你好", "第二条"]
 
 
-def test_relay_sends_a_fresh_turn_when_idle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    recorded: list[object] = []
+class _FakeHost:
+    """LocalExecutionHost stand-in: records deliveries and routes by mode."""
 
-    class _FakeRun:
-        def __init__(self) -> None:
-            pass
+    def __init__(self, mode: str, *, reply: dict | None = None) -> None:
+        self.mode = mode
+        self.reply = reply
+        self.deliveries: list[dict] = []
 
-        async def events(self, *, after=None, log_model_text_deltas=False):
-            yield {"kind": "pygent.v1.chat.result"}
-            return
+    async def deliver_user_message(self, **kwargs):
+        self.deliveries.append(dict(kwargs))
+        if self.mode == "interrupt":
+            reply = self.reply or {}
+            return SimpleNamespace(
+                mode="interrupt",
+                turn=None,
+                outcome=SimpleNamespace(
+                    speak_args=SimpleNamespace(
+                        text=reply.get("text", ""),
+                        attachments=(),
+                        say_nothing=bool(reply.get("say_nothing", False)),
+                    ),
+                    text=None,
+                ),
+            )
+        return SimpleNamespace(mode="turn", turn=_FakeTurn(), outcome=None)
 
-    class _FakeRegistry:
-        async def resolve(self, context, request):
-            recorded.append(request)
-            return _FakeRun()
 
-    service = SimpleNamespace(
-        list_chat_sessions=lambda: [],
+class _FakeTurn:
+    async def wait_ready(self) -> None:
+        return None
+
+
+class _FakeRun:
+    def __init__(self, turn) -> None:
+        self.turn = turn
+
+    async def events(self, *, after=None, log_model_text_deltas=False):
+        yield {"kind": "pygent.v1.chat.result"}
+        return
+
+
+def _service(tmp_path: Path, sessions: list) -> SimpleNamespace:
+    return SimpleNamespace(
+        list_chat_sessions=lambda: sessions,
         create_session=lambda **kwargs: SimpleNamespace(session_id="lara-says-1"),
-        manager=SimpleNamespace(sessions_root=tmp_path / "sessions"),
+        manager=SimpleNamespace(
+            sessions_root=tmp_path / "sessions", config=SimpleNamespace()
+        ),
     )
+
+
+def _context(tmp_path: Path, host: _FakeHost) -> SimpleNamespace:
+    return SimpleNamespace(
+        config=SimpleNamespace(user_pygent_root=str(tmp_path)),
+        execution_host=host,
+    )
+
+
+def test_relay_creates_the_says_session_and_delivers_a_turn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    host = _FakeHost("turn")
     monkeypatch.setattr(
         "lara_api.services.feishu_bridge.session_service_for_scope",
-        lambda context, scope_id: service,
+        lambda context, scope_id: _service(tmp_path, []),
     )
-    context = SimpleNamespace(
-        config=SimpleNamespace(user_pygent_root=str(tmp_path)),
-        chat_registry=_FakeRegistry(),
-    )
-    bridge = FeishuBridge(context, loop=asyncio.new_event_loop())
+    monkeypatch.setattr("lara_api.services.feishu_bridge.ActiveChatRun", _FakeRun)
+    bridge = FeishuBridge(_context(tmp_path, host), loop=asyncio.new_event_loop())
 
     asyncio.run(bridge._relay("帮我看看代码"))
 
-    assert len(recorded) == 1
-    request = recorded[0]
-    assert request.session_id == "lara-says-1"
-    assert request.scope_id == "pygent.v1-says"
-    assert request.message == "帮我看看代码"
+    assert len(host.deliveries) == 1
+    assert host.deliveries[0]["session_id"] == "lara-says-1"
+    assert host.deliveries[0]["message"] == "帮我看看代码"
+    assert host.deliveries[0]["input_id"].startswith("feishu-")
 
 
-def test_relay_routes_running_session_to_fork_and_replies(
+def test_relay_sends_the_fork_reply_back_to_feishu(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     sent_to_feishu: list[str] = []
-    steering_calls: list[dict] = []
-
-    class _FakeRegistry:
-        resolve = AsyncMock(side_effect=AssertionError("a running session must fork"))
-
-        async def deliver_steering(self, execution_id, **kwargs):
-            steering_calls.append({"execution_id": execution_id, **kwargs})
-            return SimpleNamespace(
-                reply={"via": "speak", "text": "马上给你结论", "say_nothing": False}
-            )
-
-    service = SimpleNamespace(
-        list_chat_sessions=lambda: [
-            SimpleNamespace(
-                session_id="lara-says-1",
-                mode="pygent.v1-says",
-                case_id="chat",
-                last_case_run_status="running",
-                last_case_run_id="run-1",
-            )
-        ],
-        manager=SimpleNamespace(sessions_root=tmp_path / "sessions"),
-    )
+    host = _FakeHost("interrupt", reply={"text": "马上给你结论"})
+    sessions = [
+        SimpleNamespace(
+            session_id="lara-says-1",
+            mode="pygent.v1-says",
+            case_id="chat",
+            last_case_run_status="running",
+            last_case_run_id="run-1",
+        )
+    ]
     monkeypatch.setattr(
         "lara_api.services.feishu_bridge.session_service_for_scope",
-        lambda context, scope_id: service,
+        lambda context, scope_id: _service(tmp_path, sessions),
     )
-    run_metadata = tmp_path / "sessions" / "lara-says-1" / "cases" / "chat" / "runs" / "run-1"
-    run_metadata.mkdir(parents=True)
-    (run_metadata / "run_metadata.json").write_text(
-        json.dumps({"runtime_execution_id": "exec-1"}), encoding="utf-8"
-    )
-
-    context = SimpleNamespace(
-        config=SimpleNamespace(user_pygent_root=str(tmp_path)),
-        chat_registry=_FakeRegistry(),
-    )
-    bridge = FeishuBridge(context, loop=asyncio.new_event_loop())
+    bridge = FeishuBridge(_context(tmp_path, host), loop=asyncio.new_event_loop())
 
     async def _send_to_feishu(text: str) -> None:
         sent_to_feishu.append(text)
@@ -160,58 +174,24 @@ def test_relay_routes_running_session_to_fork_and_replies(
 
     asyncio.run(bridge._relay("进展如何"))
 
-    assert steering_calls[0]["execution_id"] == "exec-1"
-    assert steering_calls[0]["message"] == "进展如何"
-    assert steering_calls[0]["session_id"] == "lara-says-1"
+    assert host.deliveries[0]["session_id"] == "lara-says-1"
+    assert host.deliveries[0]["message"] == "进展如何"
     assert sent_to_feishu == ["马上给你结论"]
 
 
-def test_relay_falls_back_to_a_turn_when_the_execution_is_gone(
+def test_relay_stays_silent_for_a_say_nothing_reply(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    resolved: list[object] = []
-
-    class _FakeRun:
-        async def events(self, *, after=None, log_model_text_deltas=False):
-            if False:
-                yield {}
-            return
-
-    class _FakeRegistry:
-        async def deliver_steering(self, execution_id, **kwargs):
-            raise LookupError("当前会话没有对应的运行中执行，请等待连接恢复后重试。")
-
-        async def resolve(self, context, request):
-            resolved.append(request)
-            return _FakeRun()
-
-    service = SimpleNamespace(
-        list_chat_sessions=lambda: [
-            SimpleNamespace(
-                session_id="lara-says-1",
-                mode="pygent.v1-says",
-                case_id="chat",
-                last_case_run_status="running",
-                last_case_run_id="run-1",
-            )
-        ],
-        manager=SimpleNamespace(sessions_root=tmp_path / "sessions"),
-    )
+    sent_to_feishu: list[str] = []
+    host = _FakeHost("interrupt", reply={"text": "", "say_nothing": True})
+    sessions = [SimpleNamespace(session_id="lara-says-1", mode="pygent.v1-says", case_id="chat")]
     monkeypatch.setattr(
         "lara_api.services.feishu_bridge.session_service_for_scope",
-        lambda context, scope_id: service,
+        lambda context, scope_id: _service(tmp_path, sessions),
     )
-    run_metadata = tmp_path / "sessions" / "lara-says-1" / "cases" / "chat" / "runs" / "run-1"
-    run_metadata.mkdir(parents=True)
-    (run_metadata / "run_metadata.json").write_text("{}", encoding="utf-8")
-
-    context = SimpleNamespace(
-        config=SimpleNamespace(user_pygent_root=str(tmp_path)),
-        chat_registry=_FakeRegistry(),
-    )
-    bridge = FeishuBridge(context, loop=asyncio.new_event_loop())
+    bridge = FeishuBridge(_context(tmp_path, host), loop=asyncio.new_event_loop())
+    monkeypatch.setattr(bridge, "_send_to_feishu", AsyncMock(side_effect=sent_to_feishu.append))
 
     asyncio.run(bridge._relay("还在吗"))
 
-    assert len(resolved) == 1
-    assert resolved[0].message == "还在吗"
+    assert sent_to_feishu == []

@@ -1,9 +1,9 @@
 # pygent 0.6.0 上游问题报告（来自 lara 迁移）
 
-> 整理日期：2026-11-14。基线：PyPI `pygent-ai==0.6.0`（`.venv/Lib/site-packages/pygent`）。
+> 整理日期：2026-11-14。基线：本地 `C:/Projects/pygent` 0.6.1（`699d9c6`）。#1、#4 已在 0.6.1 修复，留作记录。
 > 每一项都给出 lara 侧的临时处理和"上游修复后 lara 可删什么"，便于回收代码。
 
-## 1. `AgentMessage` 缺 `to_dict`，但 pipeline 会调用它（bug）
+## 1. ~~`AgentMessage` 缺 `to_dict`~~（0.6.1 已随协作收件箱整体删除）
 
 - **位置**：`pygent/agent/pygent_v1/graph/pipeline.py:714`
   ```python
@@ -42,7 +42,7 @@
 - **建议修复**：从 `RunConfig` 推导：把 `Path(config.pygent_root).name`（以及 `user_pygent_root`）并入忽略集合；或在 `RunConfig` 上暴露 `file_effect_ignored_dirs`。
 - **lara 侧**：`tests/unit/test_tools.py::test_file_effect_tracker_ignores_runtime_directories` 标 `xfail(strict)`，修复后去掉标记即可。
 
-## 4. `offload_remote_media` 对每个节点传新 `fetched={}`，同一 URL 重复下载（bug）
+## 4. ~~`offload_remote_media` 重复下载~~（0.6.1 已修：`fetched` 提到入口作用域）
 
 - **位置**：`pygent/agent/pygent_v1/graph/media_offload.py:114-115`
   ```python
@@ -72,3 +72,16 @@
 ## 7. 同类观察：SDK 工具注册没有"宿主扩展点"
 
 不算 bug，但迁移中反复碰到：`PygentRuntimeService.__init__` 固定注册 speak（`channels=()`）、scheduler 工具，并用这组工具构建模板 agent。宿主要换 speak 通道或改可见工具集，只能 `register_tool(..., replace_existing=True)` 再清空 `_agent_definitions` 重建。若 `__init__` 接受 `speak_channels` / `external_tools` 两个可选参数，lara 的 `LaraRuntimeService.__init__` 可再删十几行。
+
+## 8. `SessionManager.create` 不接受指定 `session_id`（API 面）
+
+- **位置**：`pygent/agent/pygent_v1/sessions/manager.py` `create()`：id 只能由 `_new_session_id` 生成，唯一例外是 `pygent.v1-says` 模式。
+- **现象**：调度器任务用稳定的会话名（`SchedulerConfig.session`，daemon 执行 `session run <task.session>`），宿主没法用该名字创建会话；`load_or_create(SessionSpec(session_id=...))` 在 `new` 模式下也忽略 `session_id`。
+- **建议修复**：`create(..., session_id: str | None = None)`，给定时校验 `validate_path_id` 并直接使用。
+- **lara 临时处理**：`SessionManager.ensure(session_id)` 用实例属性覆盖 `_new_session_id` 后调 SDK `create`。上游修复后改为一行 `create(case_id, mode="chat", session_id=...)`。
+
+## 9. `realtime_enabled_for` 只认 `pygent.v1-says`（产品需求）
+
+- **位置**：`pygent/agent/pygent_v1/sessions/manager.py:35`
+- **现象**：`deliver_user_message` 只对这一个会话走 fork 路径；lara 希望将来所有会话在运行中收到用户消息都 fork 回复。
+- **建议**：让 realtime 判定可配置（`RunConfig.realtime_interaction` 已有 `enabled`，但 0.6.x 改成了按会话模式门控），例如 `realtime_interaction.sessions: "says" | "all"`。

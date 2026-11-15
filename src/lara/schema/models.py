@@ -20,7 +20,7 @@ def _require(value: str, field_name: str) -> str:
 # 与 SDK schema 同构的类型直接复用（dataclass 相等性 / isinstance 需要同一类）。
 from pygent.agent.pygent_v1.schema.models import (  # noqa: E402
     AgentSession,
-    DelegationConfig as _SDKDelegationConfig,
+    DelegationConfig,
     native_model_config_complete,
     RunConfig as _SDKRunConfig,
     BashCliPreset,
@@ -63,60 +63,36 @@ def default_cli_bash_presets() -> list[BashCliPreset]:
             name="lara-session",
             command="uv run lara session --help",
             description=(
-                "Session CLI. Use `uv run lara session start` for a new background Agent, "
-                "`uv run lara session send <target> --source-session <current>` for "
-                "tool-boundary Agent messages, and "
-                "`uv run lara session run` or `chat` for user turns."
+                "Session CLI: `uv run lara session run <session> -m <message>` runs one "
+                "turn (creating a named session on first use), `chat` opens an "
+                "interactive session, `create|list|show` manage sessions."
             ),
         ),
         BashCliPreset(
-            name="lara-automation",
-            command="uv run lara automation --help",
+            name="lara-scheduler",
+            command="uv run lara scheduler --help",
             description=(
-                "Manage Lara scheduled Agent tasks with "
-                "`create|list|show|update|pause|resume|delete|run|runs`. Use `--session` with "
-                "the current session ID for a heartbeat, or `--standalone` for a new "
-                "session per run. Run `uv run lara automation --help` for complete syntax."
+                "Scheduled and background Agent tasks on the SDK scheduler: "
+                "`add --name --schedule --prompt`, `list|show|runs`, "
+                "`approve|reject|pause|resume|delete <task_id>`, `emit <event>`. "
+                "Schedules: every <n>[smhd], at <ISO>, daily HH:MM, on <event>."
             ),
         ),
     ]
 
 
 @dataclass(slots=True)
-class DelegationConfig(_SDKDelegationConfig):
-    """SDK delegation limits + lora's allow-list and background policy."""
-
-    allowed_agents: tuple[str, ...] = ()
-    max_parallel: int = 4
-    background_enabled: bool = True
-
-    def __post_init__(self) -> None:
-        _SDKDelegationConfig.__post_init__(self)
-        self.allowed_agents = tuple(
-            _require(item, "delegation agent") for item in self.allowed_agents
-        )
-        self.max_parallel = int(self.max_parallel)
-        if self.max_parallel < 1:
-            raise ValueError("delegation limits must be positive")
-
-
-@dataclass(slots=True)
 class RunConfig(_SDKRunConfig):
-    """SDK run configuration rooted at ``~/.lara`` with lora's delegation."""
+    """SDK run configuration rooted at ``~/.lara`` with lara's CLI presets."""
 
     cli_bash_presets: list[BashCliPreset] = field(
         default_factory=default_cli_bash_presets
-    )
-    delegation: DelegationConfig = field(  # pyright: ignore[reportIncompatibleVariableOverride]
-        default_factory=DelegationConfig
     )
 
     def __post_init__(self) -> None:
         # Resolve the data root before the SDK does, or its ``~/.pygent_v1``
         # fallback would apply when the loader did not inject one.
         self.user_pygent_root = _abs_path(self.user_pygent_root or user_pygent_root())
-        if isinstance(self.delegation, dict):
-            self.delegation = DelegationConfig(**self.delegation)  # pyright: ignore[reportIncompatibleVariableOverride]
         _SDKRunConfig.__post_init__(self)
 
     @classmethod

@@ -37,9 +37,12 @@ data: {"execution_id":"exec-...","sequence":13,"kind":"model.text.delta","module
 
 客户端应按 `kind` 消费 Pygent 与 Lara Module 发出的事件，并保存最新 `execution_id/sequence` 用于重连。
 
-运行中追加用户指令使用 `POST /chat/executions/{execution_id}/steering`，请求体为 `{"session_id":"...","input_id":"客户端生成的唯一 ID","message":"追加指令"}`。网络重试必须复用同一 `input_id`；响应 `status` 为 `accepted` 或 `duplicate`。会话不匹配或执行不可用返回 404，execution 输入窗口已经关闭返回 409，空消息返回 422。
+运行中再发消息使用 `POST /chat/sessions/{session_id}/messages`，请求体为 `{"scope_id":"...","input_id":"客户端生成的唯一 ID","message":"..."}`（可带 `attachments`）。它和 `/chat/stream` 一样走 SDK 的统一入口 `deliver_user_message`，由 SDK 按会话状态路由：
 
-该接口向 Pygent `send_input` 投递 `StandaloneUserMessage`，在 ReAct 下一处理边界生效，不中断当前模型或工具调用。接收后的指令通过 conversation checkpoint 保存到会话历史。前端在运行中使用原输入框追加指令；失败时保留草稿。
+- 「Lara说」实时会话且有回合在运行：fork 当前上下文、单次调用模型回复用户，响应 `{"mode":"interrupt","reply":{"via":"speak","text":...}}`；这段问答封成信封交回运行中的回合，在其下一个步骤边界生效，不打断工作；
+- 其他会话：消息排到当前回合之后作为下一轮，响应 `{"mode":"turn"}`；客户端通过会话跟随循环在新回合开始时重新附着到流。
+
+网络重试必须复用同一 `input_id`。会话不存在返回 404，空消息返回 400。`/chat/stream` 在实时会话正在运行时也会走 fork 路径，此时流只包含一条 `pygent.v1.realtime.speak` 事件和 `execution.completed`。
 
 ## 审批与后台任务
 
@@ -56,6 +59,21 @@ POST /chat/approvals/{approval_id}
 GET /runtime/tasks/{task_id}
 DELETE /runtime/tasks/{task_id}
 ```
+
+## 定时任务（SDK scheduler）
+
+`/scheduler/*` 是 pygent SDK 调度器在当前工作区的 HTTP 面；写操作都是签名的 `user` submission，由 API 进程内的调度守护线程下次轮询时提升（响应 202，返回 submission 而非任务）。
+
+```http
+GET  /scheduler/tasks?status=approved|needs_review|paused|rejected
+POST /scheduler/tasks            {"name":"...","schedule":"daily 09:00","prompt":"...","instructions":"","session":null,"priority":"normal"}
+GET  /scheduler/tasks/{task_id}  -> {"task":{...},"runs":[...]}
+POST /scheduler/tasks/{task_id}/{approve|reject|pause|resume|delete}
+GET  /scheduler/runs?task_id=
+POST /scheduler/events           {"event":"deploy-finished","data":{}}
+```
+
+调度表达式为 `every <n>[smhd]`、`at <ISO>`、`daily HH:MM`、`on <event>`。模型通过 `schedule_task`/`emit_event` 工具提交的任务默认 `needs_review`，在桌面"定时任务"页或 `lara scheduler approve` 批准。详见 [`lara scheduler`](../cli/lara-scheduler.md)。
 
 ## Settings
 

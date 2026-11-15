@@ -10,11 +10,11 @@ from fastapi.staticfiles import StaticFiles
 
 from lara_api.container import ApiContext
 from lara_api.routers import (
-    automations,
     chat,
     health,
     projects,
     runtime,
+    scheduler,
     sessions,
     settings,
     terminal,
@@ -48,7 +48,7 @@ def create_app(
             lease = await context.acquire_runtime()
             await lease.release()
             lease = None
-            context.start_dispatch_scheduler()
+            context.start_scheduler_daemon()
             context.start_feishu_bridge()
             yield
         finally:
@@ -69,7 +69,7 @@ def create_app(
     app.add_middleware(RequestTimingMiddleware)
     app.state.api_context = context
     app.include_router(health.router)
-    app.include_router(automations.router)
+    app.include_router(scheduler.router)
     app.include_router(projects.router)
     app.include_router(sessions.router)
     app.include_router(chat.router)

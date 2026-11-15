@@ -3,41 +3,54 @@ import assert from "node:assert/strict";
 
 import { createApiClient, parseSseEvents, settingsPayload } from "./client.js";
 
-test("steering targets one execution and preserves the idempotent input identity", async () => {
+test("delivering while running targets the session and preserves the idempotent input identity", async () => {
   const calls = [];
   const client = createApiClient({ fetchImpl: async (url, init) => {
     calls.push({ url, body: JSON.parse(init.body), method: init.method });
-    return new Response(JSON.stringify({ status: "accepted", input_id: "same-id" }));
+    return new Response(JSON.stringify({ mode: "turn", input_id: "same-id", session_id: "s/1" }));
   } });
-  const request = { sessionId: "session-1", inputId: "same-id", message: "focus on tests" };
-  await client.steerChat("exec/1", request);
-  await client.steerChat("exec/1", request);
+  const request = { scopeId: "conversation", inputId: "same-id", message: "focus on tests" };
+  await client.deliverMessage("s/1", request);
+  await client.deliverMessage("s/1", request);
   assert.deepEqual(calls[0], calls[1]);
-  assert.equal(calls[0].url, "http://127.0.0.1:8765/chat/executions/exec%2F1/steering");
-  assert.deepEqual(calls[0].body, { session_id: "session-1", input_id: "same-id", message: "focus on tests" });
+  assert.equal(calls[0].url, "http://127.0.0.1:8765/chat/sessions/s%2F1/messages");
+  assert.deepEqual(calls[0].body, { scope_id: "conversation", input_id: "same-id", message: "focus on tests" });
   assert.equal(calls[0].method, "POST");
 });
 
-test("steering forwards attachments and sends attachment-only inputs", async () => {
+test("delivering while running forwards attachments and sends attachment-only inputs", async () => {
   const calls = [];
   const client = createApiClient({ fetchImpl: async (url, init) => {
     calls.push(JSON.parse(init.body));
-    return new Response(JSON.stringify({ status: "accepted", input_id: "input-1" }));
+    return new Response(JSON.stringify({ mode: "turn", input_id: "input-1", session_id: "session-1" }));
   } });
-  await client.steerChat("exec/1", {
-    sessionId: "session-1", inputId: "input-1", message: "look at this", attachments: ["shots/a.png"],
+  await client.deliverMessage("session-1", {
+    inputId: "input-1", message: "look at this", attachments: ["shots/a.png"],
   });
-  await client.steerChat("exec/1", {
-    sessionId: "session-1", inputId: "input-2", message: "", attachments: ["shots/b.png"],
+  await client.deliverMessage("session-1", {
+    inputId: "input-2", message: "", attachments: ["shots/b.png"],
   });
-  await client.steerChat("exec/1", { sessionId: "session-1", inputId: "input-3", message: "text only" });
-  assert.deepEqual(calls[0], {
-    session_id: "session-1", input_id: "input-1", message: "look at this", attachments: ["shots/a.png"],
-  });
-  assert.deepEqual(calls[1], {
-    session_id: "session-1", input_id: "input-2", message: null, attachments: ["shots/b.png"],
-  });
-  assert.deepEqual(calls[2], { session_id: "session-1", input_id: "input-3", message: "text only" });
+  await client.deliverMessage("session-1", { inputId: "input-3", message: "text only" });
+  assert.deepEqual(calls[0], { input_id: "input-1", message: "look at this", attachments: ["shots/a.png"] });
+  assert.deepEqual(calls[1], { input_id: "input-2", message: null, attachments: ["shots/b.png"] });
+  assert.deepEqual(calls[2], { input_id: "input-3", message: "text only" });
+});
+
+test("scheduler calls address the SDK task table and control actions", async () => {
+  const calls = [];
+  const client = createApiClient({ fetchImpl: async (url, init) => {
+    calls.push({ url, method: init?.method || "GET", body: init?.body ? JSON.parse(init.body) : undefined });
+    return new Response(JSON.stringify({ tasks: [] }));
+  } });
+  await client.listScheduledTasks("needs_review");
+  await client.createScheduledTask({ name: "n", schedule: "daily 09:00", prompt: "p" });
+  await client.controlScheduledTask("t/1", "approve");
+  await client.emitSchedulerEvent("deploy", { env: "prod" });
+  assert.equal(calls[0].url, "http://127.0.0.1:8765/scheduler/tasks?status=needs_review");
+  assert.deepEqual(calls[1].body, { name: "n", schedule: "daily 09:00", prompt: "p" });
+  assert.equal(calls[2].url, "http://127.0.0.1:8765/scheduler/tasks/t%2F1/approve");
+  assert.equal(calls[2].method, "POST");
+  assert.deepEqual(calls[3].body, { event: "deploy", data: { env: "prod" } });
 });
 
 test("permission settings preserve false and omit unspecified modes", () => {

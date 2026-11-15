@@ -299,19 +299,24 @@ async def test_next_turn_replays_the_conversation_of_a_cancelled_mid_round_turn(
             await handle.result()
 
             handle = await run_turn("turn-2", "second")
-            # Cancel while the slow tool is in flight: the assistant tool call
-            # is durable, its result never will be.
-            deadline = loop.time() + 15
-            while loop.time() < deadline:
-                history = manager.load(session_ref.session_id).history
-                if history[-1]["role"] == "assistant" and history[-1].get(
-                    "tool_calls"
-                ):
-                    break
-                await asyncio.sleep(0.05)
-            await handle.cancel()
+            # Cancel while the bash job is running. The SDK pairs the
+            # assistant tool_calls with a detached tool message (the started
+            # job keeps its task reference) instead of leaving them dangling.
+            bash_authorized = asyncio.Event()
+
+            async def watch_bash() -> None:
+                async with handle.subscribe() as events:
+                    async for event in events:
+                        if event.kind == "tool.authorized":
+                            bash_authorized.set()
+
+            watcher = asyncio.create_task(watch_bash())
+            await asyncio.wait_for(bash_authorized.wait(), 15)
+            await asyncio.sleep(1.0)  # let the job start before cancelling
+            assert await handle.cancel() is True
             with pytest.raises(BaseException):
                 await handle.result()
+            await asyncio.gather(watcher, return_exceptions=True)
 
             stale = manager.load(session_ref.session_id)
             assert stale.metadata["last_case_run_status"] == "skipped"
@@ -320,7 +325,12 @@ async def test_next_turn_replays_the_conversation_of_a_cancelled_mid_round_turn(
                 "assistant",
                 "user",
                 "assistant",
+                "tool",
             ]
+            paired = stale.history[-1]["results"][0]
+            assert paired["call_id"] == "probe-cancel"
+            assert paired["status"] == "detached"
+            assert paired["task"] is not None
             stale_context = context_from_dict(
                 stale.metadata["agent_context"], registry=LARA_CONTEXT_CODECS
             )
@@ -333,13 +343,14 @@ async def test_next_turn_replays_the_conversation_of_a_cancelled_mid_round_turn(
             assert output.content == "final answer"
 
             # The model of turn 3 sees the cancelled round after the
-            # checkpoint, including its unfinished tool call.
+            # checkpoint, with its tool call paired to the detached result.
             third_context = invoker.contexts[-1]
             assert [message.role for message in third_context.messages] == [
                 "user",
                 "assistant",
                 "user",
                 "assistant",
+                "tool",
             ]
             assert "<user-message>second</user-message>" in (
                 third_context.messages[2].content
@@ -356,6 +367,7 @@ async def test_next_turn_replays_the_conversation_of_a_cancelled_mid_round_turn(
                 "assistant",
                 "user",
                 "assistant",
+                "tool",
                 "user",
                 "assistant",
             ]

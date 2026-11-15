@@ -149,7 +149,7 @@ def _render_system_lara_control_plane_prompt(ctx: PromptRenderContext) -> str:
             "# Lara Control Plane",
             "",
             "- For capabilities managed by Lara, use the corresponding `uv run lara ...` CLI.",
-            "- Treat an unqualified scheduled or recurring task request as a Lara automation.",
+            "- Treat an unqualified scheduled or recurring task request as a Lara scheduler task: use the schedule_task tool when it is available, otherwise `uv run lara scheduler add`.",
             "- Do not substitute schtasks, cron, systemd timers, or background loops unless the user explicitly requests an operating-system scheduler.",
             "- Do not claim that a Lara resource was created or changed until the command succeeds and its list or show command confirms the persisted state.",
         ]
@@ -176,17 +176,12 @@ def _render_available_tools_prompt(ctx: PromptRenderContext) -> str:
         "Use bash as a fallback for verification or composed shell commands, especially when a narrower structured tool cannot do the job.",
         "Use tools to ground claims in the workspace. Pick the smallest tool call that can answer the question, and avoid unnecessary repeat reads when the session already contains current file content.",
     ]
-    if "agent_list" in ctx.tool_names:
-        lines.append("")
-        if "agent_start" in ctx.tool_names:
-            lines.append(
-                "Agent collaboration is asynchronous: agent_start returns operation_id and target_session_id immediately.",
-            )
+    if "schedule_task" in ctx.tool_names:
         lines.extend(
             [
-                "Use agent_list to inspect related work, agent_send to add information to a related parent or child session, and agent_status for a snapshot.",
-                "Use agent_wait with collaboration_ids to wait until any task is ready; use a single collaboration_id only when one specific result is required.",
-                "Child completion is delivered back to this session as a runtime agent-message; do not duplicate work already assigned to a child Agent.",
+                "",
+                "schedule_task submits a scheduler task (every <n>[smhd], at <ISO>, daily HH:MM, or on <event>) that runs as its own session turn; the submission may need user approval before it is scheduled.",
+                "Background work you want done outside this turn is also a scheduler task: `at <now>` runs it once, `on <event>` runs it when emit_event fires. The scheduler reports results through its run log, not back into this session.",
             ]
         )
     return "\n".join(lines)

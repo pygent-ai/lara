@@ -16,10 +16,10 @@ from lara.orchestration import (
     ManagedSessionTurn,
     SessionExecutionCoordinator,
     SessionTurnService,
+    UserDelivery,
 )
 from pygent.agent.pygent_v1.runtime.attachments import resolve_attachments
 from lara.schema import case_run_resumable, CaseRunRef, CaseRunStatus
-from lara.sessions import realtime_enabled_for
 from lara_api.container import ApiContext
 from lara_api.models.events import ExecutionEvent
 from lara_api.models.requests import ChatTurnRequest
@@ -93,16 +93,73 @@ async def stream_chat_turn(
         yield _sse(event)
 
 
-@dataclass(slots=True)
-class ForkReplyReceipt:
-    """The deliver_steering receipt for the fork-reply path (D-RT2/3)."""
+def fork_reply_payload(delivery: UserDelivery) -> dict[str, object]:
+    """JSON view of an interrupt delivery's fork reply."""
 
+    outcome = delivery.outcome
+    assert outcome is not None  # interrupt deliveries always carry one
+    if outcome.speak_args is not None:
+        return {
+            "via": "speak",
+            "text": outcome.speak_args.text,
+            "attachments": list(outcome.speak_args.attachments),
+            "say_nothing": outcome.speak_args.say_nothing,
+        }
+    return {"via": "text", "text": outcome.text, "attachments": [], "say_nothing": False}
+
+
+@dataclass(slots=True)
+class ForkReplyRun:
+    """SSE view of an interrupt delivery: the fork reply as one speak event.
+
+    The fork ran outside the session's turn chain, so there is no execution to
+    subscribe to; the stream carries the reply the way a turn would (a
+    ``pygent.v1.realtime.speak`` event) and closes with a completion event so
+    the client finalizes the same way.
+    """
+
+    session_id: str
     input_id: str
     reply: dict[str, object]
 
-    @property
-    def status(self) -> str:
-        return "fork_replied"
+    async def events(
+        self,
+        *,
+        after: int | None,
+        log_model_text_deltas: bool = False,
+    ) -> AsyncIterator[ExecutionEvent]:
+        del after, log_model_text_deltas
+        execution_id = f"fork-reply:{self.input_id}"
+
+        def event(kind: str, sequence: int, data: dict[str, Any]) -> ExecutionEvent:
+            return ExecutionEvent(
+                schema_version="1",
+                event_id=f"{execution_id}:{sequence}",
+                execution_id=execution_id,
+                attempt_id="fork",
+                trace_id="fork",
+                span_id="fork",
+                sequence=sequence,
+                timestamp_unix_ns=time.time_ns(),
+                module_path="lara.fork_reply",
+                kind=kind,
+                data=data,
+            )
+
+        yield event(
+            "pygent.v1.chat.started", 0, {"session_id": self.session_id, "fork_reply": True}
+        )
+        if not self.reply.get("say_nothing"):
+            attachments = self.reply.get("attachments")
+            yield event(
+                "pygent.v1.realtime.speak",
+                1,
+                {
+                    "text": self.reply.get("text") or "",
+                    "attachments": list(attachments) if isinstance(attachments, list) else [],
+                },
+            )
+        yield event("execution.completed", 2, {"fork_reply": True})
 
 
 @dataclass(slots=True)
@@ -299,7 +356,7 @@ class ChatRunRegistry:
 
     async def resolve(
         self, context: ApiContext, request: ChatTurnRequest
-    ) -> ActiveChatRun | AttachedExecutionRun | None:
+    ) -> ActiveChatRun | AttachedExecutionRun | ForkReplyRun | None:
         if request.execution_id:
             return await self._resolve_attached_run(context, request)
         if request.resume:
@@ -309,34 +366,88 @@ class ChatRunRegistry:
             # The last run is a resumable terminal (or was just reconciled as
             # dead): continuing the session with a fresh turn is the only
             # remaining way to resume it.
-            return await self._submit_turn(
-                context,
-                request,
-                message=RESUME_TURN_MESSAGE,
-                message_kind=RESUME_TURN_KIND,
-                message_data={"origin": "resume"},
-            )
+            return await self._submit_resume_turn(context, request)
         if not request.message and not request.attachments:
             raise ValueError("message or attachments is required when execution_id is not provided")
-        return await self._submit_turn(
-            context, request, message=request.message or ""
-        )
+        return await self._deliver(context, request)
 
-    async def _submit_turn(
-        self,
-        context: ApiContext,
-        request: ChatTurnRequest,
-        *,
-        message: str,
-        message_kind: str = "pygent.v1.chat.turn",
-        message_data: dict[str, object] | None = None,
-    ) -> ActiveChatRun:
+    async def _deliver(
+        self, context: ApiContext, request: ChatTurnRequest
+    ) -> ActiveChatRun | ForkReplyRun:
+        """Route a user message through the SDK's unified entry.
+
+        A realtime session with a running turn answers through a fork reply;
+        everything else starts (or lane-queues) a turn.
+        """
+
         service = session_service_for_scope(context, request.scope_id)
         manager = service.manager
         if request.attachments:
-            resolve_attachments(
-                request.attachments, manager.config.workspace_root
+            resolve_attachments(request.attachments, manager.config.workspace_root)
+        delivery = await context.execution_host.deliver_user_message(
+            config=manager.config,
+            manager=manager,
+            session_id=request.session_id,
+            input_id=request.turn_id,
+            message=request.message or "",
+            case_id=request.case_id,
+            attachments=request.attachments,
+            model_group_name=request.model_group_name,
+            selected_model_key=request.selected_model_key,
+        )
+        if delivery.mode == "interrupt":
+            assert request.session_id is not None  # interrupts need a running session
+            return ForkReplyRun(
+                session_id=request.session_id,
+                input_id=request.turn_id or f"fork-{time.time_ns()}",
+                reply=fork_reply_payload(delivery),
             )
+        assert delivery.turn is not None
+        await delivery.turn.wait_ready()
+        return ActiveChatRun(delivery.turn)
+
+    async def deliver_message(
+        self,
+        context: ApiContext,
+        *,
+        session_id: str,
+        scope_id: str | None,
+        input_id: str,
+        message: str,
+        attachments: Sequence[str] = (),
+    ) -> dict[str, object]:
+        """Deliver while the client already streams the session's running turn.
+
+        Returns the routing outcome instead of a stream: an interrupt's reply
+        rides the response; a queued turn starts after the running one and
+        the client re-attaches through the session follow loop.
+        """
+
+        service = session_service_for_scope(context, scope_id)
+        manager = service.manager
+        if attachments:
+            resolve_attachments(attachments, manager.config.workspace_root)
+        delivery = await context.execution_host.deliver_user_message(
+            config=manager.config,
+            manager=manager,
+            session_id=session_id,
+            input_id=input_id,
+            message=message,
+            attachments=attachments,
+        )
+        if delivery.mode == "interrupt":
+            return {
+                "mode": "interrupt",
+                "input_id": input_id,
+                "reply": fork_reply_payload(delivery),
+            }
+        return {"mode": "turn", "input_id": input_id, "session_id": session_id}
+
+    async def _submit_resume_turn(
+        self, context: ApiContext, request: ChatTurnRequest
+    ) -> ActiveChatRun:
+        service = session_service_for_scope(context, request.scope_id)
+        manager = service.manager
         turn_service = SessionTurnService(
             coordinator=self.coordinator,
             acquire_runtime=context.acquire_runtime,
@@ -345,14 +456,13 @@ class ChatRunRegistry:
             config=manager.config,
             manager=manager,
             session_id=request.session_id,
-            message=message,
+            message=RESUME_TURN_MESSAGE,
             case_id=request.case_id,
             turn_id=request.turn_id,
             model_group_name=request.model_group_name,
             selected_model_key=request.selected_model_key,
-            message_kind=message_kind,
-            message_data=message_data,
-            attachments=request.attachments,
+            message_kind=RESUME_TURN_KIND,
+            message_data={"origin": "resume"},
         )
         await turn.wait_ready()
         return ActiveChatRun(turn)
@@ -534,51 +644,6 @@ class ChatRunRegistry:
             )
         finally:
             await lease.release()
-
-    async def deliver_steering(
-        self, execution_id: str, *, session_id: str, input_id: str,
-        message: str | None, attachments: Sequence[str] = (),
-    ) -> Any:
-        active = await self.coordinator.find_execution(execution_id)
-        if active is None or active.run_ref is None or active.run_ref.session_id != session_id:
-            raise LookupError("当前会话没有对应的运行中执行，请等待连接恢复后重试。")
-        if attachments:
-            # Fail before the input is queued: send_steering resolves again
-            # against the same workspace root.
-            resolve_attachments(
-                attachments, active.runtime_service.config.workspace_root
-            )
-        if realtime_enabled_for(active.manager.load(session_id)):
-            # Realtime mode: a mid-turn message forks a speak reply instead of
-            # steering the running execution. The reply rides the HTTP
-            # response — it is transient by design and never enters the
-            # session transcript.
-            if attachments:
-                raise ValueError("实时插话暂不支持附件，请先移除附件后重试。")
-            outcome = await active.runtime_service.send_interrupt(
-                manager=active.manager,
-                session_id=session_id, input_id=input_id, message=message or "",
-            )
-            if outcome.speak_args is not None:
-                reply = {
-                    "via": "speak",
-                    "text": outcome.speak_args.text,
-                    "attachments": list(outcome.speak_args.attachments),
-                    "say_nothing": outcome.speak_args.say_nothing,
-                }
-            else:
-                reply = {
-                    "via": "text",
-                    "text": outcome.text,
-                    "attachments": [],
-                    "say_nothing": False,
-                }
-            return ForkReplyReceipt(input_id=input_id, reply=reply)
-        return await active.runtime_service.send_steering(
-            execution_id, input_id=input_id, message=message,
-            case_run_id=active.run_ref.case_run_id,
-            attachments=attachments,
-        )
 
     async def cancel_turn(
         self, context: ApiContext, execution_id: str, *, session_id: str,

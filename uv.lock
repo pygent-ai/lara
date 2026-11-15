@@ -580,7 +580,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "lark-oapi", specifier = ">=1.7.5" },
-    { name = "pygent-ai", extras = ["video"], specifier = "==0.6.0" },
+    { name = "pygent-ai", extras = ["video"], editable = "../pygent" },
     { name = "python-dateutil", specifier = ">=2.9.0" },
     { name = "tzdata", specifier = ">=2025.2" },
     { name = "tzlocal", specifier = ">=5.2" },
@@ -867,8 +867,8 @@ wheels = [
 
 [[package]]
 name = "pygent-ai"
-version = "0.6.0"
-source = { registry = "https://pypi.org/simple" }
+version = "0.6.1"
+source = { editable = "../pygent" }
 dependencies = [
     { name = "aiosqlite" },
     { name = "griffe" },
@@ -885,18 +885,52 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "uvicorn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a3/55/ebc111263d2d9b19c2cbebe72cde8abe18591ffb04221c6100905f4c5fba/pygent_ai-0.6.0.tar.gz", hash = "sha256:da5595d678f356d9c252262f71b6e3a4a7af5589876b825aa114d4d0515f6bc2", size = 1376028, upload-time = "2026-11-11T13:05:32.161Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/1a/49/5f7a2cd56d58107090d0f8da769eafa9bda7aeb02ac484d2aca6337d7446/pygent_ai-0.6.0-cp311-abi3-macosx_10_12_x86_64.whl", hash = "sha256:afb94523550fbfa7675986f8f9156d0a5c90df219aeb517c3b2f03cc77ee0013", size = 2866352, upload-time = "2026-11-11T13:05:23.433Z" },
-    { url = "https://files.pythonhosted.org/packages/4d/7c/8044b20fd64a8177b34b5af13ad20cb0f7e678fe1a0a731b74be6b654eaf/pygent_ai-0.6.0-cp311-abi3-macosx_11_0_arm64.whl", hash = "sha256:0f8a060591059a4343176c584948b9825ce78deea0f9ac903126c108743e7069", size = 2804349, upload-time = "2026-11-11T13:05:25.722Z" },
-    { url = "https://files.pythonhosted.org/packages/1e/1d/87a065a9621faf843d4664864762d92fc99cb6738787c7a4099e65876947/pygent_ai-0.6.0-cp311-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:a94e5bb7d7ca5d74fb06d25d5bd51945c76b78a6647864281975240268d28738", size = 3109142, upload-time = "2026-11-11T13:05:27.414Z" },
-    { url = "https://files.pythonhosted.org/packages/ad/c5/8f59c1e196894d49a5e82059c20edd1b17ff2feadedf344666c277980ebd/pygent_ai-0.6.0-cp311-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:67271427eba056ff0be8bb31ddc8e68a657870f6f000d05e4eba525e6ea9a7e2", size = 3044929, upload-time = "2026-11-11T13:05:28.936Z" },
-    { url = "https://files.pythonhosted.org/packages/14/4c/d8203350c7c1d677a2846d88b12e7edf3a656fb9ddf295337145642565b6/pygent_ai-0.6.0-cp311-abi3-win_amd64.whl", hash = "sha256:11cfc1b0bc2fae71aa0a74f213e331643120118346983d6bb8e7bb977e7b1799", size = 2655787, upload-time = "2026-11-11T13:05:30.629Z" },
-]
 
 [package.optional-dependencies]
 video = [
     { name = "av" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiosqlite", specifier = ">=0.20" },
+    { name = "av", marker = "extra == 'video'", specifier = ">=16.0" },
+    { name = "build", marker = "extra == 'dev'", specifier = ">=1.2" },
+    { name = "griffe", specifier = ">=2.0" },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "httpx-sse", specifier = ">=0.4" },
+    { name = "jsonschema", specifier = ">=4.23" },
+    { name = "mcp", specifier = ">=2.0" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
+    { name = "pillow", specifier = ">=11.0" },
+    { name = "psutil", marker = "extra == 'performance'", specifier = ">=6.0" },
+    { name = "pydantic", specifier = ">=2.8" },
+    { name = "pypdf", specifier = ">=6.0" },
+    { name = "pypdfium2", specifier = ">=5.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
+    { name = "sniffio", specifier = ">=1.3" },
+    { name = "starlette", specifier = ">=0.38" },
+    { name = "twine", marker = "extra == 'dev'", specifier = ">=5.1" },
+    { name = "types-jsonschema", marker = "extra == 'dev'", specifier = ">=4.23" },
+    { name = "typing-extensions", specifier = ">=4.12" },
+    { name = "uvicorn", specifier = ">=0.30" },
+    { name = "websockets", marker = "extra == 'az-conformance'", specifier = ">=15.0" },
+]
+provides-extras = ["performance", "video", "az-conformance", "dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "build", specifier = ">=1.2" },
+    { name = "mypy", specifier = ">=1.11" },
+    { name = "pytest", specifier = ">=7.0.0" },
+    { name = "pytest-asyncio", specifier = ">=0.23.0" },
+    { name = "pytest-cov", specifier = ">=4.0.0" },
+    { name = "ruff", specifier = ">=0.6" },
+    { name = "twine", specifier = ">=5.1" },
+    { name = "types-jsonschema", specifier = ">=4.23" },
 ]
 
 [[package]]

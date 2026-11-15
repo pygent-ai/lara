@@ -11,24 +11,19 @@ from pygent import AIMessage, UserMessage
 from pygent.runtime.codec import message_to_dict
 from pygent import AIMessage, Context, Module, ToolCall, UserMessage, thaw_json
 from pygent.agent import (
-    StandaloneUserMessage,
-    SteeringMode,
     ReplaceMessageProjection,
     decode_react_projection_operation,
 )
 from pygent.core import EffectSafety, ExecutionRequirements, RecoverySafety
 from pygent.llm import ModelConfig
 from pygent.runtime import ExecutionOptions
-from pygent.tool import AgentToolExecutor
 
 from pygent.agent.pygent_v1.graph.prompt_models import PromptRenderContext
 from lara.runtime.prompt_profile import _render_available_tools_prompt
 from lara.runtime.context import LaraContext
 from pygent.agent.pygent_v1.runtime.file_effects import FileEffectBaselineStore
-from lara.runtime.service import (
-    PROJECTION_OPERATION_METADATA_KEY,
-    LaraRuntimeService,
-)
+from pygent.agent.pygent_v1.runtime.service import PROJECTION_OPERATION_METADATA_KEY
+from lara.runtime.service import LaraRuntimeService
 from lara.schema import RunConfig
 from lara.sessions import SessionManager
 from tests.unit.test_session_manager import native_run_config
@@ -289,33 +284,17 @@ async def test_standard_read_tool_advertises_its_workspace_sandbox() -> None:
 
 
 @pytest.mark.asyncio
-async def test_runtime_exposes_only_available_agent_collaboration_tools() -> None:
+async def test_runtime_exposes_the_sdk_scheduler_tools() -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        config = load_run_config(workspace_root=Path(tmp))
-        unavailable = LaraRuntimeService(config)
-        collaboration_only = LaraRuntimeService(config, collaboration=object())
-        config.delegation.allowed_agents = ("dev",)
-        service = LaraRuntimeService(config, collaboration=object())
+        service = LaraRuntimeService(load_run_config(workspace_root=Path(tmp)))
         try:
-            assert unavailable.external_tools == ()
-            assert {
-                spec.definition.name for spec in collaboration_only.external_tools
-            } == {
-                "agent_send",
-                "agent_status",
-                "agent_list",
-                "agent_wait",
-            }
             assert {spec.definition.name for spec in service.external_tools} == {
-                "agent_start",
-                "agent_send",
-                "agent_status",
-                "agent_list",
-                "agent_wait",
+                "schedule_task",
+                "emit_event",
             }
+            with pytest.raises(LookupError):
+                service.executor_registry.resolve("lara.agent.agent_start", "1")
         finally:
-            await unavailable.close()
-            await collaboration_only.close()
             await service.close()
 
 
@@ -337,21 +316,6 @@ def test_available_tools_prompt_documents_exact_grep_arguments() -> None:
         in prompt
     )
     assert "do not use output_mode, head_limit, ignore_case" in prompt
-
-
-@pytest.mark.asyncio
-async def test_agent_collaboration_uses_pygent_agent_tool_executor() -> None:
-    with tempfile.TemporaryDirectory() as tmp:
-        service = LaraRuntimeService(load_run_config(workspace_root=Path(tmp)))
-        try:
-            assert isinstance(
-                service.executor_registry.resolve("lara.agent.agent_start", "1"),
-                AgentToolExecutor,
-            )
-            with pytest.raises(LookupError):
-                service.executor_registry.resolve("lara.agent.delegate", "1")
-        finally:
-            await service.close()
 
 
 @pytest.mark.asyncio
@@ -593,44 +557,6 @@ async def test_wait_steering_mode_keeps_turns_durable() -> None:
             assert "durability.sqlite" in report.effective_capabilities
         finally:
             await service.close()
-
-
-@pytest.mark.asyncio
-async def test_send_steering_encodes_the_configured_delivery_mode() -> None:
-    with tempfile.TemporaryDirectory() as tmp:
-        for mode, expected in (("immediate", SteeringMode.IMMEDIATE), ("wait", SteeringMode.WAIT)):
-            config = load_run_config(workspace_root=Path(tmp))
-            config.runtime_steering.mode = mode
-            service = LaraRuntimeService(config)
-            try:
-                captured = {}
-
-                class _Handle:
-                    async def send_input(self, *, input_id, kind, value):
-                        captured.update(
-                            input_id=input_id, kind=kind, value=value
-                        )
-                        return SimpleNamespace(status="accepted", input_id=input_id)
-
-                async def get_execution_handle(execution_id):
-                    captured["execution_id"] = execution_id
-                    return _Handle()
-
-                service.runtime.get_execution_handle = get_execution_handle
-                receipt = await service.send_steering(
-                    "execution-1",
-                    input_id="input-1",
-                    message="先停下，改看测试",
-                    case_run_id="run-1",
-                )
-                assert receipt.status == "accepted"
-                operation = decode_react_projection_operation(
-                    thaw_json(captured["value"])
-                )
-                assert isinstance(operation, StandaloneUserMessage)
-                assert operation.mode is expected
-            finally:
-                await service.close()
 
 
 @pytest.mark.asyncio

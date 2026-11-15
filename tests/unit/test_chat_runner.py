@@ -17,8 +17,8 @@ from lara.sessions import SessionManager
 from lara_api.models.requests import ChatTurnRequest
 from lara_api.services import chat_runner
 from lara_api.services.chat_runner import (
-    ForkReplyReceipt,
     ActiveChatRun,
+    ForkReplyRun,
     ChatRunRegistry,
     _sse,
     stream_chat_turn,
@@ -961,82 +961,75 @@ def test_resume_request_accepts_only_pure_resume() -> None:
         ChatTurnRequest(resume=True, session_id="session-1", attachments=["a.txt"])
 
 
-# --- steering routing: fork path vs steering path (realtime gate) ---
+# --- deliver_message: the SDK entry routes a message while a turn streams ---
 
 
-class _StubActive:
-    def __init__(self, runtime_service, session_id="session-1", case_run_id="run-1", mode="chat"):
-        self.runtime_service = runtime_service
-        self.run_ref = CaseRunRef(
-            session_id=session_id,
-            case_id="chat",
-            case_run_id=case_run_id,
-            run_dir=".",
-        )
-        self.manager = SimpleNamespace(
-            load=lambda sid: SimpleNamespace(metadata={"mode": mode}, history=[])
-        )
+class _StubHost:
+    """Stands in for LocalExecutionHost.deliver_user_message."""
+
+    def __init__(self, mode: str) -> None:
+        self.mode = mode
+        self.calls: list[dict] = []
+
+    async def deliver_user_message(self, **kwargs):
+        self.calls.append(dict(kwargs))
+        if self.mode == "interrupt":
+            return SimpleNamespace(
+                mode="interrupt",
+                turn=None,
+                outcome=SimpleNamespace(
+                    speak_args=SimpleNamespace(
+                        text="在做了", attachments=(), say_nothing=False
+                    ),
+                    text=None,
+                ),
+            )
+        return SimpleNamespace(mode="turn", turn=object(), outcome=None)
 
 
-class _StubRuntimeService:
-    def __init__(self, enabled: bool) -> None:
-        self.config = SimpleNamespace(
-            realtime_interaction=SimpleNamespace(enabled=enabled),
-            workspace_root=".",
-        )
-        self.interrupts: list[dict] = []
-        self.steerings: list[dict] = []
-
-    async def send_interrupt(self, **kwargs):
-        self.interrupts.append(dict(kwargs))
-        return SimpleNamespace(
-            speak_args=SimpleNamespace(
-                text="在做了", attachments=(), say_nothing=False
-            ),
-            text=None,
-        )
-
-    async def send_steering(self, execution_id, **kwargs):
-        self.steerings.append({"execution_id": execution_id, **kwargs})
-        return SimpleNamespace(status="delivered", input_id=kwargs["input_id"])
-
-
-class _StubCoordinator:
-    def __init__(self, active) -> None:
-        self._active = active
-
-    async def find_execution(self, execution_id):
-        return self._active
-
-
-class _StubRegistry(ChatRunRegistry):
-    def __init__(self, active) -> None:
-        super().__init__()
-        self.coordinator = _StubCoordinator(active)
-
-
-async def test_deliver_steering_routes_to_interrupt_for_lara_says_session() -> None:
-    service = _StubRuntimeService(enabled=True)
-    registry = _StubRegistry(_StubActive(service, mode="pygent.v1-says"))
-    receipt = await registry.deliver_steering(
-        "execution-1", session_id="session-1", input_id="input-1",
-        message="进度如何",
+def _host_context(monkeypatch, host) -> SimpleNamespace:
+    manager = SimpleNamespace(config=SimpleNamespace(workspace_root="."))
+    monkeypatch.setattr(
+        chat_runner,
+        "session_service_for_scope",
+        lambda _context, _scope_id: SimpleNamespace(manager=manager),
     )
-    assert isinstance(receipt, ForkReplyReceipt)
-    assert receipt.status == "fork_replied"
-    assert receipt.reply["via"] == "speak"
-    assert receipt.reply["text"] == "在做了"
-    assert service.interrupts and not service.steerings
-    assert service.interrupts[0]["input_id"] == "input-1"
+    return SimpleNamespace(execution_host=host)
 
 
-async def test_deliver_steering_keeps_steering_for_regular_sessions() -> None:
-    service = _StubRuntimeService(enabled=True)
-    registry = _StubRegistry(_StubActive(service, mode="chat"))
-    receipt = await registry.deliver_steering(
-        "execution-1", session_id="session-1", input_id="input-1",
-        message="继续",
+async def test_deliver_message_returns_the_fork_reply_for_an_interrupt(monkeypatch) -> None:
+    host = _StubHost("interrupt")
+    receipt = await ChatRunRegistry().deliver_message(
+        _host_context(monkeypatch, host),
+        session_id="session-1", scope_id=None, input_id="input-1", message="进度如何",
     )
-    assert not isinstance(receipt, ForkReplyReceipt)
-    assert receipt.status == "delivered"
-    assert service.steerings and not service.interrupts
+    assert receipt == {
+        "mode": "interrupt",
+        "input_id": "input-1",
+        "reply": {"via": "speak", "text": "在做了", "attachments": [], "say_nothing": False},
+    }
+    assert host.calls[0]["session_id"] == "session-1"
+    assert host.calls[0]["input_id"] == "input-1"
+
+
+async def test_deliver_message_reports_a_queued_turn(monkeypatch) -> None:
+    host = _StubHost("turn")
+    receipt = await ChatRunRegistry().deliver_message(
+        _host_context(monkeypatch, host),
+        session_id="session-1", scope_id=None, input_id="input-1", message="继续",
+    )
+    assert receipt == {"mode": "turn", "input_id": "input-1", "session_id": "session-1"}
+
+
+async def test_stream_resolve_wraps_an_interrupt_as_a_fork_reply_stream(monkeypatch) -> None:
+    host = _StubHost("interrupt")
+    run = await ChatRunRegistry().resolve(
+        _host_context(monkeypatch, host),
+        ChatTurnRequest(session_id="session-1", message="进度如何", turn_id="input-9"),
+    )
+    assert isinstance(run, ForkReplyRun)
+    kinds = [event.kind async for event in run.events(after=None)]
+    assert kinds == ["pygent.v1.chat.started", "pygent.v1.realtime.speak", "execution.completed"]
+    speak = [event async for event in run.events(after=None)][1]
+    assert speak.data == {"text": "在做了", "attachments": []}
+    assert speak.execution_id == "fork-reply:input-9"

@@ -86,7 +86,7 @@ async def test_session_creation_prewarms_without_constructing_runtime(tmp_path) 
     task = reminders._preparations[session.session_id]
     await task
 
-    assert context._runtime_pool is None
+    assert context._execution_host is None
     state = reminders.store.load_bootstrap(reminders.scope(session.session_id))
     assert state["status"] == BootstrapStatus.READY.value
     await context.aclose()

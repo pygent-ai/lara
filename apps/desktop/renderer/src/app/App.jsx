@@ -840,8 +840,8 @@ export function App() {
 
   const refreshAutomations = useCallback(async () => {
     try {
-      const result = await api.listAutomations();
-      const next = result.automations || [];
+      const result = await api.listScheduledTasks();
+      const next = result.tasks || [];
       setAutomations((current) => JSON.stringify(current) === JSON.stringify(next) ? current : next);
     } catch {
       // The sidebar keeps the last known list; the scheduled view surfaces errors.
@@ -855,8 +855,9 @@ export function App() {
 
   const handleToggleAutomation = useCallback(async (item) => {
     try {
-      if (item.status === "active") await api.pauseAutomation(item.automation_id);
-      else if (item.status === "paused") await api.resumeAutomation(item.automation_id);
+      // Control submissions take effect on the daemon's next poll.
+      if (item.status === "approved") await api.controlScheduledTask(item.id, "pause");
+      else if (item.status === "paused") await api.controlScheduledTask(item.id, "resume");
       await refreshAutomations();
     } catch (err) {
       setError(readableError(err));
@@ -1416,41 +1417,43 @@ export function App() {
     });
   }, [activeSessionSync, activeSessionId, activeSession?.scope_id, activeSessionListRecord, runningSessionIds]);
 
+  // A message sent while the session's turn is still running goes through
+  // the backend's unified entry: the realtime session answers with a fork
+  // reply right away; any other session queues the message as the next turn,
+  // which the session follow loop attaches to once the running one ends.
   const handleSteering = useCallback(async (message, inputId, attachments = []) => {
     const sessionId = activeSessionIdRef.current;
-    const execution = activeExecutionsRef.current.get(sessionId);
-    if (!execution || !runningSessionIdsRef.current[sessionId]) {
+    if (!sessionId || !runningSessionIdsRef.current[sessionId]) {
       throw new Error("执行尚未连接或已经结束，请稍后重试。");
     }
-    // Show the chip before the POST resolves: immediate steering can drain the
-    // input and emit its boundary while steerChat is still in flight, and a
-    // chip added after that boundary event would never be resolved.
+    const scopeId = activeSession?.scope_id;
     setPendingSteerings((items) => addPendingSteering(items, sessionId, { inputId, text: message, attachments }));
     let receipt;
     try {
-      receipt = await api.steerChat(execution.executionId, { sessionId, inputId, message, attachments });
+      receipt = await api.deliverMessage(sessionId, { scopeId, inputId, message, attachments });
     } catch (err) {
-      // The runtime never accepted the input, so no boundary event will resolve it.
       setPendingSteerings((items) => resolvePendingSteering(items, sessionId, inputId));
       throw err;
     }
-    const reply = receipt?.reply;
-    if (reply && !reply.say_nothing) {
-      // Realtime fork path (D-RT12): the reply rides the HTTP response and is
-      // transient — it renders as a speak bubble and never hits the journal.
-      const forkRow = {
-        id: `fork-${inputId}`,
-        role: "assistant",
-        status: "done",
-        content: "",
-        speaks: [{
-          text: String(reply.text || ""),
-          attachments: Array.isArray(reply.attachments) ? reply.attachments.map((item) => String(item)) : [],
-          sayNothing: false,
-        }],
-        frontSpeak: true,
-      };
-      setMessages((items) => [...items, forkRow]);
+    if (receipt?.mode === "interrupt") {
+      const reply = receipt.reply || {};
+      if (!reply.say_nothing) {
+        // The fork reply is transient: it renders as a speak bubble and never
+        // hits the journal; the running turn receives the exchange envelope.
+        const forkRow = {
+          id: `fork-${inputId}`,
+          role: "assistant",
+          status: "done",
+          content: "",
+          speaks: [{
+            text: String(reply.text || ""),
+            attachments: Array.isArray(reply.attachments) ? reply.attachments.map((item) => String(item)) : [],
+            sayNothing: false,
+          }],
+          frontSpeak: true,
+        };
+        setMessages((items) => [...items, forkRow]);
+      }
       if (activeSessionIdRef.current === sessionId) {
         setNotice("已在不打断工作的情况下回复你。");
       }
@@ -1458,9 +1461,9 @@ export function App() {
       return;
     }
     if (activeSessionIdRef.current === sessionId) {
-      setNotice("指令已送达，将打断当前步骤并立即生效。");
+      setNotice("已排队：当前回合结束后作为下一轮开始。");
     }
-  }, [api]);
+  }, [activeSession?.scope_id, api]);
 
   const handleCancelTurn = useCallback(async () => {
     const sessionId = activeSessionIdRef.current;
@@ -1613,10 +1616,7 @@ export function App() {
       />
       {activeView === "scheduled" ? <ScheduledPage
         api={api}
-        projects={projects}
-        activeSession={activeSession}
-        settings={settings}
-        onOpenSession={(sessionId, workspaceRoot) => handleSelectSession(sessionId, { workspace_root: workspaceRoot })}
+        onOpenSession={(sessionId) => handleSelectSession(sessionId, { workspace_root: settings.workspace_root })}
       /> : <ChatPane
         key={activeSessionId || "new-chat"}
         composerDrafts={composerDraftsRef.current}
@@ -2030,7 +2030,7 @@ export const SessionSidebar = memo(function SessionSidebar({
               {automations.map((item) => (
                 <div
                   className="scheduled-row"
-                  key={item.automation_id}
+                  key={item.id}
                   role="button"
                   tabIndex={0}
                   title={item.prompt || item.name}
@@ -2043,7 +2043,7 @@ export const SessionSidebar = memo(function SessionSidebar({
                   }}
                 >
                   <span className="scheduled-name">{item.name}</span>
-                  {item.status === "active" ? (
+                  {item.status === "approved" ? (
                     <button className="scheduled-action" type="button" title="暂停"
                       aria-label={`暂停 ${item.name}`}
                       onClick={(event) => { event.stopPropagation(); onToggleAutomation(item); }}>
@@ -2800,7 +2800,7 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
         {pendingSteerings.map((item) => (
           <article className="message user message-enter pending-steering" key={`pending-${item.inputId}`}>
             <div className="bubble">
-              <span className="pending-steering-label">{item.stale ? "未生效 · 本轮已结束" : "待生效 · 即将打断当前步骤"}</span>
+              <span className="pending-steering-label">{item.stale ? "未生效 · 本轮已结束" : (realtimeInteractionEnabled ? "已送达 · 不打断当前工作" : "已排队 · 当前回合结束后开始")}</span>
               {item.text}
               {Array.isArray(item.attachments) && item.attachments.length > 0 && (
                 <span className="message-attachments">
@@ -2868,7 +2868,7 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
             ref={composerRef}
             aria-label="任务内容"
             disabled={sending || configuring}
-            placeholder={running ? (steeringReady ? "追加指令，调整当前任务方向…" : "正在连接执行，可以先输入指令…") : resumable ? "会话已暂停：点击发送继续上次任务，或输入新指令…" : "描述任务，或继续追问…"}
+            placeholder={running ? (steeringReady ? (realtimeInteractionEnabled ? "随时插话，Lara 会在不打断工作的情况下回复…" : "继续输入，当前回合结束后作为下一轮开始…") : "正在连接执行，可以先输入…") : resumable ? "会话已暂停：点击发送继续上次任务，或输入新指令…" : "描述任务，或继续追问…"}
             value={draft}
             onChange={(event) => updateDraft(event.target.value)}
             onPaste={handleComposerPaste}
@@ -2917,7 +2917,7 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
             <button className="attach" aria-label="添加附件" title="添加工作区文件作为附件（图片/视频原生识别，其他文件转 XML）" disabled={sending || configuring || pendingAttachments.length >= 10} type="button" onClick={() => fileInputRef.current?.click()}>
               <Paperclip aria-hidden="true" />
             </button>
-            {(uploadingCount > 0 || running || resumable) && <span className="composer-hint">{uploadingCount > 0 ? `正在上传附件…（${uploadingCount}）` : running ? (steeringReady ? "Enter 追加指令 · 立即打断当前步骤" : "正在连接执行，连接后可追加指令") : "点击发送继续上次任务 · 输入文字则开始新指令"}</span>}
+            {(uploadingCount > 0 || running || resumable) && <span className="composer-hint">{uploadingCount > 0 ? `正在上传附件…（${uploadingCount}）` : running ? (steeringReady ? (realtimeInteractionEnabled ? "Enter 发送 · 立即得到回复，不打断工作" : "Enter 发送 · 排到当前回合之后") : "正在连接执行，连接后可发送") : "点击发送继续上次任务 · 输入文字则开始新指令"}</span>}
             <ContextGauge
               usedTokens={contextUsedTokens}
               totalTokens={settings.context_window}
@@ -2937,7 +2937,7 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
               Promise.resolve(onCancelTurn()).catch((err) => setConfigError(readableError(err))).finally(() => setCancelling(false));
             }}>
               <Square aria-hidden="true" />
-            </button> : <button className="send" aria-label={running ? (steeringReady ? "追加指令" : "正在连接") : resumable ? "继续上次任务" : "发送"} title={running ? (steeringReady ? "追加指令" : "正在连接") : resumable ? "继续上次任务" : "发送"} disabled={(running && !steeringReady) || sending || configuring || uploadingCount > 0 || (!draft.trim() && !pendingAttachments.length && !resumable)} type="button" onClick={submit}>
+            </button> : <button className="send" aria-label={running ? (steeringReady ? "发送" : "正在连接") : resumable ? "继续上次任务" : "发送"} title={running ? (steeringReady ? "发送" : "正在连接") : resumable ? "继续上次任务" : "发送"} disabled={(running && !steeringReady) || sending || configuring || uploadingCount > 0 || (!draft.trim() && !pendingAttachments.length && !resumable)} type="button" onClick={submit}>
               <ArrowUp aria-hidden="true" />
             </button>}
           </div>

@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
-from threading import RLock
+from threading import RLock, Thread
 from typing import TYPE_CHECKING, Any
 
 from lara.config import load_run_config
@@ -13,10 +13,12 @@ from lara.sessions import SessionManager
 from .project_state import GuiProjectState, SessionScope
 
 if TYPE_CHECKING:
-    from lara.dispatch import DispatchScheduler, DispatchService, DispatchStore
+    from pygent.agent.pygent_v1.scheduler.daemon import SchedulerDaemon
+    from pygent.agent.pygent_v1.scheduler.store import SchedulerStore
+
     from lara.orchestration import (
+        LocalExecutionHost,
         RuntimeLease,
-        SessionCollaborationService,
         SessionExecutionCoordinator,
         WorkspaceRuntimePool,
     )
@@ -38,12 +40,11 @@ class ApiContext:
     _reminders: ReminderService | None = None
     _chat_registry: Any | None = None
     _session_coordinator: SessionExecutionCoordinator | None = None
-    _session_collaboration: SessionCollaborationService | None = None
-    _runtime_pool: WorkspaceRuntimePool | None = None
+    _execution_host: LocalExecutionHost | None = None
     _terminal_service: Any | None = None
-    _dispatch_store: DispatchStore | None = None
-    _dispatch_service: DispatchService | None = None
-    _dispatch_scheduler: DispatchScheduler | None = None
+    _scheduler_store: SchedulerStore | None = None
+    _scheduler_daemon: SchedulerDaemon | None = None
+    _scheduler_thread: Thread | None = None
     _feishu_bridge: Any | None = None
     _stale_runs_reconciled: bool = False
     _lock: RLock = field(default_factory=RLock)
@@ -95,38 +96,26 @@ class ApiContext:
             return self._session_coordinator
 
     @property
-    def runtime_pool(self) -> WorkspaceRuntimePool:
-        with self._lock:
-            if self._runtime_pool is None:
-                from functools import partial
+    def execution_host(self) -> LocalExecutionHost:
+        """The user-message entry and runtime pool shared by every adapter."""
 
-                from lara.orchestration import WorkspaceRuntimePool
-                from lara.runtime.service import LaraRuntimeService
+        with self._lock:
+            if self._execution_host is None:
+                from lara.orchestration import LocalExecutionHost
 
                 # API composition root: register the stock Lara prompt
                 # profile so the kernel's empty registry serves full prompts.
                 from lara.runtime.prompt_profile import build_prompt_registry
 
-                # The SDK pool defaults to PygentRuntimeService, which lacks
-                # the steering/cancel/compress entries lara_api drives, and it
-                # no longer carries a collaboration slot; bind both here.
-                self._runtime_pool = WorkspaceRuntimePool(
-                    runtime_factory=partial(
-                        LaraRuntimeService,
-                        collaboration=self.session_collaboration,
-                    ),
+                self._execution_host = LocalExecutionHost(
+                    coordinator=self.session_coordinator,
                     prompt_registry=build_prompt_registry(),
                 )
-            return self._runtime_pool
+            return self._execution_host
 
     @property
-    def session_collaboration(self) -> SessionCollaborationService:
-        with self._lock:
-            if self._session_collaboration is None:
-                from lara.orchestration import SessionCollaborationService
-
-                self._session_collaboration = SessionCollaborationService()
-            return self._session_collaboration
+    def runtime_pool(self) -> WorkspaceRuntimePool:
+        return self.execution_host.runtime_pool
 
     @property
     def stale_runs_reconciled(self) -> bool:
@@ -141,20 +130,11 @@ class ApiContext:
         config: RunConfig | None = None,
         manager: SessionManager | None = None,
     ) -> RuntimeLease:
-        _ = self.session_collaboration
         effective_config = config or self.config
-        # The SDK pool falls back to its base SessionManager and pins it to
-        # the runtime generation; later callers passing lara's subclass then
-        # get the base one back, so always hand it a lara manager.
-        if manager is None:
-            manager = (
-                self.manager
-                if effective_config is self.config
-                else SessionManager(effective_config)
-            )
-        return await self.runtime_pool.acquire(
-            config=effective_config,
-            manager=manager,
+        if manager is None and effective_config is self.config:
+            manager = self.manager
+        return await self.execution_host.acquire_runtime(
+            config=effective_config, manager=manager
         )
 
     @property
@@ -167,41 +147,39 @@ class ApiContext:
             return self._terminal_service
 
     @property
-    def dispatch_store(self) -> DispatchStore:
+    def scheduler_store(self) -> SchedulerStore:
         with self._lock:
-            if self._dispatch_store is None:
-                from lara.dispatch import DispatchStore
-
-                self._dispatch_store = DispatchStore(
-                    Path(self.config.user_pygent_root) / "dispatch-v1.sqlite3"
+            if self._scheduler_store is None:
+                from pygent.agent.pygent_v1.scheduler.store import (
+                    SchedulerStore,
+                    scheduler_db_path,
                 )
-            return self._dispatch_store
 
-    @property
-    def dispatch_service(self) -> DispatchService:
-        with self._lock:
-            if self._dispatch_service is None:
-                from lara.dispatch import DispatchService
-
-                self._dispatch_service = DispatchService(self.dispatch_store)
-            return self._dispatch_service
-
-    @property
-    def dispatch_scheduler(self) -> DispatchScheduler:
-        with self._lock:
-            if self._dispatch_scheduler is None:
-                from lara.dispatch import DispatchScheduler
-
-                self._dispatch_scheduler = DispatchScheduler(
-                    store=self.dispatch_store,
-                    coordinator=self.session_coordinator,
-                    acquire_runtime=self.acquire_runtime,
-                    config_factory=self._dispatch_config,
+                self._scheduler_store = SchedulerStore(
+                    scheduler_db_path(self.config.pygent_root)
                 )
-            return self._dispatch_scheduler
+            return self._scheduler_store
 
-    def start_dispatch_scheduler(self) -> None:
-        self.dispatch_scheduler.start()
+    def start_scheduler_daemon(self) -> None:
+        """Run the SDK scheduler daemon for this workspace while the API is up.
+
+        The daemon is a blocking poll loop that spawns `lara session run`
+        children, so it lives on its own thread; `lara scheduler run` offers
+        the same daemon as a standalone process.
+        """
+
+        from lara.cli.scheduler import build_daemon
+
+        with self._lock:
+            if self._scheduler_daemon is not None:
+                return
+            daemon = build_daemon(self.config, store=self.scheduler_store)
+            thread = Thread(
+                target=daemon.run_forever, name="lara-scheduler", daemon=True
+            )
+            self._scheduler_daemon = daemon
+            self._scheduler_thread = thread
+        thread.start()
 
     def start_feishu_bridge(self) -> bool:
         """Start the inbound Feishu relay when the bridge config enables it."""
@@ -211,14 +189,6 @@ class ApiContext:
         self._feishu_bridge = FeishuBridge(self)
         return self._feishu_bridge.start()
 
-    def _dispatch_config(self, workspace_root: str, agent_alias: str | None) -> RunConfig:
-        return load_run_config(
-            workspace_root=workspace_root,
-            agent_alias=agent_alias or self.agent_alias,
-            max_steps=self.max_steps,
-            context_window=self.context_window,
-        )
-
     def attach_chat_registry(self, registry: Any) -> None:
         with self._lock:
             if self._chat_registry is not None:
@@ -227,51 +197,48 @@ class ApiContext:
 
     async def aclose(self) -> None:
         with self._lock:
-            dispatch_scheduler = self._dispatch_scheduler
-            self._dispatch_scheduler = None
+            scheduler_daemon = self._scheduler_daemon
+            scheduler_thread = self._scheduler_thread
+            self._scheduler_daemon = None
+            self._scheduler_thread = None
             reminders = self._reminders
             self._reminders = None
             registry = self._chat_registry
             self._chat_registry = None
-            coordinator = self._session_coordinator
             self._session_coordinator = None
-            collaboration = self._session_collaboration
-            self._session_collaboration = None
-            runtime_pool = self._runtime_pool
-            self._runtime_pool = None
+            host = self._execution_host
+            self._execution_host = None
             terminal_service = self._terminal_service
             self._terminal_service = None
-        if dispatch_scheduler is not None:
-            await dispatch_scheduler.close()
+        if scheduler_daemon is not None:
+            scheduler_daemon.stop()
         if terminal_service is not None:
             terminal_service.close()
-        if runtime_pool is not None:
-            await runtime_pool.stop_accepting()
-        if collaboration is not None:
-            await collaboration.aclose()
         if registry is not None:
+            # The registry closes the coordinator it shares with the host.
             await registry.close()
-            coordinator = None
-        if coordinator is not None:
-            await coordinator.close()
-        if runtime_pool is not None:
-            await runtime_pool.close(cancel=True)
+        if host is not None:
+            await host.aclose()
         if reminders is not None:
             await reminders.close()
+        if scheduler_thread is not None:
+            # The poll loop checks the stop flag between sleeps; do not block
+            # shutdown on a task that is mid-flight in a child process.
+            scheduler_thread.join(timeout=1.0)
 
     async def areload(self, overrides: dict[str, Any] | None = None) -> RunConfig:
         with self._lock:
             old_config = self.config
             reminders = self._reminders
             self._reminders = None
-            runtime_pool = self._runtime_pool
+            host = self._execution_host
         if reminders is not None:
             await reminders.close()
         config = self.reload(overrides)
-        if runtime_pool is not None:
+        if host is not None:
             from lara.orchestration import RuntimeScopeKey
 
-            await runtime_pool.retire_scope(RuntimeScopeKey.from_config(old_config))
+            await host.runtime_pool.retire_scope(RuntimeScopeKey.from_config(old_config))
         return config
 
     def reload(self, overrides: dict[str, Any] | None = None) -> RunConfig:
