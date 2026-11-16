@@ -1,6 +1,6 @@
 import { SettingsPage as SettingsPanel } from "../features/settings/SettingsPage.jsx";
 export { SettingsPanel };
-import React, { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   ChevronDown,
   ChevronUp,
@@ -40,6 +40,7 @@ import laraLogo from "../assets/lara-logo.png";
 import { createApiClient } from "../shared/api/client.js";
 import { attachmentDisplayName, attachmentMediaType, isDocumentAttachment, isUploadedAttachment } from "../shared/media/mediaTypes.js";
 import { createSessionGroupSync } from "./sessionGroupSync.js";
+import { createSessionTranscripts } from "./sessionTranscripts.js";
 import {
   CONTEXT_SNAPSHOT_LIMIT,
   SESSION_HISTORY_LIMIT,
@@ -184,7 +185,7 @@ export function App() {
   useEffect(() => sessionGroupSync.start({ window, document }), [sessionGroupSync]);
   const [activeScopeId, setActiveScopeId] = useState("");
   const [activeSession, setActiveSession] = useState(null);
-  const [messages, setMessages] = useState([]);
+  const transcripts = useMemo(() => createSessionTranscripts(), []);
   // Paging state for the active transcript: how many older rows are not
   // loaded yet and whether a page fetch is in flight.
   const [historyEarlier, setHistoryEarlier] = useState({ remaining: 0, loading: false });
@@ -216,10 +217,10 @@ export function App() {
   const [automations, setAutomations] = useState([]);
   const projectChooserBusyRef = useRef(false);
   const activeSessionIdRef = useRef("");
-  const messagesRef = useRef([]);
   const runningSessionIdsRef = useRef({});
-  const pendingSessionMessagesRef = useRef(new Map());
-  const sessionViewCacheRef = useRef(new Map());
+  // Session records cached for the instant preview a session switch paints
+  // before its detail fetch resolves; the transcripts live in the store.
+  const sessionPreviewCacheRef = useRef(new Map());
   // Raw checkpoint rows paged in per session, so tail rebuilds (session
   // switch, freshness poll, turn completion) never truncate loaded history.
   const sessionHistoryRef = useRef(new Map());
@@ -243,6 +244,8 @@ export function App() {
   const prevTraceCollapsedRef = useRef(layout.traceCollapsed);
 
   const activeSessionId = activeSession?.session_id || "";
+  const readActiveMessages = useCallback(() => transcripts.messages(activeSessionId), [transcripts, activeSessionId]);
+  const messages = useSyncExternalStore(transcripts.subscribe, readActiveMessages, readActiveMessages);
   const running = Boolean(activeSessionId && runningSessionIds[activeSessionId]);
   const activeSessionListRecord = useMemo(
     () => flattenSessionGroups(sessionGroups).find((session) => session.session_id === activeSessionId) || null,
@@ -281,10 +284,6 @@ export function App() {
     [speakUnread],
   );
   const laraSaysUnread = laraSays ? (speakUnread[laraSays.session.session_id] || 0) : 0;
-
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
 
   useEffect(() => {
     const matchMedia = globalThis.window?.matchMedia?.bind(globalThis.window);
@@ -444,19 +443,14 @@ export function App() {
       sessionLoadTokenRef.current = sessionToken;
       traceLoadTokenRef.current += 1;
       const traceToken = traceLoadTokenRef.current;
-      const cachedView = sessionViewCacheRef.current.get(sessionId);
-      const visiblePreviewSession = previewSession || cachedView?.session || null;
+      const visiblePreviewSession = previewSession || sessionPreviewCacheRef.current.get(sessionId) || null;
       if (visiblePreviewSession) {
         activeSessionIdRef.current = visiblePreviewSession.session_id || sessionId;
         setActiveSession(visiblePreviewSession);
       }
       setStatus("Loading");
       setNotice("");
-      const pendingMessages = pendingSessionMessagesRef.current.get(sessionId);
-      const previewMessages = selectSessionMessages(pendingMessages, cachedView?.messages || []);
       const previewLiveEvents = sessionLiveEventsRef.current.get(sessionId) || [];
-      messagesRef.current = previewMessages;
-      setMessages(previewMessages);
       setTraceEvents([]);
       setTraceWindow(EMPTY_TRACE_WINDOW);
       setLiveEvents(previewLiveEvents);
@@ -475,10 +469,8 @@ export function App() {
           throw err;
         }
         activeSessionIdRef.current = "";
-        messagesRef.current = [];
         sessionHistoryRef.current.delete(sessionId);
         setActiveSession(null);
-        setMessages([]);
         setHistoryEarlier({ remaining: 0, loading: false });
         setTraceEvents([]);
         setTraceWindow(EMPTY_TRACE_WINDOW);
@@ -507,9 +499,6 @@ export function App() {
       if (sessionToken !== sessionLoadTokenRef.current) {
         return;
       }
-      const latestPendingMessages = pendingSessionMessagesRef.current.get(sessionId);
-      const liveTranscriptShown = Array.isArray(latestPendingMessages) && latestPendingMessages.length > 0;
-      const resolvedMessages = selectSessionMessages(latestPendingMessages, nextMessages);
       setHistoryEarlier({ remaining: historyBeforeCount, loading: false });
       activeSessionIdRef.current = detail.session.session_id || sessionId;
       const loadedSession = sessionFromDetail(detail);
@@ -518,19 +507,16 @@ export function App() {
       // rendered; a fresh load is the new baseline (and cancels its own
       // racing background attempt).
       activeSessionSync.observeDetail(detail);
-      messagesRef.current = resolvedMessages;
-      setMessages(resolvedMessages);
+      transcripts.setHistory(sessionId, nextMessages);
+      const resolvedMessages = transcripts.messages(sessionId);
       setPendingSteerings((items) => reconcilePendingSteerings(items, sessionId, resolvedMessages));
       // The collapse token folds a freshly rendered historical view; a session
       // whose live transcript is still shown (kept after an interrupt) keeps
       // its expansion state instead.
-      if (!liveTranscriptShown) {
+      if (!transcripts.hasLive(sessionId)) {
         setActivityCollapseToken((value) => value + 1);
       }
-      rememberSessionView(sessionViewCacheRef.current, sessionId, {
-        session: loadedSession,
-        messages: resolvedMessages,
-      });
+      rememberSessionEntry(sessionPreviewCacheRef.current, sessionId, loadedSession, 5);
       setStatus(runningSessionIdsRef.current[sessionId] ? "Running" : "Ready");
       if (resumeExecution && detail.runtime_execution_id && !runningSessionIdsRef.current[sessionId]) {
         resumeSessionRef.current?.(detail);
@@ -549,7 +535,7 @@ export function App() {
         historyTotal: detail.history_total ?? resolvedMessages.length,
       });
     },
-    [api, loadTrace],
+    [api, loadTrace, transcripts],
   );
 
   const handleLoadEarlierMessages = useCallback(
@@ -585,14 +571,9 @@ export function App() {
         if (activeSessionIdRef.current !== sessionId) {
           return;
         }
-        // A transcript this client still owns (a running turn, or one kept on
-        // screen after an interrupt) keeps painting; the rows still land in
-        // the session store for the next rebuild.
-        const pendingLiveMessages = pendingSessionMessagesRef.current.get(sessionId);
-        if (!(Array.isArray(pendingLiveMessages) && pendingLiveMessages.length > 0)) {
-          messagesRef.current = historyToMessages(historyRows);
-          setMessages(messagesRef.current);
-        }
+        // A live transcript this client still owns keeps painting; the rows
+        // land behind it for the next rebuild.
+        transcripts.setHistory(sessionId, historyToMessages(historyRows));
         setHistoryEarlier({ remaining, loading: false });
       } catch (err) {
         if (activeSessionIdRef.current === sessionId) {
@@ -605,7 +586,7 @@ export function App() {
         setHistoryEarlier((current) => (current.loading ? { ...current, loading: false } : current));
       }
     },
-    [api, activeSession?.scope_id],
+    [api, activeSession?.scope_id, transcripts],
   );
 
   const refreshWorkbench = useCallback(
@@ -632,9 +613,7 @@ export function App() {
         sessionLoadTokenRef.current += 1;
         traceLoadTokenRef.current += 1;
         activeSessionIdRef.current = "";
-        messagesRef.current = [];
         setActiveSession(null);
-        setMessages([]);
         setHistoryEarlier({ remaining: 0, loading: false });
         setTraceEvents([]);
         setTraceWindow(EMPTY_TRACE_WINDOW);
@@ -684,9 +663,10 @@ export function App() {
       sessionLoadTokenRef.current += 1;
       traceLoadTokenRef.current += 1;
       activeSessionIdRef.current = "";
-      messagesRef.current = [];
+      // A new chat that failed before naming its session left its transcript
+      // under the empty key; the next new chat starts clean.
+      transcripts.clearLive("");
       setActiveSession(null);
-      setMessages([]);
       setHistoryEarlier({ remaining: 0, loading: false });
       setTraceEvents([]);
       setTraceWindow(EMPTY_TRACE_WINDOW);
@@ -698,7 +678,7 @@ export function App() {
     } catch (err) {
       setError(readableError(err));
     }
-  }, [api, refreshWorkbench, settings.workspace_root]);
+  }, [api, refreshWorkbench, settings.workspace_root, transcripts]);
 
   const handleDeleteSession = useCallback(
     async (sessionId, scope) => {
@@ -708,8 +688,8 @@ export function App() {
           await api.updateSettings({ workspaceRoot: scope.workspace_root });
         }
         await api.deleteSession(sessionId, { scopeId: scope?.scope_id });
-        pendingSessionMessagesRef.current.delete(sessionId);
-        sessionViewCacheRef.current.delete(sessionId);
+        transcripts.delete(sessionId);
+        sessionPreviewCacheRef.current.delete(sessionId);
         sessionHistoryRef.current.delete(sessionId);
         sessionLiveEventsRef.current.delete(sessionId);
         composerDraftsRef.current.delete(sessionId);
@@ -719,7 +699,7 @@ export function App() {
         setError(readableError(err));
       }
     },
-    [api, refreshWorkbench, settings.workspace_root],
+    [api, refreshWorkbench, settings.workspace_root, transcripts],
   );
 
   const handleForkSession = useCallback(
@@ -920,7 +900,9 @@ export function App() {
       }
       const assistantId = `assistant-${Date.now()}`;
       let streamSessionId = initialSessionId || null;
-      let streamMessages = messagesRef.current;
+      // The transcript keys on the session; a new chat streams under the
+      // empty key until pygent.v1.chat.started names its session.
+      const streamKey = () => streamSessionId || "";
       let streamEvents = [];
       const streamScopeId = recovery?.session.scope_id || activeSession?.scope_id || pendingNewSessionScope || undefined;
       const startedWithoutSession = !streamSessionId;
@@ -941,27 +923,17 @@ export function App() {
           : startedWithoutSession && !currentSessionId;
       };
 
-      const updateCachedMessages = (updater) => {
-        if (!streamSessionId) {
-          return;
-        }
-        const current = pendingSessionMessagesRef.current.get(streamSessionId) || streamMessages;
-        const next = updater(current);
-        streamMessages = next;
-        rememberSessionEntry(pendingSessionMessagesRef.current, streamSessionId, next);
-      };
-
       // Re-attaching to a running execution replays its journal from the
       // start (no attach cursor yet — see the comment at the streamChat call
-      // below). Replayed events still project into the cache immediately,
-      // but the view only paints on the slow flush cadence, so the backlog
-      // does not re-stream through the transcript.
+      // below). Replayed events still project into the transcript at once,
+      // but subscribers only hear about it on the slow flush cadence, so the
+      // backlog does not re-stream through the view.
       let replayCatchup = Boolean(recovery);
       let replayFlushTimer = null;
       const flushReplayView = () => {
         replayFlushTimer = null;
+        transcripts.notify();
         if (isStreamSessionVisible()) {
-          setMessages(streamMessages);
           setLiveEvents(streamEvents);
         }
       };
@@ -981,16 +953,12 @@ export function App() {
         return wasReplaying;
       };
 
-      const updateVisibleMessages = (updater) => {
-        updateCachedMessages(updater);
-        if (!isStreamSessionVisible()) {
-          return;
-        }
+      const updateLiveMessages = (updater) => {
+        const next = transcripts.updateLive(streamKey(), updater, { silent: replayCatchup });
         if (replayCatchup) {
           scheduleReplayViewFlush();
-          return;
         }
-        setMessages(updater);
+        return next;
       };
 
       // Stream deltas arrive in bursts faster than frames: buffer them and
@@ -1006,7 +974,7 @@ export function App() {
         const events = pendingDeltaEvents;
         pendingDeltaEvents = [];
         for (const event of events) {
-          projectLiveExecutionEvent(updateVisibleMessages, activeAssistantId, event);
+          projectLiveExecutionEvent(updateLiveMessages, activeAssistantId, event);
         }
       };
       const scheduleDeltaFlush = () => {
@@ -1022,7 +990,7 @@ export function App() {
         // boundary; a mismatch must surface through the shared catch below so
         // the session is not left flagged running with an unhandled rejection.
         const nextMessages = recovery ? messagesForRecovery(recovery, assistantId) : [
-          ...messagesRef.current,
+          ...transcripts.messages(streamKey()),
           // A resume carries no user input: the transcript shows only the
           // system reminder line before the assistant turn continues.
           ...(resume ? [{ id: `resume-${Date.now()}`, role: "resume" }] : [{
@@ -1043,17 +1011,14 @@ export function App() {
           },
         ];
         if (initialSessionId) {
-          rememberSessionEntry(pendingSessionMessagesRef.current, initialSessionId, nextMessages);
           rememberSessionEntry(sessionLiveEventsRef.current, initialSessionId, streamEvents);
         }
-        streamMessages = nextMessages;
-        messagesRef.current = nextMessages;
-        setMessages(nextMessages);
+        transcripts.setLive(streamKey(), nextMessages);
 
         // Recovery attaches without afterSequence, and pygent then subscribes
         // from the execution's first event: the whole journal streams back
         // before the live tail. The replay-catchup mode around
-        // updateVisibleMessages only hides the re-streaming visuals; the
+        // updateLiveMessages only hides the re-streaming visuals; the
         // transfer and projection cost remains. If that cost matters, the
         // fix is a protocol change: an attach cursor (last-seen sequence or
         // turn-start marker) honored by the server and sent by this client.
@@ -1083,8 +1048,8 @@ export function App() {
                 // tail: paint the accumulated state once and resume normal
                 // streaming cadence.
                 endReplayCatchup();
+                transcripts.notify();
                 if (isStreamSessionVisible()) {
-                  setMessages(streamMessages);
                   setLiveEvents(streamEvents);
                 }
               }
@@ -1095,10 +1060,14 @@ export function App() {
                 // from the new-chat view, and only while the user stayed there.
                 const followSession = isStreamSessionVisible()
                   && sessionLoadTokenRef.current === initialLoadToken;
+                const unboundMessages = transcripts.live("");
                 streamSessionId = eventSessionId;
                 setSessionRunning(eventSessionId, true);
                 setLiveContextUsage((current) => omitKey(current, eventSessionId));
-                rememberSessionEntry(pendingSessionMessagesRef.current, eventSessionId, streamMessages);
+                if (unboundMessages) {
+                  transcripts.setLive(eventSessionId, unboundMessages);
+                  transcripts.clearLive("");
+                }
                 if (followSession) {
                   activeSessionIdRef.current = eventSessionId;
                   setActiveSession((current) => current || {
@@ -1171,7 +1140,7 @@ export function App() {
                 // Queued deltas apply first so structural events (steering
                 // split, tool calls, completion) always read current messages.
                 flushDeltaEvents();
-                projectLiveExecutionEvent(updateVisibleMessages, activeAssistantId, data);
+                projectLiveExecutionEvent(updateLiveMessages, activeAssistantId, data);
               }
               // The runtime announces the ReAct boundary it drained a steering
               // input on: that is where the transcript splits and the input stops
@@ -1179,15 +1148,12 @@ export function App() {
               if (eventKind === "pygent.v1.runtime.message" && eventData.role === "user" && eventData.kind === "pygent.v1.user.steering") {
                 const inputId = String(eventData.data?.input_id || "");
                 const newAssistantId = `assistant-${Date.now()}`;
-                const nextMessages = splitAssistantForSteering(
-                  streamMessages, activeAssistantId, inputId, String(eventData.content || ""), newAssistantId,
+                const before = transcripts.live(streamKey());
+                const after = updateLiveMessages((items) => splitAssistantForSteering(
+                  items, activeAssistantId, inputId, String(eventData.content || ""), newAssistantId,
                   Date.now(), eventData.data?.attachments,
-                );
-                if (nextMessages !== streamMessages) {
-                  streamMessages = nextMessages;
-                  updateCachedMessages(() => nextMessages);
-                  messagesRef.current = nextMessages;
-                  if (isStreamSessionVisible()) setMessages(() => nextMessages);
+                ));
+                if (after !== before) {
                   activeAssistantId = newAssistantId;
                 }
                 setPendingSteerings((items) => resolvePendingSteering(items, streamSessionId, inputId));
@@ -1211,10 +1177,7 @@ export function App() {
                   }],
                   frontSpeak: true,
                 };
-                streamMessages = [...(streamMessages || []), speakRow];
-                updateCachedMessages(() => streamMessages);
-                messagesRef.current = streamMessages;
-                if (isStreamSessionVisible()) setMessages(() => streamMessages);
+                updateLiveMessages((items) => [...items, speakRow]);
                 if (loadViewMode(streamSessionId) !== "front") {
                   setSpeakUnread((items) => ({
                     ...items,
@@ -1254,20 +1217,18 @@ export function App() {
           },
         );
         const wasReplaying = endReplayCatchup();
-        if (wasReplaying && isStreamSessionVisible()) {
-          setMessages(streamMessages);
-          setLiveEvents(streamEvents);
+        if (wasReplaying) {
+          transcripts.notify();
+          if (isStreamSessionVisible()) setLiveEvents(streamEvents);
         }
         flushDeltaEvents();
         const currentSessionId = activeSessionIdRef.current;
-        if (streamSessionId) {
-          if (finalStatus === "Skipped") {
-            // A cancelled turn keeps the live transcript on screen: rebuilding
-            // from history would remount every activity block collapsed.
-            rememberSessionEntry(pendingSessionMessagesRef.current, streamSessionId, streamMessages);
-          } else {
-            pendingSessionMessagesRef.current.delete(streamSessionId);
-          }
+        // A cancelled turn keeps its live transcript: rebuilding from history
+        // would remount every activity block collapsed. Any other ending
+        // commits it as the session's transcript until the reload below (or
+        // the next visit) replaces it with persisted history.
+        if (streamSessionId && finalStatus !== "Skipped") {
+          transcripts.commitLive(streamSessionId);
         }
         if (streamSessionId && currentSessionId === streamSessionId) {
           await refreshWorkbench({ resumeExecution: false, selectSessionId: streamSessionId });
@@ -1286,7 +1247,7 @@ export function App() {
         }
         setError(readableError(err));
         flushDeltaEvents();
-        projectLiveExecutionEvent(updateVisibleMessages, activeAssistantId, {
+        projectLiveExecutionEvent(updateLiveMessages, activeAssistantId, {
           kind: "lara.transport.error",
           data: { error: readableError(err) },
         });
@@ -1302,7 +1263,7 @@ export function App() {
         }
       }
     },
-    [activeSession?.scope_id, api, pendingNewModelGroup, pendingNewModelKey, pendingNewSessionScope, refreshWorkbench, sessionGroupSync, setSessionRunning, settings.default_model_group],
+    [activeSession?.scope_id, api, pendingNewModelGroup, pendingNewModelKey, pendingNewSessionScope, refreshWorkbench, sessionGroupSync, setSessionRunning, settings.default_model_group, transcripts],
   );
   resumeSessionRef.current = (detail) => handleSendMessage("", detail);
 
@@ -1356,12 +1317,10 @@ export function App() {
         sessionLiveEventsRef.current.delete(sessionId);
         setLiveEvents((current) => current.length ? [] : current);
         const messagesHistorySignature = sessionHistorySignature(detail);
-        const pendingLiveMessages = pendingSessionMessagesRef.current.get(sessionId);
         // A transcript this client still owns (a running turn, or one kept
-        // on screen after an interrupt) wins over the persisted history
-        // snapshot, or the rebuild would remount every activity collapsed.
-        if (messagesHistorySignatureRef.current !== messagesHistorySignature
-          && !(Array.isArray(pendingLiveMessages) && pendingLiveMessages.length > 0)) {
+        // on screen after an interrupt) keeps painting; the snapshot lands
+        // behind it so the rebuild never remounts every activity collapsed.
+        if (messagesHistorySignatureRef.current !== messagesHistorySignature) {
           messagesHistorySignatureRef.current = messagesHistorySignature;
           // The freshness page replaces its own tail range; older rows the
           // user paged in survive so the poll never truncates the transcript
@@ -1376,19 +1335,15 @@ export function App() {
             beforeCount: historyBeforeCount,
           });
           const nextMessages = historyToMessages(historyRows);
-          messagesRef.current = nextMessages;
-          setMessages(nextMessages);
+          transcripts.setHistory(sessionId, nextMessages);
           setHistoryEarlier({ remaining: historyBeforeCount, loading: false });
           setPendingSteerings((items) => reconcilePendingSteerings(items, sessionId, nextMessages));
-          rememberSessionView(sessionViewCacheRef.current, sessionId, {
-            session: loadedSession,
-            messages: nextMessages,
-          });
+          rememberSessionEntry(sessionPreviewCacheRef.current, sessionId, loadedSession, 5);
         }
       },
       includeContextSnapshots: () => !traceCollapsedRef.current,
     }),
-    [api],
+    [api, transcripts],
   );
   useEffect(() => () => activeSessionSync.dispose(), [activeSessionSync]);
 
@@ -1436,7 +1391,7 @@ export function App() {
           }],
           frontSpeak: true,
         };
-        setMessages((items) => [...items, forkRow]);
+        transcripts.updateLive(sessionId, (items) => [...items, forkRow]);
       }
       if (activeSessionIdRef.current === sessionId) {
         setNotice("已在不打断工作的情况下回复你。");
@@ -1447,7 +1402,7 @@ export function App() {
     if (activeSessionIdRef.current === sessionId) {
       setNotice("已排队：当前回合结束后作为下一轮开始。");
     }
-  }, [activeSession?.scope_id, api]);
+  }, [activeSession?.scope_id, api, transcripts]);
 
   const handleCancelTurn = useCallback(async () => {
     const sessionId = activeSessionIdRef.current;
@@ -4662,12 +4617,6 @@ function contextMessageSummary(message) {
   return String(message?.kind || "");
 }
 
-export function selectSessionMessages(pendingMessages, historyMessages) {
-  return Array.isArray(pendingMessages) && pendingMessages.length > 0
-    ? pendingMessages
-    : historyMessages;
-}
-
 export function appendSessionLiveTraceEvent(cache, sessionId, currentEvents, event, limit = TRACE_RENDER_LIMIT) {
   const events = Array.isArray(currentEvents) ? currentEvents : [];
   if (event?.id && events.some((item) => item.id === event.id)) {
@@ -5021,8 +4970,8 @@ export function reconcilePendingSteerings(pending, sessionId, messages) {
   return next.length ? { ...pending, [sessionId]: next } : omitKey(pending, sessionId);
 }
 
-function projectLiveExecutionEvent(setMessages, assistantId, event) {
-  setMessages((items) => {
+function projectLiveExecutionEvent(updateMessages, assistantId, event) {
+  updateMessages((items) => {
     let changed = false;
     const next = items.map((item) => {
       if (item.id !== assistantId) {
@@ -5723,9 +5672,8 @@ function sessionDetailSignature(session) {
 }
 
 // Bounded per-session map entry with LRU eviction (recency refresh on
-// re-write, so an actively streaming session can never evict itself). A
-// session dropped from such a cache simply falls back to the API fetches the
-// session-switch path already performs.
+// re-write). A session dropped from such a cache simply falls back to the
+// API fetches the session-switch path already performs.
 export function rememberSessionEntry(cache, sessionId, entry, limit = 8) {
   if (!cache || !sessionId) return entry;
   cache.delete(sessionId);
@@ -5734,10 +5682,6 @@ export function rememberSessionEntry(cache, sessionId, entry, limit = 8) {
     cache.delete(cache.keys().next().value);
   }
   return entry;
-}
-
-export function rememberSessionView(cache, sessionId, view, limit = 5) {
-  return rememberSessionEntry(cache, sessionId, view, limit);
 }
 
 // Paged-in raw history per session, bounded like the view cache: a session

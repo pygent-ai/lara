@@ -1729,28 +1729,6 @@ test("initial workbench load does not hide configuration errors", async () => {
   assert.equal(calls, 1);
 });
 
-test("session history survives switching away while another session is running", () => {
-  const persisted = [{ id: "persisted", role: "assistant", content: "Saved answer" }];
-  const live = [
-    { id: "user-live", role: "user", content: "Keep working" },
-    { id: "assistant-live", role: "assistant", content: "Still working", status: "running" },
-  ];
-
-  assert.equal(appModule.selectSessionMessages(live, persisted), live);
-  assert.equal(appModule.selectSessionMessages([], persisted), persisted);
-  assert.equal(appModule.selectSessionMessages(undefined, persisted), persisted);
-});
-
-test("session view cache is a bounded least-recently-used map", () => {
-  const cache = new Map();
-  appModule.rememberSessionView(cache, "one", { messages: [1] }, 2);
-  appModule.rememberSessionView(cache, "two", { messages: [2] }, 2);
-  appModule.rememberSessionView(cache, "one", { messages: [3] }, 2);
-  appModule.rememberSessionView(cache, "three", { messages: [4] }, 2);
-  assert.deepEqual([...cache.keys()], ["one", "three"]);
-  assert.deepEqual(cache.get("one").messages, [3]);
-});
-
 test("session live events survive switching away while another session is running", () => {
   const cache = new Map();
   const first = { id: "execution-1", type: "model.started" };
