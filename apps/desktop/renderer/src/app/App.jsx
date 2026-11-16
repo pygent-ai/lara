@@ -1245,8 +1245,10 @@ export function App() {
               }
               if (["execution.completed", "execution.failed", "execution.deadline_exceeded", "execution.cancelled"].includes(eventKind)) {
                 setApprovals((items) => items.filter((item) => item.session_id !== streamSessionId));
-                // No boundary reported for these inputs: the turn ended first.
-                setPendingSteerings((items) => stalePendingSteerings(items, streamSessionId));
+                // An input still pending here was queued as the next turn,
+                // which starts now: its user row arrives with that turn's
+                // transcript, so the chip has nothing left to stand in for.
+                setPendingSteerings((items) => omitKey(items, streamSessionId));
               }
             },
           },
@@ -2784,7 +2786,7 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
         {pendingSteerings.map((item) => (
           <article className="message user message-enter pending-steering" key={`pending-${item.inputId}`}>
             <div className="bubble">
-              <span className="pending-steering-label">{item.stale ? "未生效 · 本轮已结束" : (realtimeInteractionEnabled ? "已送达 · 不打断当前工作" : "已排队 · 当前回合结束后开始")}</span>
+              <span className="pending-steering-label">{realtimeInteractionEnabled ? "已送达 · 不打断当前工作" : "已排队 · 当前回合结束后开始"}</span>
               {item.text}
               {Array.isArray(item.attachments) && item.attachments.length > 0 && (
                 <span className="message-attachments">
@@ -4968,8 +4970,10 @@ export function splitAssistantForSteering(items, assistantId, inputId, content, 
   ];
 }
 
-// A steering input is shown as soon as it is sent, but it only belongs to the
-// transcript once the runtime reports the ReAct boundary that consumed it.
+// A message sent during a running turn is shown as soon as it is sent and
+// stays pending until it belongs to the transcript: a realtime session applies
+// it at the next ReAct boundary (and answers through the fork reply); any
+// other session starts it as the next turn once the running one ends.
 export function addPendingSteering(pending, sessionId, entry) {
   if (!sessionId) {
     return pending;
@@ -4978,7 +4982,7 @@ export function addPendingSteering(pending, sessionId, entry) {
   if (current.some((item) => item.inputId === entry.inputId)) {
     return pending;
   }
-  return { ...pending, [sessionId]: [...current, { ...entry, stale: false }] };
+  return { ...pending, [sessionId]: [...current, entry] };
 }
 
 export function resolvePendingSteering(pending, sessionId, inputId) {
@@ -4993,18 +4997,10 @@ export function resolvePendingSteering(pending, sessionId, inputId) {
   return next.length ? { ...pending, [sessionId]: next } : omitKey(pending, sessionId);
 }
 
-export function stalePendingSteerings(pending, sessionId) {
-  const current = pending[sessionId];
-  if (!current?.length || current.every((item) => item.stale)) {
-    return pending;
-  }
-  return { ...pending, [sessionId]: current.map((item) => ({ ...item, stale: true })) };
-}
-
 // A reloaded transcript is the source of truth for which steering inputs the
-// runtime consumed: the live boundary event can be missed when the turn ends
-// or the stream tears down first, and the stale chip would otherwise claim
-// "未生效" for an input that history shows was applied.
+// runtime consumed: the live boundary event can be missed when the stream
+// tears down first, and the chip would otherwise duplicate a row that history
+// shows was applied.
 export function reconcilePendingSteerings(pending, sessionId, messages) {
   const current = pending[sessionId];
   if (!current?.length) {

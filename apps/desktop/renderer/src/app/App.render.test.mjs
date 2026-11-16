@@ -410,8 +410,8 @@ test("running chat allows editing and queues the next message", () => {
     activeSession: { session_id: "session-1", scope_id: "conversation" },
     messages: [{ id: "user-1", role: "user", content: "hello" }],
     pendingSteerings: [
-      { inputId: "input-1", text: "focus on tests", stale: false },
-      { inputId: "input-2", text: "use Chinese", stale: true },
+      { inputId: "input-1", text: "focus on tests" },
+      { inputId: "input-2", text: "use Chinese" },
     ],
     settings: {}, status: "Running", running: true, steeringReady: true, approvals: [],
     onCancelTurn: async () => {},
@@ -426,8 +426,7 @@ test("running chat allows editing and queues the next message", () => {
   // Queued inputs accept attachments too, so the attach button stays mounted.
   assert.match(html, /aria-label="添加附件"/);
   // A sent input stays visibly pending until the queued turn starts.
-  assert.match(html, /已排队 · 当前回合结束后开始/);
-  assert.match(html, /未生效 · 本轮已结束/);
+  assert.equal(html.match(/已排队 · 当前回合结束后开始/g).length, 2);
   assert.match(html, /focus on tests/);
   assert.match(html, /use Chinese/);
 });
@@ -450,7 +449,7 @@ test("the realtime session tells the user a running turn answers without interru
   const html = renderToStaticMarkup(React.createElement(appModule.ChatPane, {
     activeSession: { session_id: "says", scope_id: "pygent.v1-says", mode: "pygent.v1-says" },
     messages: [{ id: "user-1", role: "user", content: "hello" }],
-    pendingSteerings: [{ inputId: "input-1", text: "进度如何", stale: false }],
+    pendingSteerings: [{ inputId: "input-1", text: "进度如何" }],
     settings: {}, status: "Running", running: true, steeringReady: true, approvals: [],
     realtimeInteractionEnabled: true,
     onCancelTurn: async () => {},
@@ -811,7 +810,7 @@ test("steering waits for the react boundary, then moves new activity below it", 
   // Sent while call-1 is still running: the input is pending, the transcript is untouched.
   const entry = { inputId: "input-1", text: "focus on tests" };
   let pending = appModule.addPendingSteering({}, "session-1", entry);
-  assert.deepEqual(pending["session-1"], [{ ...entry, stale: false }]);
+  assert.deepEqual(pending["session-1"], [entry]);
   assert.equal(appModule.addPendingSteering(pending, "session-1", entry), pending);
 
   // The runtime reports the boundary it consumed the input on: the input enters
@@ -833,34 +832,18 @@ test("steering waits for the react boundary, then moves new activity below it", 
   assert.deepEqual(projected[0].sections[0].calls.map((call) => call.id), ["call-1"]);
   assert.deepEqual(projected[2].sections[0].calls.map((call) => call.id), ["call-2"]);
 
-  // A turn that ends before the boundary never applied the input.
-  const stale = appModule.stalePendingSteerings(
-    appModule.addPendingSteering({}, "session-1", { inputId: "input-2", text: "use Chinese" }),
-    "session-1",
-  );
-  assert.deepEqual(stale["session-1"], [{ inputId: "input-2", text: "use Chinese", stale: true }]);
-  assert.equal(appModule.stalePendingSteerings(stale, "session-1"), stale);
-
   // A reloaded transcript proves which inputs the runtime actually consumed:
-  // the boundary event can be missed when the turn is interrupted first.
+  // the boundary event can be missed when the stream tears down first.
   const reloaded = [
     { id: "history-0", role: "user", content: "focus on tests", steeringInputId: "input-1" },
     { id: "history-1", role: "assistant", content: "ok" },
   ];
-  let interrupted = appModule.stalePendingSteerings(
-    appModule.addPendingSteering({}, "session-1", { inputId: "input-1", text: "focus on tests" }),
-    "session-1",
-  );
-  assert.deepEqual(appModule.reconcilePendingSteerings(interrupted, "session-1", reloaded), {});
-  // An input that history does not contain was never applied and stays pending.
-  interrupted = appModule.stalePendingSteerings(
-    appModule.addPendingSteering({}, "session-1", { inputId: "input-2", text: "use Chinese" }),
-    "session-1",
-  );
-  const kept = appModule.reconcilePendingSteerings(interrupted, "session-1", reloaded);
-  assert.deepEqual(kept["session-1"], [{ inputId: "input-2", text: "use Chinese", stale: true }]);
-  assert.equal(appModule.reconcilePendingSteerings(kept, "session-1", reloaded), kept);
-  assert.equal(appModule.reconcilePendingSteerings(interrupted, "session-1", []), interrupted);
+  const consumed = appModule.addPendingSteering({}, "session-1", { inputId: "input-1", text: "focus on tests" });
+  assert.deepEqual(appModule.reconcilePendingSteerings(consumed, "session-1", reloaded), {});
+  // An input that history does not contain is still pending.
+  const queued = appModule.addPendingSteering({}, "session-1", { inputId: "input-2", text: "use Chinese" });
+  assert.equal(appModule.reconcilePendingSteerings(queued, "session-1", reloaded), queued);
+  assert.equal(appModule.reconcilePendingSteerings(queued, "session-1", []), queued);
 });
 
 test("desktop app renders its initial workbench", async () => {
