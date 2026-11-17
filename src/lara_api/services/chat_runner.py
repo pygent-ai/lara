@@ -374,9 +374,10 @@ class ChatRunRegistry:
     async def _deliver(
         self, context: ApiContext, request: ChatTurnRequest
     ) -> ActiveChatRun | ForkReplyRun:
-        """Route a user message through the SDK's unified entry.
+        """Route a user message through the host's unified entry.
 
         A realtime session with a running turn answers through a fork reply;
+        a plain session with a running turn is steered by the message;
         everything else starts (or lane-queues) a turn.
         """
 
@@ -403,6 +404,8 @@ class ChatRunRegistry:
                 reply=fork_reply_payload(delivery),
             )
         assert delivery.turn is not None
+        # A steering delivery joined the running turn: the stream re-attaches
+        # to it and shows the boundary that drains the message.
         await delivery.turn.wait_ready()
         return ActiveChatRun(delivery.turn)
 
@@ -419,8 +422,10 @@ class ChatRunRegistry:
         """Deliver while the client already streams the session's running turn.
 
         Returns the routing outcome instead of a stream: an interrupt's reply
-        rides the response; a queued turn starts after the running one and
-        the client re-attaches through the session follow loop.
+        rides the response; a steered message is announced on the running
+        turn's stream at the boundary that drains it; a queued turn starts
+        after the running one and the client re-attaches through the session
+        follow loop.
         """
 
         service = session_service_for_scope(context, scope_id)
@@ -440,6 +445,14 @@ class ChatRunRegistry:
                 "mode": "interrupt",
                 "input_id": input_id,
                 "reply": fork_reply_payload(delivery),
+            }
+        if delivery.mode == "steering":
+            assert delivery.turn is not None  # steering joined a running turn
+            return {
+                "mode": "steering",
+                "input_id": input_id,
+                "session_id": session_id,
+                "execution_id": delivery.turn.execution_id,
             }
         return {"mode": "turn", "input_id": input_id, "session_id": session_id}
 

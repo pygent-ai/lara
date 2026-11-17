@@ -94,13 +94,15 @@
 
 1. **pygent 0.6.1 发 PyPI 后**：删 `pyproject.toml` 的 `[tool.uv.sources] pygent-ai = { path = "../pygent" }`，`uv lock`。
 2. 向 pygent 推上游 [`upstream-issues.md`](upstream-issues.md) 剩余两项：#8 `SessionManager.create` 指定 id（修了可删 `SessionManager.ensure` 的 `_new_session_id` 覆盖），#9 `realtime_enabled_for` 可配置（A(b) 的前提）。其余已在 0.6.1/0.6.2 修复。
-3. 桌面端：实际跑一遍"普通会话运行中发消息 → 排队 → 跟随循环附着"的链路（只有 render 测试覆盖，没有交互验证）；`realtimeView.js` 里 `role === "automation"` 分支和 `pygent.v1.automation.trigger` 渲染已无生产者，可删。
+3. 桌面端：实际跑一遍"普通会话运行中发消息 → 立即打断当前步骤 → 边界事件收掉 chip"以及回退链路"无法注入 → 排队 → 跟随循环附着"（只有 render 测试覆盖，没有交互验证）；`realtimeView.js` 里 `role === "automation"` 分支和 `pygent.v1.automation.trigger` 渲染已无生产者，可删。
 4. 环境项：`test_eternal_conversation.py` 8 个红依赖 `C:/Projects/memory-cli/skills/dynamic-memory-cli/scripts/dynamic_memory_cli.py`；worktree 的 Electron 二进制未装（`npm ci --ignore-scripts`）。
 5. 可选：Windows 自启动 `lara scheduler run`，让定时任务不依赖桌面 app 开着。
 
 ## 6. 已决策：用户消息投递（原"适配器瘦身"讨论）
 
-用户拍板 **A(a)**：lara 不再有 steering；一律 `deliver_user_message`，SDK 现状只对「Lara说」实时会话 fork，普通会话排队。实现见会话 7。保留 `cancel_turn`（取消是另一个功能，孤儿执行仍需 runtime handle）。
+会话 7 用户拍板 **A(a)**：lara 不再有 steering；一律 `deliver_user_message`，SDK 现状只对「Lara说」实时会话 fork，普通会话排队。实现见会话 7。保留 `cancel_turn`（取消是另一个功能，孤儿执行仍需 runtime handle）。
+
+**后续修订（普通会话恢复立即打断）**：A(a) 上线后普通会话"打断"实际是排队，用户要求普通会话沿用旧行为——立即打断、支持附件；只有「Lara说」不打断。react 层的 IMMEDIATE steering 机制和 `execution_handle.send_input` 通道在 0.6.2 里都在，缺的只是 pygent_v1 的宿主入口，所以在 lara 侧补：`LocalExecutionHost.deliver_user_message` 覆盖为三路——says 运行中 → SDK fork；普通会话运行中 → `SessionExecutionCoordinator.deliver_steering`（照 SDK `deliver_exchange` 的结构向 lane 上的 RUNNING turn 注入 `pygent.v1.user.steering`，`runtime.steering.mode` 选 IMMEDIATE/WAIT，附件走 `resolve_attachments`/`build_media_blocks`）；注入不成（无运行中 turn、未就绪、inbox 已封）→ 回退 SDK 排队。`UserDelivery` 增加 `mode="steering"`（`turn` 为被打断的 turn，`input_id` 为边界事件会带的 id）；`POST /chat/sessions/{id}/messages` 回 `{"mode": "steering", "execution_id": ...}`，`/chat/stream` 对 steering 重新附着到运行中 turn 的流。桌面端 chip 三态：待生效（打断）/已排队（回退）/未生效（本轮结束未消费）。不碰 SDK 的 7 处 `realtime_enabled_for` 门控，upstream #9 不再是前提。
 
 ## 7. 已决策：SDK scheduler 取代 lara dispatch
 

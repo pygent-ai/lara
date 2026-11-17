@@ -44,13 +44,16 @@ uv run lara session create --case <case_id> --mode chat
 
 ## 消息投递模型
 
-CLI、HTTP API 和桌面端都通过 SDK 的统一入口
-`LocalExecutionHost.deliver_user_message` 投递用户消息：
+CLI、HTTP API 和桌面端都通过统一入口 `LocalExecutionHost.deliver_user_message`
+投递用户消息（lara 在 SDK 路由前加了一条普通会话的 steering 路由）：
 
 - 「Lara说」实时会话且有回合正在运行：消息 **fork** 当前上下文，单次调用模型
   强制回复用户（speak），这段问答封成信封交回正在运行的回合，在它下一个步骤
   边界生效，不打断工作；
-- 其他情况（普通会话、空闲的实时会话、新会话）：开始或排队一个真实回合。
+- 普通会话且有回合正在运行：消息作为 **steering** 注入正在运行的执行
+  （`runtime.steering.mode` 默认 `immediate`：打断当前步骤，作为下一次模型输入），
+  可带附件；
+- 其他情况（空闲会话、新会话、运行中回合无法接收输入）：开始或排队一个真实回合。
 
 CLI 进程里没有正在运行的回合，所以 `session run`/`chat` 的每条输入都是一个
 回合。跨会话的 Agent 消息（旧 `session send/start/fork/wait`）和模型侧的

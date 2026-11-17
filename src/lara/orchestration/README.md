@@ -8,10 +8,14 @@ what `lara_api` and the CLI need on top:
 
 - `execution_host.py`: `LocalExecutionHost(SDK host)` that builds
   `LaraRuntimeService` (Feishu speak channel, lara_api entries) with the SDK's
-  fork-exchange hook wired, and pins lara's `SessionManager` to every runtime
-  generation.
+  fork-exchange hook wired, pins lara's `SessionManager` to every runtime
+  generation, and routes a plain session's mid-turn message as a `steering`
+  delivery (immediate steering of the running turn) before the SDK routing.
 - `session_execution.py`: `SessionExecutionCoordinator(SDK coordinator)` plus
-  execution-id / case-run-id indexes and durable recovery after a restart.
+  execution-id / case-run-id indexes, `deliver_steering` (the plain-session
+  counterpart of the SDK's `deliver_exchange`: a `pygent.v1.user.steering`
+  message with attachments into the running execution's react inbox, in
+  `runtime.steering.mode`) and durable recovery after a restart.
 - `runtime_pool.py`: `WorkspaceRuntimePool(SDK pool)` plus eager scope retirement
   for `ApiContext.areload`.
 - `session_turns.py`: `SessionTurnService` — turn submission with lara's resume

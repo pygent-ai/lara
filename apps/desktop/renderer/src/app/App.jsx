@@ -1208,10 +1208,11 @@ export function App() {
               }
               if (["execution.completed", "execution.failed", "execution.deadline_exceeded", "execution.cancelled"].includes(eventKind)) {
                 setApprovals((items) => items.filter((item) => item.session_id !== streamSessionId));
-                // An input still pending here was queued as the next turn,
-                // which starts now: its user row arrives with that turn's
-                // transcript, so the chip has nothing left to stand in for.
-                setPendingSteerings((items) => omitKey(items, streamSessionId));
+                // A queued input starts as the next turn now and its user row
+                // arrives with that turn's transcript, so its chip has nothing
+                // left to stand in for. A steering input still pending reported
+                // no boundary: the turn ended before draining it.
+                setPendingSteerings((items) => settlePendingSteeringsAtTurnEnd(items, streamSessionId));
               }
             },
           },
@@ -1356,16 +1357,21 @@ export function App() {
     });
   }, [activeSessionSync, activeSessionId, activeSession?.scope_id, activeSessionListRecord, runningSessionIds]);
 
-  // A message sent while the session's turn is still running goes through
-  // the backend's unified entry: the realtime session answers with a fork
-  // reply right away; any other session queues the message as the next turn,
-  // which the session follow loop attaches to once the running one ends.
+  // A message sent while the session's turn runs goes through the backend's
+  // unified entry: the realtime session answers with a fork reply right away;
+  // a plain session steers its running turn (the message interrupts the
+  // current step and the boundary event resolves the chip); a session whose
+  // turn cannot take the input queues it as the next turn, which the session
+  // follow loop attaches to once the running one ends.
   const handleSteering = useCallback(async (message, inputId, attachments = []) => {
     const sessionId = activeSessionIdRef.current;
     if (!sessionId || !runningSessionIdsRef.current[sessionId]) {
       throw new Error("执行尚未连接或已经结束，请稍后重试。");
     }
     const scopeId = activeSession?.scope_id;
+    // Show the chip before the POST resolves: immediate steering can drain the
+    // input and emit its boundary while the request is still in flight, and a
+    // chip added after that boundary event would never be resolved.
     setPendingSteerings((items) => addPendingSteering(items, sessionId, { inputId, text: message, attachments }));
     let receipt;
     try {
@@ -1399,8 +1405,21 @@ export function App() {
       setPendingSteerings((items) => resolvePendingSteering(items, sessionId, inputId));
       return;
     }
+    if (receipt?.mode === "turn") {
+      if (!runningSessionIdsRef.current[sessionId]) {
+        // The running turn ended while the request was in flight: the queued
+        // turn starts now and renders its own user row.
+        setPendingSteerings((items) => resolvePendingSteering(items, sessionId, inputId));
+      } else {
+        setPendingSteerings((items) => markPendingSteeringQueued(items, sessionId, inputId));
+      }
+      if (activeSessionIdRef.current === sessionId) {
+        setNotice("已排队：当前回合结束后作为下一轮开始。");
+      }
+      return;
+    }
     if (activeSessionIdRef.current === sessionId) {
-      setNotice("已排队：当前回合结束后作为下一轮开始。");
+      setNotice("指令已送达，将打断当前步骤并立即生效。");
     }
   }, [activeSession?.scope_id, api, transcripts]);
 
@@ -2741,7 +2760,7 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
         {pendingSteerings.map((item) => (
           <article className="message user message-enter pending-steering" key={`pending-${item.inputId}`}>
             <div className="bubble">
-              <span className="pending-steering-label">{realtimeInteractionEnabled ? "已送达 · 不打断当前工作" : "已排队 · 当前回合结束后开始"}</span>
+              <span className="pending-steering-label">{pendingSteeringLabel(item, realtimeInteractionEnabled)}</span>
               {item.text}
               {Array.isArray(item.attachments) && item.attachments.length > 0 && (
                 <span className="message-attachments">
@@ -2809,7 +2828,7 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
             ref={composerRef}
             aria-label="任务内容"
             disabled={sending || configuring}
-            placeholder={running ? (steeringReady ? (realtimeInteractionEnabled ? "随时插话，Lara 会在不打断工作的情况下回复…" : "继续输入，当前回合结束后作为下一轮开始…") : "正在连接执行，可以先输入…") : resumable ? "会话已暂停：点击发送继续上次任务，或输入新指令…" : "描述任务，或继续追问…"}
+            placeholder={running ? (steeringReady ? (realtimeInteractionEnabled ? "随时插话，Lara 会在不打断工作的情况下回复…" : "追加指令，立即打断当前步骤并调整方向…") : "正在连接执行，可以先输入…") : resumable ? "会话已暂停：点击发送继续上次任务，或输入新指令…" : "描述任务，或继续追问…"}
             value={draft}
             onChange={(event) => updateDraft(event.target.value)}
             onPaste={handleComposerPaste}
@@ -2858,7 +2877,7 @@ export function ChatPane({ activeSession, messages, historyRemaining = 0, histor
             <button className="attach" aria-label="添加附件" title="添加工作区文件作为附件（图片/视频原生识别，其他文件转 XML）" disabled={sending || configuring || pendingAttachments.length >= 10} type="button" onClick={() => fileInputRef.current?.click()}>
               <Paperclip aria-hidden="true" />
             </button>
-            {(uploadingCount > 0 || running || resumable) && <span className="composer-hint">{uploadingCount > 0 ? `正在上传附件…（${uploadingCount}）` : running ? (steeringReady ? (realtimeInteractionEnabled ? "Enter 发送 · 立即得到回复，不打断工作" : "Enter 发送 · 排到当前回合之后") : "正在连接执行，连接后可发送") : "点击发送继续上次任务 · 输入文字则开始新指令"}</span>}
+            {(uploadingCount > 0 || running || resumable) && <span className="composer-hint">{uploadingCount > 0 ? `正在上传附件…（${uploadingCount}）` : running ? (steeringReady ? (realtimeInteractionEnabled ? "Enter 发送 · 立即得到回复，不打断工作" : "Enter 发送 · 立即打断当前步骤") : "正在连接执行，连接后可发送") : "点击发送继续上次任务 · 输入文字则开始新指令"}</span>}
             <ContextGauge
               usedTokens={contextUsedTokens}
               totalTokens={settings.context_window}
@@ -4921,8 +4940,10 @@ export function splitAssistantForSteering(items, assistantId, inputId, content, 
 
 // A message sent during a running turn is shown as soon as it is sent and
 // stays pending until it belongs to the transcript: a realtime session applies
-// it at the next ReAct boundary (and answers through the fork reply); any
-// other session starts it as the next turn once the running one ends.
+// it at the next ReAct boundary (and answers through the fork reply); a plain
+// session steers its running turn, whose boundary event consumes it; an input
+// the running turn could not take (``queued``) starts as the next turn once
+// the running one ends.
 export function addPendingSteering(pending, sessionId, entry) {
   if (!sessionId) {
     return pending;
@@ -4932,6 +4953,42 @@ export function addPendingSteering(pending, sessionId, entry) {
     return pending;
   }
   return { ...pending, [sessionId]: [...current, entry] };
+}
+
+export function markPendingSteeringQueued(pending, sessionId, inputId) {
+  const current = pending[sessionId];
+  if (!current?.some((item) => item.inputId === inputId && !item.queued)) {
+    return pending;
+  }
+  return {
+    ...pending,
+    [sessionId]: current.map((item) => (item.inputId === inputId ? { ...item, queued: true } : item)),
+  };
+}
+
+export function pendingSteeringLabel(item, realtimeInteractionEnabled) {
+  if (item.stale) {
+    return "未生效 · 本轮已结束";
+  }
+  if (realtimeInteractionEnabled) {
+    return "已送达 · 不打断当前工作";
+  }
+  return item.queued ? "已排队 · 当前回合结束后开始" : "待生效 · 即将打断当前步骤";
+}
+
+// The turn's terminal event settles what is still pending: a queued input
+// starts as the next turn (its user row arrives with that transcript); a
+// steering input reported no boundary, so it never reached the model.
+export function settlePendingSteeringsAtTurnEnd(pending, sessionId) {
+  const current = pending[sessionId];
+  if (!current?.length) {
+    return pending;
+  }
+  const next = current.filter((item) => !item.queued).map((item) => (item.stale ? item : { ...item, stale: true }));
+  if (!next.length) {
+    return omitKey(pending, sessionId);
+  }
+  return { ...pending, [sessionId]: next };
 }
 
 export function resolvePendingSteering(pending, sessionId, inputId) {

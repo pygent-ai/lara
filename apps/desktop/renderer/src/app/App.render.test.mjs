@@ -405,13 +405,14 @@ test("a render error surfaces a message instead of a blank window", () => {
   assert.match(html, /重新加载/);
 });
 
-test("running chat allows editing and queues the next message", () => {
+test("running chat allows editing and steers the running turn", () => {
   const html = renderToStaticMarkup(React.createElement(appModule.ChatPane, {
     activeSession: { session_id: "session-1", scope_id: "conversation" },
     messages: [{ id: "user-1", role: "user", content: "hello" }],
     pendingSteerings: [
       { inputId: "input-1", text: "focus on tests" },
-      { inputId: "input-2", text: "use Chinese" },
+      { inputId: "input-2", text: "use Chinese", queued: true },
+      { inputId: "input-3", text: "too late", stale: true },
     ],
     settings: {}, status: "Running", running: true, steeringReady: true, approvals: [],
     onCancelTurn: async () => {},
@@ -421,14 +422,19 @@ test("running chat allows editing and queues the next message", () => {
   // The merged action button shows stop while the composer is empty; typing
   // swaps it to send (covered by the composerAction unit test).
   assert.match(html, /aria-label="取消当前任务"/);
-  // A plain session queues the message behind the running turn.
-  assert.match(html, /排到当前回合之后/);
-  // Queued inputs accept attachments too, so the attach button stays mounted.
+  // A plain session steers the running turn right away.
+  assert.match(html, /立即打断当前步骤/);
+  // Steering inputs accept attachments too, so the attach button stays mounted.
   assert.match(html, /aria-label="添加附件"/);
-  // A sent input stays visibly pending until the queued turn starts.
-  assert.equal(html.match(/已排队 · 当前回合结束后开始/g).length, 2);
+  // A sent input stays visibly pending until the runtime reports the boundary
+  // that drained it; one the turn could not take is shown as queued; one the
+  // turn ended on without draining is shown as never applied.
+  assert.equal(html.match(/待生效 · 即将打断当前步骤/g).length, 1);
+  assert.equal(html.match(/已排队 · 当前回合结束后开始/g).length, 1);
+  assert.equal(html.match(/未生效 · 本轮已结束/g).length, 1);
   assert.match(html, /focus on tests/);
   assert.match(html, /use Chinese/);
+  assert.match(html, /too late/);
 });
 
 test("reconnecting sessions allow drafting but cannot steer until connected", () => {
@@ -844,6 +850,19 @@ test("steering waits for the react boundary, then moves new activity below it", 
   const queued = appModule.addPendingSteering({}, "session-1", { inputId: "input-2", text: "use Chinese" });
   assert.equal(appModule.reconcilePendingSteerings(queued, "session-1", reloaded), queued);
   assert.equal(appModule.reconcilePendingSteerings(queued, "session-1", []), queued);
+
+  // The turn's terminal event settles what is still pending: an input the
+  // running turn could not take starts as the next turn and drops its chip;
+  // a steering input with no boundary never reached the model.
+  let mixed = appModule.addPendingSteering({}, "session-1", { inputId: "input-1", text: "focus on tests" });
+  mixed = appModule.addPendingSteering(mixed, "session-1", { inputId: "input-2", text: "use Chinese" });
+  mixed = appModule.markPendingSteeringQueued(mixed, "session-1", "input-2");
+  assert.equal(appModule.markPendingSteeringQueued(mixed, "session-1", "input-2"), mixed);
+  assert.deepEqual(mixed["session-1"].map((item) => Boolean(item.queued)), [false, true]);
+  const settled = appModule.settlePendingSteeringsAtTurnEnd(mixed, "session-1");
+  assert.deepEqual(settled["session-1"], [{ inputId: "input-1", text: "focus on tests", stale: true }]);
+  assert.deepEqual(appModule.settlePendingSteeringsAtTurnEnd(appModule.markPendingSteeringQueued(queued, "session-1", "input-2"), "session-1"), {});
+  assert.equal(appModule.settlePendingSteeringsAtTurnEnd({}, "session-1").hasOwnProperty("session-1"), false);
 });
 
 test("desktop app renders its initial workbench", async () => {

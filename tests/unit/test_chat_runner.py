@@ -964,12 +964,20 @@ def test_resume_request_accepts_only_pure_resume() -> None:
 # --- deliver_message: the SDK entry routes a message while a turn streams ---
 
 
+class _StubTurn:
+    execution_id = "exec-1"
+
+    async def wait_ready(self) -> None:
+        return None
+
+
 class _StubHost:
     """Stands in for LocalExecutionHost.deliver_user_message."""
 
     def __init__(self, mode: str) -> None:
         self.mode = mode
         self.calls: list[dict] = []
+        self.turn = _StubTurn()
 
     async def deliver_user_message(self, **kwargs):
         self.calls.append(dict(kwargs))
@@ -984,11 +992,15 @@ class _StubHost:
                     text=None,
                 ),
             )
-        return SimpleNamespace(mode="turn", turn=object(), outcome=None)
+        if self.mode == "steering":
+            return SimpleNamespace(
+                mode="steering", turn=self.turn, outcome=None, input_id="input-1"
+            )
+        return SimpleNamespace(mode="turn", turn=self.turn, outcome=None)
 
 
-def _host_context(monkeypatch, host) -> SimpleNamespace:
-    manager = SimpleNamespace(config=SimpleNamespace(workspace_root="."))
+def _host_context(monkeypatch, host, workspace_root: str = ".") -> SimpleNamespace:
+    manager = SimpleNamespace(config=SimpleNamespace(workspace_root=workspace_root))
     monkeypatch.setattr(
         chat_runner,
         "session_service_for_scope",
@@ -1019,6 +1031,33 @@ async def test_deliver_message_reports_a_queued_turn(monkeypatch) -> None:
         session_id="session-1", scope_id=None, input_id="input-1", message="继续",
     )
     assert receipt == {"mode": "turn", "input_id": "input-1", "session_id": "session-1"}
+
+
+async def test_deliver_message_reports_a_steered_running_turn(monkeypatch, tmp_path) -> None:
+    host = _StubHost("steering")
+    (tmp_path / "shot.png").write_bytes(b"\x89PNG\r\n\x1a\nrest-of-image")
+    receipt = await ChatRunRegistry().deliver_message(
+        _host_context(monkeypatch, host, str(tmp_path)),
+        session_id="session-1", scope_id=None, input_id="input-1", message="先改测试",
+        attachments=["shot.png"],
+    )
+    assert receipt == {
+        "mode": "steering",
+        "input_id": "input-1",
+        "session_id": "session-1",
+        "execution_id": "exec-1",
+    }
+    assert host.calls[0]["attachments"] == ["shot.png"]
+
+
+async def test_stream_resolve_reattaches_a_steering_to_the_running_turn(monkeypatch) -> None:
+    host = _StubHost("steering")
+    run = await ChatRunRegistry().resolve(
+        _host_context(monkeypatch, host),
+        ChatTurnRequest(session_id="session-1", message="先改测试", turn_id="input-1"),
+    )
+    assert isinstance(run, ActiveChatRun)
+    assert run.turn is host.turn
 
 
 async def test_stream_resolve_wraps_an_interrupt_as_a_fork_reply_stream(monkeypatch) -> None:

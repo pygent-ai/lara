@@ -49,8 +49,9 @@ async def deliver_message(
 ) -> dict[str, object]:
     """Deliver a user message to a session that is already streaming a turn.
 
-    The SDK routes it: the realtime session answers through a fork reply
-    (returned here); any other session queues a turn behind the running one.
+    The host routes it: the realtime session answers through a fork reply
+    (returned here); a plain session steers its running turn; a session whose
+    turn cannot take the input queues a turn behind the running one.
     """
 
     try:
