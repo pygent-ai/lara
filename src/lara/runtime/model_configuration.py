@@ -141,6 +141,7 @@ async def discover_models(
             credential=connection.credential,
             verify_ssl=connection.verify_ssl,
             proxy=connection.proxy,
+            headers=connection.headers,
         ),
         credential_environ=credential_environ,
     )

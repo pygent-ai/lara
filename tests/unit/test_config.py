@@ -219,6 +219,15 @@ def test_user_config_accepts_runtime_capacity_settings(tmp_path: Path) -> None:
     assert config.runtime_capacity.scope == "deployment"
 
 
+def test_user_config_accepts_journal_retention_seconds(tmp_path: Path) -> None:
+    home = write_user_config(
+        tmp_path, "runtime:\n  durability:\n    retention_seconds: 3600\n"
+    )
+    with patch("lara.config.loader.Path.home", return_value=home):
+        config = load_run_config(workspace_root=tmp_path)
+    assert config.runtime_durability.retention_seconds == 3600.0
+
+
 def test_replace_user_model_config_preserves_non_model_settings(tmp_path: Path) -> None:
     user_root = tmp_path / ".lara"
     user_root.mkdir()

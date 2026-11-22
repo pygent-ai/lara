@@ -1,10 +1,13 @@
 """Feishu delivery channel for speak content (the D-RT10 channel slot).
 
-Credentials come from the process environment (``FEISHU_APP_ID`` /
-``FEISHU_APP_SECRET``, loaded from ``~/.lara/credentials.env``); the target
-chats are the ``oc_*`` keys of ``~/.lara/feishu-bridge/sessions.json`` with
-``"enabled": true``. Delivery is best effort: failures are logged and never
-break the speak tool result or the turn.
+Speak text goes out as a text message; attachments are uploaded and sent as
+image/file messages, because the SDK hands channels resolved paths rather than
+pre-formatted text. Credentials come from the process environment
+(``FEISHU_APP_ID`` / ``FEISHU_APP_SECRET``, loaded from
+``~/.lara/credentials.env``); the target chats are the ``oc_*`` keys of
+``~/.lara/feishu-bridge/sessions.json`` with ``"enabled": true``. Delivery is
+best effort: failures are logged and never break the speak tool result or the
+turn.
 """
 
 from __future__ import annotations
@@ -15,16 +18,26 @@ import os
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+import uuid
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 OPEN_BASE = "https://open.feishu.cn"
 # v2 OAuth with the client_credentials grant returns the app access token
 # (v1 /authen/v1/tenant_access_token/internal is not served on this edge).
 TOKEN_URL = f"{OPEN_BASE}/open-apis/authen/v2/oauth/token"
 MESSAGE_URL = f"{OPEN_BASE}/open-apis/im/v1/messages"
+IMAGE_UPLOAD_URL = f"{OPEN_BASE}/open-apis/im/v1/images"
+FILE_UPLOAD_URL = f"{OPEN_BASE}/open-apis/im/v1/files"
+# Image messages need an uploaded image_key; everything else rides the file
+# upload + file message pair.
+IMAGE_SUFFIXES = frozenset(
+    {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".tif", ".tiff"}
+)
 REQUEST_TIMEOUT_SECONDS = 10.0
 # 失效/缺失 token 的错误码（HTTP 200 业务码或 HTTP 4xx JSON body 均可能出现）：
 # 刷新一次 token 后重试
@@ -32,6 +45,16 @@ TOKEN_ERROR_CODES = {99991661, 99991663, 99991668, 99991679}
 TOKEN_EXPIRY_BUFFER_SECONDS = 60.0
 
 _logger = logging.getLogger(__name__)
+
+
+def _read_json_response(request: urllib.request.Request) -> dict[str, Any]:
+    try:
+        with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        # Feishu reports auth problems as HTTP 4xx with a JSON code body;
+        # surface that body so the code-based refresh logic can react.
+        return json.loads(error.read().decode("utf-8"))
 
 
 def _post_json(
@@ -49,20 +72,51 @@ def _post_json(
         headers=headers,
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as error:
-        # Feishu reports auth problems as HTTP 4xx with a JSON code body;
-        # surface that body so the code-based refresh logic can react.
-        try:
-            return json.loads(error.read().decode("utf-8"))
-        except ValueError:
-            raise
+    return _read_json_response(request)
+
+
+def _post_multipart(
+    url: str,
+    fields: dict[str, str],
+    field_name: str,
+    path: Path,
+    *,
+    token: str | None = None,
+) -> dict[str, Any]:
+    """Upload one file as multipart/form-data with an ASCII-safe filename."""
+
+    boundary = f"----lara{uuid.uuid4().hex}"
+    chunks: list[bytes] = []
+    for name, value in fields.items():
+        field_header = (
+            f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n'
+        )
+        chunks.append(
+            field_header.encode("utf-8") + value.encode("utf-8") + b"\r\n"
+        )
+    ascii_name = path.name.encode("ascii", "replace").decode("ascii")
+    disposition = f'name="{field_name}"; filename="{ascii_name}"'
+    if ascii_name != path.name:
+        # http.client encodes header values as latin-1; keep the real name in
+        # the RFC 5987 parameter instead of the raw header text.
+        disposition += f"; filename*=UTF-8''{urllib.parse.quote(path.name)}"
+    file_header = (
+        f"--{boundary}\r\nContent-Disposition: form-data; {disposition}"
+        "\r\nContent-Type: application/octet-stream\r\n\r\n"
+    )
+    chunks.append(file_header.encode("ascii") + path.read_bytes() + b"\r\n")
+    chunks.append(f"--{boundary}--\r\n".encode("ascii"))
+    headers = {"Content-Type": f"multipart/form-data; boundary={boundary}"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(
+        url, data=b"".join(chunks), headers=headers, method="POST"
+    )
+    return _read_json_response(request)
 
 
 class FeishuChannel:
-    """Delivers speak text to one Feishu chat via a tenant-access token."""
+    """Delivers speak messages to one Feishu chat via a tenant-access token."""
 
     def __init__(
         self,
@@ -71,41 +125,96 @@ class FeishuChannel:
         app_secret: str,
         chat_id: str,
         post: Callable[..., dict[str, Any]] = _post_json,
+        upload: Callable[..., dict[str, Any]] = _post_multipart,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self.app_id = app_id
         self.app_secret = app_secret
         self.chat_id = chat_id
         self._post = post
+        self._upload = upload
         self._monotonic = monotonic
         self._token_lock = threading.Lock()
         self._token_value: str | None = None
         self._token_expires_at = 0.0
 
-    def deliver(self, text: str) -> bool:
-        """Send one text message; never raises — the channel must not break turns."""
+    def deliver(self, text: str, attachments: Sequence[Path] = ()) -> bool:
+        """Send the text and files; never raises — the channel must not break turns."""
 
         try:
-            return self._deliver(text)
+            if text:
+                self._deliver(text)
+            for path in attachments:
+                self._deliver_attachment(path)
+            return True
         except Exception:  # noqa: BLE001 - best-effort delivery
             _logger.warning("feishu channel delivery failed", exc_info=True)
             return False
 
-    def _deliver(self, text: str) -> bool:
+    def _deliver(self, text: str) -> None:
+        self._send_message("text", {"text": text})
+
+    def _deliver_attachment(self, path: Path) -> None:
+        if path.suffix.lower() in IMAGE_SUFFIXES:
+            key = self._uploaded_key(
+                IMAGE_UPLOAD_URL, {"image_type": "message"}, "image", path, "image_key"
+            )
+            self._send_message("image", {"image_key": key})
+            return
+        key = self._uploaded_key(
+            FILE_UPLOAD_URL,
+            {"file_type": "stream", "file_name": path.name},
+            "file",
+            path,
+            "file_key",
+        )
+        self._send_message("file", {"file_key": key})
+
+    def _with_token_refresh(
+        self, call: Callable[[str | None], dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Run one API call, refreshing the cached token once when rejected."""
+
+        response = call(self._token())
+        if response.get("code") in TOKEN_ERROR_CODES:
+            response = call(self._token(force=True))
+        return response
+
+    def _send_message(self, msg_type: str, content: dict[str, Any]) -> None:
         payload = {
             "receive_id": self.chat_id,
-            "msg_type": "text",
-            "content": json.dumps({"text": text}, ensure_ascii=False),
+            "msg_type": msg_type,
+            "content": json.dumps(content, ensure_ascii=False),
         }
         url = f"{MESSAGE_URL}?receive_id_type=chat_id"
-        response = self._post(url, payload, token=self._token())
-        if response.get("code") in TOKEN_ERROR_CODES:
-            response = self._post(url, payload, token=self._token(force=True))
+        response = self._with_token_refresh(
+            lambda token: self._post(url, payload, token=token)
+        )
         if response.get("code") != 0:
             raise RuntimeError(
                 f"feishu message error code={response.get('code')}: {response.get('msg')}"
             )
-        return True
+
+    def _uploaded_key(
+        self,
+        url: str,
+        fields: dict[str, str],
+        field_name: str,
+        path: Path,
+        key_name: str,
+    ) -> str:
+        response = self._with_token_refresh(
+            lambda token: self._upload(url, fields, field_name, path, token=token)
+        )
+        if response.get("code") != 0:
+            raise RuntimeError(
+                f"feishu upload error code={response.get('code')}: {response.get('msg')}"
+            )
+        data = response.get("data")
+        key = data.get(key_name) if isinstance(data, dict) else None
+        if not isinstance(key, str) or not key:
+            raise RuntimeError(f"feishu upload response has no {key_name}")
+        return key
 
     def _token(self, *, force: bool = False) -> str:
         with self._token_lock:

@@ -6,8 +6,9 @@ no public address is needed. A user text message from a bound chat becomes:
 
 - a fresh turn when the session is idle (its speak replies flow back to
   Feishu through the outbound channel), or
-- a fork reply when a turn is already running (the reply text is sent back
-  to Feishu here, because fork replies never emit speak events).
+- a fork reply when a turn is already running (the reply text and its speak
+  attachments are sent back to Feishu here, because fork replies never emit
+  speak events).
 
 The bot's own messages are ignored, so outbound deliveries never loop.
 """
@@ -20,6 +21,10 @@ import logging
 import threading
 import uuid
 from collections import deque
+from collections.abc import Sequence
+from pathlib import Path
+
+from pygent.agent.pygent_v1.runtime.attachments import resolve_attachments
 
 from lara.runtime.realtime.feishu import FeishuBridgeConfig, load_feishu_bridge_config
 from lara.sessions import LARA_SAYS_SESSION_MODE
@@ -47,6 +52,26 @@ def _message_text(event) -> str:
         return str(json.loads(raw).get("text", "") or "").strip()
     except ValueError:
         return ""
+
+
+def _reply_attachment_paths(
+    reply: dict[str, object], workspace_root: str | Path
+) -> tuple[Path, ...]:
+    """Resolve a fork reply's workspace-relative speak files for upload."""
+
+    raw = reply.get("attachments")
+    if not isinstance(raw, list) or not raw:
+        return ()
+    try:
+        resolved = resolve_attachments([str(item) for item in raw], workspace_root)
+    except ValueError:
+        # A file can disappear between `speak` and the relay; the reply text
+        # still has to reach the chat.
+        _logger.warning(
+            "feishu bridge cannot resolve reply attachments", exc_info=True
+        )
+        return ()
+    return tuple(item.path for item in resolved)
 
 
 class FeishuBridge:
@@ -162,16 +187,23 @@ class FeishuBridge:
         )
         if delivery.mode == "interrupt":
             reply = fork_reply_payload(delivery)
+            if reply.get("say_nothing"):
+                return
             reply_text = str(reply.get("text") or "").strip()
-            if reply_text and not reply.get("say_nothing"):
-                await self._send_to_feishu(reply_text)
+            attachments = _reply_attachment_paths(
+                reply, service.manager.config.workspace_root
+            )
+            if reply_text or attachments:
+                await self._send_to_feishu(reply_text, attachments)
             return
         assert delivery.turn is not None
         await delivery.turn.wait_ready()
         async for _ in ActiveChatRun(delivery.turn).events(after=0):
             pass
 
-    async def _send_to_feishu(self, text: str) -> None:
+    async def _send_to_feishu(
+        self, text: str, attachments: Sequence[Path] = ()
+    ) -> None:
         from lara.runtime.realtime.feishu import FeishuChannel
 
         if self._config is None:
@@ -182,5 +214,5 @@ class FeishuBridge:
                 app_secret=self._config.app_secret,
                 chat_id=chat,
             )
-            await asyncio.to_thread(channel.deliver, text)
+            await asyncio.to_thread(channel.deliver, text, attachments)
 

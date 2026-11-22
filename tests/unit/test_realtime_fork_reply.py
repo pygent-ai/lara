@@ -90,6 +90,7 @@ def _module(answer: AIMessage) -> tuple[ForkReplyModule, _FakeLayer]:
         llm=object(),
         tools=(_speak_definition(),),
         retry_policy=object(),
+        model_call_timeout=30.0,
     )
     layer = _FakeLayer(answer)
     module.model = layer  # allowed before the first invoke/bind
