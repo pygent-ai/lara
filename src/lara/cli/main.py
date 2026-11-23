@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from lara.cli.credentials import register_credentials_parser
+from lara.cli.runtime import register_runtime_parser
 from lara.cli.scheduler import register_scheduler_parser
 from lara.cli.sessions import register_session_parser
 from lara.config import load_run_config
@@ -71,6 +72,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     register_session_parser(sub)
     register_scheduler_parser(sub)
+    register_runtime_parser(sub)
 
     case = sub.add_parser("case", help="Run or inspect cases")
     case_sub = case.add_subparsers(dest="case_command", required=True)
