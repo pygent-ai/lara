@@ -88,6 +88,13 @@ async def test_api_context_builds_lara_runtime_through_the_execution_host(tmp_pa
         # hand their envelope to the running turn.
         assert callable(created[0]["kwargs"]["on_exchange_ready"])
         assert created[0]["kwargs"]["prompt_registry"] is not None
+        # The pool passes run_config_loader explicitly; the host must hand it
+        # lara's loader or the background memory agents cannot resolve their
+        # aliases ("child agent configuration requires an injected run-config
+        # loader").
+        from lara.config import load_run_config
+
+        assert created[0]["kwargs"]["run_config_loader"] is load_run_config
         assert type(lease.runtime.manager).__module__ == "lara.sessions.manager"
     finally:
         await lease.release()

@@ -23,6 +23,7 @@ from pygent.agent.pygent_v1.orchestration.execution_host import (
 from pygent.agent.pygent_v1.schema import RunConfig
 from pygent.agent.pygent_v1.sessions import SessionManager as _SdkSessionManager
 
+from lara.config import load_run_config
 from lara.runtime.service import LaraRuntimeService
 from lara.schema import RunConfig as LaraRunConfig
 from lara.sessions import SessionManager, realtime_enabled_for
@@ -59,6 +60,10 @@ class LocalExecutionHost(_SdkLocalExecutionHost):
             runtime_pool=runtime_pool
             or WorkspaceRuntimePool(
                 runtime_factory=self._build_runtime,
+                # The pool passes this through explicitly, so the runtime's
+                # own setdefault cannot fill it in: without it the background
+                # memory agents (extractor/builder) cannot load their aliases.
+                run_config_loader=load_run_config,
                 prompt_registry=prompt_registry,
             ),
             coordinator=coordinator or SessionExecutionCoordinator(),
