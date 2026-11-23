@@ -110,6 +110,38 @@ def test_lara_says_session_lives_in_its_own_user_level_scope(tmp_path: Path, mon
     assert [item.session_id for item in groups["pygent.v1-says"].sessions] == ["pygent.v1-says"]
 
 
+def test_workspace_less_scope_config_carries_eternal_conversation(tmp_path: Path, monkeypatch) -> None:
+    """The says session can opt into eternal memory only if its scope config
+    keeps the deployment master switch; dropping it silently disables memory."""
+
+    from lara_api.models.requests import CreateSessionRequest
+    from lara_api.routers.sessions import create_session
+    from lara_api.services.project_state import LARA_SAYS_SCOPE_ID, build_session_scopes
+    from pygent.agent.pygent_v1.runtime.eternal_conversation import eternal_enabled_for
+
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setattr("lara_api.services.project_state.Path.home", lambda: tmp_path)
+    config = RunConfig(workspace_root=str(project))
+    config.eternal_conversation.enabled = True
+    context = ApiContext(workspace_root=str(project), state_path=str(tmp_path / "state.json"), _config=config)
+
+    asyncio.run(
+        create_session(CreateSessionRequest(mode="pygent.v1-says", eternal_memory=True), context=context)
+    )
+    says_scope = next(
+        scope
+        for scope in build_session_scopes(context.project_state, active_workspace_root=str(project))
+        if scope.scope_id == LARA_SAYS_SCOPE_ID
+    )
+    scope_config = context.config_for_scope(says_scope)
+    session = SessionManager(scope_config).load("pygent.v1-says")
+
+    assert scope_config.eternal_conversation.enabled is True
+    assert session.metadata["eternal_memory"] is True
+    assert eternal_enabled_for(session, scope_config) is True
+
+
 def test_existing_conversation_scope_can_select_new_group_model(tmp_path: Path, monkeypatch) -> None:
     from lara_api.models.requests import CreateSessionRequest, UpdateSessionModelRequest
     from lara_api.routers.sessions import create_session, get_session, update_session_model
