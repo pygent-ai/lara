@@ -351,14 +351,4 @@ Pending UT、Snapshot 和 cursor 必须一起成功或一起失败。任何一�
 
 验收关注的是未来行为连续性，而不是摘要相似度、记忆条数或单次检索分数。
 
-## 当前项目中的实现落点
 
-当前 Lara 初版把上述通用架构映射为：
-
-- Harness 与后台调度：[eternal_conversation.py](../../src/lara/runtime/eternal_conversation.py)
-- 前台上下文接入：[core.py](../../src/lara/runtime/agent/core.py)
-- 后台模型独立配置与调用：[service.py](../../src/lara/runtime/service.py)
-- 动态 memory-cli skill：`skills/dynamic-memory-cli`（由配置或安装路径挂载）
-- 三份规范性文档：[docs/principles](../principles/README.md)
-
-当前实现细节可以演进，但必须继续满足三条原则：行为连续、前后台职责分离、Harness 独占正式提交和替换权。
