@@ -312,10 +312,12 @@ def test_available_tools_prompt_documents_exact_grep_arguments() -> None:
     )
 
     assert (
-        "grep tool accepts only pattern, path, glob, ignoreCase, literal, context, and limit"
+        "grep tool accepts only pattern, path, glob, ignoreCase, literal, context, "
+        "limit, and include_ignored"
         in prompt
     )
     assert "do not use output_mode, head_limit, ignore_case" in prompt
+    assert "include_ignored=true" in prompt
 
 
 @pytest.mark.asyncio

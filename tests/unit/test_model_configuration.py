@@ -221,6 +221,36 @@ async def test_discovery_uses_native_catalog_and_closes_client(monkeypatch) -> N
 
 
 @pytest.mark.asyncio
+async def test_discovery_forwards_connection_headers(monkeypatch) -> None:
+    received: dict[str, object] = {}
+    client = SimpleNamespace(
+        models=SimpleNamespace(list=AsyncMock(return_value=())),
+        aclose=AsyncMock(),
+    )
+
+    def factory(**kwargs):
+        received.update(kwargs)
+        return client
+
+    monkeypatch.setitem(CLIENT_FACTORIES, "openai_chat_completions", factory)
+    connection = ConnectionConfig.from_mapping(
+        {
+            "provider": "test",
+            "credential": {"env": "TEST_KEY"},
+            "headers": {"X-Gateway": "lara"},
+            "protocols": {"openai_chat_completions": {"base_url": "https://example.test/v1"}},
+        }
+    )
+    await discover_models(
+        connection_name="test",
+        protocol="openai_chat_completions",
+        connection=connection,
+        credential_environ={"TEST_KEY": "secret"},
+    )
+    assert received["headers"] == {"X-Gateway": "lara"}
+
+
+@pytest.mark.asyncio
 async def test_discovery_closes_client_when_catalog_fails(monkeypatch) -> None:
     client = SimpleNamespace(
         models=SimpleNamespace(list=AsyncMock(side_effect=TimeoutError("slow"))),

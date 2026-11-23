@@ -7,7 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.115.0",
     "lark-oapi>=1.7.5",
-    "pygent-ai[video]==0.6.2",
+    "pygent-ai[video]==0.6.6",
     "python-dateutil>=2.9.0",
     "tzdata>=2025.2",
     "tzlocal>=5.2",
@@ -35,8 +35,11 @@ credentials = [
 # 0.6.1 removes the cross-session collaboration inbox and routes realtime
 # exchanges through the react steering inbox; 0.6.2 adds the host embedding
 # points lara asked for (speak_channels, workspace_runtime_dir, host RunConfig
-# round-trip). Neither is on PyPI yet, so the local tree is the source until
-# the release lands; drop this override then.
+# round-trip). 0.6.3-0.6.6 carry attachments through the fork interrupt, pass
+# the resolved files to SpeakChannel.deliver, add ConnectionConfig headers,
+# report collapsed ignored directories in glob/grep, and harden the scheduler
+# daemon. The lockfile still consumes the local tree; drop this override once
+# the releases are published to PyPI.
 pygent-ai = { path = "../pygent", editable = true }
 
 [project.scripts]

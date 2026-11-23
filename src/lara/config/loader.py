@@ -287,7 +287,9 @@ def _validate_config_shape(data: dict[str, Any]) -> None:
     runtime = data.get("runtime")
     if isinstance(runtime, dict):
         _validate_mapping(
-            runtime.get("durability"), {"mode", "history_path"}, "runtime.durability"
+            runtime.get("durability"),
+            {"mode", "history_path", "retention_seconds"},
+            "runtime.durability",
         )
         _validate_mapping(runtime.get("steering"), {"mode"}, "runtime.steering")
         _validate_mapping(

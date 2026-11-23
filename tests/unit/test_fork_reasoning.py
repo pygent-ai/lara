@@ -119,7 +119,7 @@ def _config() -> ModelConfig:
     )
 
 
-def test_fork_profile_injects_effort_only_for_controllable_openai_models() -> None:
+def test_fork_profile_injects_effort_for_controllable_openai_and_anthropic_models() -> None:
     config = _config()
     original = config.models["controllable"]
 
@@ -150,11 +150,20 @@ def test_fork_profile_injects_effort_only_for_controllable_openai_models() -> No
         "controllable": "reasoning_effort_applied",
         "fixed": "reasoning_not_controllable",
         "plain": "reasoning_not_supported",
-        "anthropic": "protocol_not_supported",
+        "anthropic": "reasoning_effort_applied",
     }
     assert profile.models[1] is config.models["fixed"]
     assert profile.models[2] is config.models["plain"]
-    assert profile.models[3] is config.models["anthropic"]
+
+    anthropic_original = config.models["anthropic"]
+    anthropic_forked = profile.models[3]
+    assert anthropic_forked is not anthropic_original
+    anthropic_options = dict(
+        cast(Mapping[str, object], anthropic_forked.spec.provider_options)
+    )
+    assert dict(cast(Mapping[str, object], anthropic_options["output_config"])) == {
+        "effort": "low"
+    }
 
 
 def test_none_effort_keeps_the_main_profile() -> None:

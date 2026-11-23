@@ -141,7 +141,7 @@ npm --prefix apps/desktop run build
 
 更多说明见 [会话 CLI](docs/cli/lara-session.md)、[调度 CLI](docs/cli/lara-scheduler.md)、[本地 API](docs/api/local-service.md)、[远程访问](docs/guides/remote-access.md) 和[开发指南](docs/guides/development-guide.md)。
 
-运行时依赖锁定为官方 PyPI 发布的 `pygent-ai[video]==0.6.0`（对应 [官方 v0.6.0](https://github.com/pygent-ai/pygent/releases/tag/v0.6.0)），`uv.lock` 记录下载地址和校验值，不使用 `../pygent` 本地源码覆盖。0.6.0 起 Lara 直接以 `pygent.agent.pygent_v1` 为运行时（见 [迁移文档](docs/design/pygent-sdk-migration/README.md)），`src/lara` 只保留产品层与适配层。模型配置直接采用 Pygent 的 `connections`、`models`、`model_groups` 三层契约：先定义可复用 Connection，再由模型引用并选择该连接提供的协议。
+运行时依赖锁定为 `pygent-ai[video]==0.6.6`（对应 [官方 v0.6.6](https://github.com/pygent-ai/pygent/releases/tag/v0.6.6)）。当前 `[tool.uv.sources]` 通过 editable 路径使用 `../pygent` 本地源码，`uv.lock` 按该来源解析；该本地覆盖可在正式发布后删除。0.6.0 起 Lara 直接以 `pygent.agent.pygent_v1` 为运行时（见 [迁移文档](docs/design/pygent-sdk-migration/README.md)），`src/lara` 只保留产品层与适配层。模型配置直接采用 Pygent 的 `connections`、`models`、`model_groups` 三层契约：先定义可复用 Connection，再由模型引用并选择该连接提供的协议。
 
 重试直接使用 Pygent 的 `RetryPolicy.max_attempts_per_model`；旧 `routes` / `fallback` 以及 0.3.15 的模型内嵌 connection 结构不会继续执行。0.3.20 起 `SQLiteHistoryStore` 增加 `timeout_seconds` 并显式设置 `PRAGMA busy_timeout`；0.3.24 为 `SQLiteModelDeploymentStore` 增加相同的 30 秒默认等待。0.3.25 取消仅因 `PRAGMA user_version` 不同而拒绝 journal，0.3.23 及更早版本写入的既有 journal 可直接打开并继续回放；同一 execution 若已经混合写入 v7 receipt 与 v8 marker，回放仍会明确失败。0.3.26 为 `SQLiteHistoryStore`、历史任务和 `SQLiteModelDeploymentStore` 的写事务增加对 `SQLITE_BUSY` / `SQLITE_LOCKED` 的 rollback 后有界重试（最多 5 次，60 秒截止）。
 

@@ -6,6 +6,9 @@ runtime:
   durability:
     mode: preferred
     history_path: runtime/executions-v1.sqlite3
+    # Journal retention: executions older than this are pruned (default 7 days);
+    # set to null to keep every execution forever.
+    retention_seconds: 604800
   capacity:
     scope: runtime_instance
     coordinator_path: runtime/capacity-v1.sqlite3

@@ -4,7 +4,6 @@ import asyncio
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -88,7 +87,7 @@ class _FakeHost:
                 outcome=SimpleNamespace(
                     speak_args=SimpleNamespace(
                         text=reply.get("text", ""),
-                        attachments=(),
+                        attachments=tuple(reply.get("attachments", ())),
                         say_nothing=bool(reply.get("say_nothing", False)),
                     ),
                     text=None,
@@ -116,7 +115,8 @@ def _service(tmp_path: Path, sessions: list) -> SimpleNamespace:
         list_chat_sessions=lambda: sessions,
         create_session=lambda **kwargs: SimpleNamespace(session_id="lara-says-1"),
         manager=SimpleNamespace(
-            sessions_root=tmp_path / "sessions", config=SimpleNamespace()
+            sessions_root=tmp_path / "sessions",
+            config=SimpleNamespace(workspace_root=tmp_path),
         ),
     )
 
@@ -126,6 +126,20 @@ def _context(tmp_path: Path, host: _FakeHost) -> SimpleNamespace:
         config=SimpleNamespace(user_pygent_root=str(tmp_path)),
         execution_host=host,
     )
+
+
+def _capture_feishu_sends(
+    bridge: FeishuBridge, monkeypatch: pytest.MonkeyPatch
+) -> list[tuple[str, tuple[Path, ...]]]:
+    """Replace the outbound channel with a recorder of (text, attachments)."""
+
+    sent: list[tuple[str, tuple[Path, ...]]] = []
+
+    async def _send_to_feishu(text, attachments=()) -> None:
+        sent.append((text, tuple(attachments)))
+
+    monkeypatch.setattr(bridge, "_send_to_feishu", _send_to_feishu)
+    return sent
 
 
 def test_relay_creates_the_says_session_and_delivers_a_turn(
@@ -150,7 +164,6 @@ def test_relay_creates_the_says_session_and_delivers_a_turn(
 def test_relay_sends_the_fork_reply_back_to_feishu(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    sent_to_feishu: list[str] = []
     host = _FakeHost("interrupt", reply={"text": "马上给你结论"})
     sessions = [
         SimpleNamespace(
@@ -166,31 +179,79 @@ def test_relay_sends_the_fork_reply_back_to_feishu(
         lambda context, scope_id: _service(tmp_path, sessions),
     )
     bridge = FeishuBridge(_context(tmp_path, host), loop=asyncio.new_event_loop())
-
-    async def _send_to_feishu(text: str) -> None:
-        sent_to_feishu.append(text)
-
-    monkeypatch.setattr(bridge, "_send_to_feishu", _send_to_feishu)
+    sent_to_feishu = _capture_feishu_sends(bridge, monkeypatch)
 
     asyncio.run(bridge._relay("进展如何"))
 
     assert host.deliveries[0]["session_id"] == "lara-says-1"
     assert host.deliveries[0]["message"] == "进展如何"
-    assert sent_to_feishu == ["马上给你结论"]
+    assert sent_to_feishu == [("马上给你结论", ())]
 
 
-def test_relay_stays_silent_for_a_say_nothing_reply(
+def test_relay_sends_fork_reply_attachments_back_to_feishu(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    sent_to_feishu: list[str] = []
-    host = _FakeHost("interrupt", reply={"text": "", "say_nothing": True})
-    sessions = [SimpleNamespace(session_id="lara-says-1", mode="pygent.v1-says", case_id="chat")]
+    (tmp_path / "out.md").write_text("x", encoding="utf-8")
+    host = _FakeHost(
+        "interrupt",
+        reply={"text": "结论在这", "attachments": ("out.md",)},
+    )
+    sessions = [
+        SimpleNamespace(
+            session_id="lara-says-1", mode="pygent.v1-says", case_id="chat"
+        )
+    ]
     monkeypatch.setattr(
         "lara_api.services.feishu_bridge.session_service_for_scope",
         lambda context, scope_id: _service(tmp_path, sessions),
     )
     bridge = FeishuBridge(_context(tmp_path, host), loop=asyncio.new_event_loop())
-    monkeypatch.setattr(bridge, "_send_to_feishu", AsyncMock(side_effect=sent_to_feishu.append))
+    sent_to_feishu = _capture_feishu_sends(bridge, monkeypatch)
+
+    asyncio.run(bridge._relay("进展如何"))
+
+    assert sent_to_feishu == [("结论在这", (tmp_path / "out.md",))]
+
+
+def test_relay_keeps_the_reply_text_when_an_attachment_is_gone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    host = _FakeHost(
+        "interrupt",
+        reply={"text": "结论在这", "attachments": ("missing.md",)},
+    )
+    sessions = [
+        SimpleNamespace(
+            session_id="lara-says-1", mode="pygent.v1-says", case_id="chat"
+        )
+    ]
+    monkeypatch.setattr(
+        "lara_api.services.feishu_bridge.session_service_for_scope",
+        lambda context, scope_id: _service(tmp_path, sessions),
+    )
+    bridge = FeishuBridge(_context(tmp_path, host), loop=asyncio.new_event_loop())
+    sent_to_feishu = _capture_feishu_sends(bridge, monkeypatch)
+
+    asyncio.run(bridge._relay("进展如何"))
+
+    assert sent_to_feishu == [("结论在这", ())]
+
+
+def test_relay_stays_silent_for_a_say_nothing_reply(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    host = _FakeHost("interrupt", reply={"text": "", "say_nothing": True})
+    sessions = [
+        SimpleNamespace(
+            session_id="lara-says-1", mode="pygent.v1-says", case_id="chat"
+        )
+    ]
+    monkeypatch.setattr(
+        "lara_api.services.feishu_bridge.session_service_for_scope",
+        lambda context, scope_id: _service(tmp_path, sessions),
+    )
+    bridge = FeishuBridge(_context(tmp_path, host), loop=asyncio.new_event_loop())
+    sent_to_feishu = _capture_feishu_sends(bridge, monkeypatch)
 
     asyncio.run(bridge._relay("还在吗"))
 

@@ -1,6 +1,7 @@
 """Tests for the Feishu speak delivery channel."""
 
 import asyncio
+import io
 import json
 import os
 from pathlib import Path
@@ -34,6 +35,31 @@ def _token_response(token="t-1", expires_in=7200):
 
 def _message_response(code=0):
     return {"code": code, "msg": "ok" if code == 0 else "bad"}
+
+
+class _UploadRecorder:
+    """Records multipart uploads and returns one scripted key."""
+
+    def __init__(self, key_name: str = "file_key", key: str = "file-1"):
+        self.key_name = key_name
+        self.key = key
+        self.calls: list[tuple[str, dict, str, Path, str | None]] = []
+
+    def __call__(self, url, fields, field_name, path, *, token=None):
+        self.calls.append((url, dict(fields), field_name, path, token))
+        return {"code": 0, "data": {self.key_name: self.key}}
+
+
+def _message_payloads(recorder: _PostRecorder) -> list[dict]:
+    return [
+        payload
+        for url, payload, _token in recorder.calls
+        if "im/v1/messages" in url
+    ]
+
+
+def _message_types(recorder: _PostRecorder) -> list[str]:
+    return [payload["msg_type"] for payload in _message_payloads(recorder)]
 
 
 def test_load_feishu_channels_requires_credentials_and_enabled_flag(tmp_path: Path) -> None:
@@ -173,11 +199,11 @@ def _speak_call(arguments):
 
 
 def test_speak_executor_forwards_delivered_text_to_channels() -> None:
-    delivered: list[str] = []
+    delivered: list[tuple[str, tuple[Path, ...]]] = []
 
     class _Channel:
-        def deliver(self, text: str) -> bool:
-            delivered.append(text)
+        def deliver(self, text: str, attachments) -> bool:
+            delivered.append((text, tuple(attachments)))
             return True
 
     executor = _SpeakExecutor(
@@ -201,14 +227,14 @@ def test_speak_executor_forwards_delivered_text_to_channels() -> None:
     asyncio.run(_run())
     assert events[0]["kind"] == "pygent.v1.realtime.speak"
     assert events[0]["data"]["text"] == "给飞书也来一份"
-    assert delivered == ["给飞书也来一份"]
+    assert delivered == [("给飞书也来一份", ())]
 
 
 def test_speak_executor_does_not_forward_say_nothing() -> None:
     forwarded: list[str] = []
 
     class _Channel:
-        def deliver(self, text: str) -> bool:
+        def deliver(self, text: str, attachments) -> bool:
             forwarded.append(text)
             return True
 
@@ -235,13 +261,13 @@ def test_speak_executor_does_not_forward_say_nothing() -> None:
     assert forwarded == []
 
 
-def test_speak_executor_appends_attachment_paths_to_channel_text(tmp_path: Path) -> None:
+def test_speak_executor_hands_channel_resolved_attachment_paths(tmp_path: Path) -> None:
     (tmp_path / "out.md").write_text("x", encoding="utf-8")
-    forwarded: list[str] = []
+    forwarded: list[tuple[str, tuple[Path, ...]]] = []
 
     class _Channel:
-        def deliver(self, text: str) -> bool:
-            forwarded.append(text)
+        def deliver(self, text: str, attachments) -> bool:
+            forwarded.append((text, tuple(attachments)))
             return True
 
     executor = _SpeakExecutor(
@@ -263,4 +289,182 @@ def test_speak_executor_appends_attachment_paths_to_channel_text(tmp_path: Path)
 
     asyncio.run(_run())
     assert events[0]["data"]["attachments"] == ["out.md"]
-    assert forwarded == ["结论在这\nout.md"]
+    assert forwarded == [("结论在这", (tmp_path / "out.md",))]
+
+
+def test_speak_executor_delivers_text_and_files_through_the_feishu_channel(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "out.md").write_text("x", encoding="utf-8")
+    recorder = _PostRecorder(
+        [
+            _token_response(),
+            _message_response(),
+            _message_response(),
+        ]
+    )
+    uploader = _UploadRecorder("file_key", "file-5")
+    channel = FeishuChannel(
+        app_id="cli_x",
+        app_secret="s3cret",
+        chat_id="oc_chat",
+        post=recorder,
+        upload=uploader,
+    )
+    executor = _SpeakExecutor(
+        SimpleNamespace(config=SimpleNamespace(workspace_root=str(tmp_path))),
+        channels=[channel],
+    )
+
+    async def emit(kind, data):
+        del kind, data
+
+    async def _run():
+        await executor.execute(
+            SPEAK_TOOL_SPEC,
+            _speak_call({"text": "结论在这", "attachments": ["out.md"]}),
+            SimpleNamespace(emit=emit),
+        )
+        await asyncio.gather(*executor._delivery_tasks)
+
+    asyncio.run(_run())
+    assert _message_types(recorder) == ["text", "file"]
+    assert uploader.calls[0][3] == tmp_path / "out.md"
+
+
+def test_deliver_uploads_a_file_attachment_and_sends_a_file_message(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "report.md").write_text("# report", encoding="utf-8")
+    recorder = _PostRecorder([_token_response(), _message_response(), _message_response()])
+    uploader = _UploadRecorder("file_key", "file-9")
+    channel = FeishuChannel(
+        app_id="cli_x",
+        app_secret="s3cret",
+        chat_id="oc_chat",
+        post=recorder,
+        upload=uploader,
+    )
+
+    assert channel.deliver("结论", (tmp_path / "report.md",)) is True
+
+    upload_url, fields, field_name, path, token = uploader.calls[0]
+    assert upload_url.endswith("/open-apis/im/v1/files")
+    assert fields == {"file_type": "stream", "file_name": "report.md"}
+    assert field_name == "file"
+    assert path == tmp_path / "report.md"
+    assert token == "t-1"
+    assert _message_types(recorder) == ["text", "file"]
+    assert json.loads(_message_payloads(recorder)[1]["content"]) == {
+        "file_key": "file-9"
+    }
+
+
+def test_deliver_uploads_an_image_attachment_and_sends_an_image_message(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "chart.PNG").write_bytes(b"\x89PNG")
+    recorder = _PostRecorder([_token_response(), _message_response(), _message_response()])
+    uploader = _UploadRecorder("image_key", "img-7")
+    channel = FeishuChannel(
+        app_id="cli_x",
+        app_secret="s3cret",
+        chat_id="oc_chat",
+        post=recorder,
+        upload=uploader,
+    )
+
+    assert channel.deliver("看图", (tmp_path / "chart.PNG",)) is True
+
+    upload_url, fields, field_name, _path, _token = uploader.calls[0]
+    assert upload_url.endswith("/open-apis/im/v1/images")
+    assert fields == {"image_type": "message"}
+    assert field_name == "image"
+    assert _message_types(recorder) == ["text", "image"]
+
+
+def test_deliver_sends_attachments_without_an_empty_text_message(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "only.md").write_text("x", encoding="utf-8")
+    recorder = _PostRecorder([_token_response(), _message_response()])
+    uploader = _UploadRecorder("file_key", "file-2")
+    channel = FeishuChannel(
+        app_id="cli_x",
+        app_secret="s3cret",
+        chat_id="oc_chat",
+        post=recorder,
+        upload=uploader,
+    )
+
+    assert channel.deliver("", (tmp_path / "only.md",)) is True
+
+    assert _message_types(recorder) == ["file"]
+
+
+def test_deliver_refreshes_token_once_on_upload_token_error(tmp_path: Path) -> None:
+    (tmp_path / "out.md").write_text("x", encoding="utf-8")
+    recorder = _PostRecorder(
+        [
+            _token_response("t-stale"),
+            _message_response(),
+            _token_response("t-fresh"),
+            _message_response(),
+        ]
+    )
+    uploads: list[str | None] = []
+
+    def upload(url, fields, field_name, path, *, token=None):
+        del url, fields, field_name, path
+        uploads.append(token)
+        if token == "t-stale":
+            return {"code": 99991663, "msg": "token invalid"}
+        return {"code": 0, "data": {"file_key": "file-3"}}
+
+    channel = FeishuChannel(
+        app_id="cli_x",
+        app_secret="s3cret",
+        chat_id="oc_chat",
+        post=recorder,
+        upload=upload,
+    )
+
+    assert channel.deliver("x", (tmp_path / "out.md",)) is True
+
+    assert uploads == ["t-stale", "t-fresh"]
+    assert _message_types(recorder) == ["text", "file"]
+    message_tokens = [
+        token for url, _payload, token in recorder.calls if "im/v1/messages" in url
+    ]
+    assert message_tokens == ["t-stale", "t-fresh"]
+
+
+def test_multipart_upload_keeps_non_ascii_filenames_http_safe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lara.runtime.realtime import feishu as module
+
+    captured: dict[str, object] = {}
+
+    def fake_urlopen(request, timeout=None):
+        captured["body"] = request.data
+        captured["content_type"] = request.get_header("Content-type")
+        return io.BytesIO(json.dumps({"code": 0}).encode("utf-8"))
+
+    monkeypatch.setattr(module.urllib.request, "urlopen", fake_urlopen)
+    (tmp_path / "报告.md").write_text("x", encoding="utf-8")
+    response = module._post_multipart(
+        module.FILE_UPLOAD_URL,
+        {"file_type": "stream"},
+        "file",
+        tmp_path / "报告.md",
+        token="t-1",
+    )
+
+    assert response == {"code": 0}
+    body = captured["body"]
+    assert isinstance(body, bytes)
+    assert b'filename="??.md"' in body
+    assert b"filename*=UTF-8''%E6%8A%A5%E5%91%8A.md" in body
+    assert body.startswith(b"--")
+    assert str(captured["content_type"]).startswith("multipart/form-data; boundary=")
