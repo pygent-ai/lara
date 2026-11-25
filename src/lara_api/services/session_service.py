@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+from datetime import datetime, timezone
 from html import unescape
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ from lara.core.process import owner_is_foreign_and_alive
 from lara.runtime.reminders import ReminderService
 from lara.schema import case_run_resumable, AgentSession, CaseRunRef, CaseRunStatus, RunConfig
 from lara.sessions import LARA_SAYS_SESSION_MODE, SessionManager
+from pygent.agent.pygent_v1.runtime.realtime.fork_agent import FORK_MAX_MODEL_ATTEMPTS
 from pygent.agent.pygent_v1.tracing.events import EventStore
 from lara_api.container import ApiContext
 from lara_api.models.responses import (
@@ -279,12 +281,17 @@ async def reconcile_stale_running_sessions(
     resume attempt reconciles it. Probe each candidate execution here and stamp
     dead runs terminal so the list reports the real state.
     """
+    grace_seconds = fork_startup_grace_seconds(manager)
     for record in records:
         if record.last_case_run_status != "running" or not record.last_case_run_id:
             continue
         try:
             run_ref = manager.find_case_run(record.session_id, record.last_case_run_id)
         except (FileNotFoundError, ValueError):
+            continue
+        if run_started_recently(manager, run_ref, grace_seconds):
+            # Too young to rule out an in-flight fork reply, which the probes
+            # below cannot see; the next rebuild re-checks it after the window.
             continue
         if await _execution_is_live(context, manager, run_ref):
             continue
@@ -300,6 +307,37 @@ async def reconcile_stale_running_sessions(
         latest = manager.show(record.session_id)["metadata"].get("last_case_run_id")
         if latest == record.last_case_run_id:
             record.last_case_run_status = CaseRunStatus.ERROR
+
+
+def fork_startup_grace_seconds(manager: SessionManager) -> float:
+    """Maximum time a fork reply can still be running invisibly.
+
+    Fork replies run outside the coordinator and never record their execution
+    id (pygent stamps runtime_execution_id for turns only), so the liveness
+    probes cannot see a live fork. A run younger than the fork's worst case —
+    one fork_deadline_seconds slot per attempt, FORK_MAX_MODEL_ATTEMPTS slots —
+    may be exactly that, so reconciliation must leave it alone.
+    """
+
+    per_attempt = manager.config.realtime_interaction.fork_deadline_seconds
+    return FORK_MAX_MODEL_ATTEMPTS * per_attempt + 5.0
+
+
+def run_started_recently(
+    manager: SessionManager, run_ref: CaseRunRef, grace_seconds: float
+) -> bool:
+    """Report whether `run_ref` started recently enough to still be starting."""
+
+    started_at = manager.run_timing(run_ref).get("started_at")
+    if not isinstance(started_at, str):
+        return False
+    try:
+        started = datetime.fromisoformat(started_at)
+    except ValueError:
+        return False
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - started).total_seconds() < grace_seconds
 
 
 def finalize_dead_run(manager: SessionManager, run_ref: CaseRunRef) -> None:

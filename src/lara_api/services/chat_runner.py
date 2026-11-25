@@ -23,7 +23,12 @@ from lara.schema import case_run_resumable, CaseRunRef, CaseRunStatus
 from lara_api.container import ApiContext
 from lara_api.models.events import ExecutionEvent
 from lara_api.models.requests import ChatTurnRequest
-from lara_api.services.session_service import finalize_dead_run, session_service_for_scope
+from lara_api.services.session_service import (
+    finalize_dead_run,
+    fork_startup_grace_seconds,
+    run_started_recently,
+    session_service_for_scope,
+)
 
 CHAT_KEEPALIVE_SECONDS = 10.0
 
@@ -43,6 +48,12 @@ def _should_finalize_on_resume_miss(manager: Any, run_ref: CaseRunRef) -> bool:
     """
 
     if manager.run_timing(run_ref).get("status") != "running":
+        return False
+    if run_started_recently(
+        manager, run_ref, fork_startup_grace_seconds(manager)
+    ):
+        # A fork reply of this age may still be running invisibly to the
+        # probes; its terminal verdict belongs to its own execution.
         return False
     return not owner_is_foreign_and_alive(manager.run_owner(run_ref))
 

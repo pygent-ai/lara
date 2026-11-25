@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -1047,6 +1048,8 @@ def _create_stale_running_chat(project: Path) -> SessionManager:
     run = manager.start_case_run(session.session_id, "chat")
     run_metadata_path = Path(run.run_dir) / "run_metadata.json"
     run_metadata = read_json(run_metadata_path)
+    started = datetime.now(timezone.utc) - timedelta(minutes=10)
+    run_metadata["started_at"] = started.isoformat()
     run_metadata["runtime_execution_id"] = "execution-stale"
     write_json(run_metadata_path, run_metadata)
     return manager, session, run

@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -23,6 +24,16 @@ from lara_api.services.chat_runner import (
     _sse,
     stream_chat_turn,
 )
+
+
+def _age_run_metadata(ref: CaseRunRef, minutes: float) -> None:
+    """Push a run's started_at past the fork window so reconciliation may touch it."""
+
+    metadata_path = Path(ref.run_dir) / "run_metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    started = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+    metadata["started_at"] = started.isoformat()
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
 
 
 class _Runtime:
@@ -414,7 +425,9 @@ async def test_resume_miss_finalizes_the_stale_running_run(
     class _Manager:
         def __init__(self, status: str) -> None:
             self.sessions_root = tmp_path / "sessions"
-            self.config = SimpleNamespace()
+            self.config = SimpleNamespace(
+                realtime_interaction=SimpleNamespace(fork_deadline_seconds=60.0)
+            )
             self.status = status
             self.finished: list[tuple[CaseRunRef, str]] = []
 
@@ -677,6 +690,7 @@ def test_resume_miss_finalize_decision_respects_the_run_owner(tmp_path) -> None:
     )
     chat = manager.create("chat", mode="chat")
     ref = manager.start_case_run(chat.session_id, "chat")
+    _age_run_metadata(ref, minutes=10)
 
     # This process owns the stamp, so it may reconcile its own abandoned run.
     assert chat_runner._should_finalize_on_resume_miss(manager, ref) is True
@@ -869,7 +883,10 @@ async def test_resume_finalizes_a_dead_start_and_continues(
     class _Manager:
         def __init__(self) -> None:
             self.sessions_root = tmp_path / "sessions"
-            self.config = SimpleNamespace(workspace_root=str(tmp_path))
+            self.config = SimpleNamespace(
+                workspace_root=str(tmp_path),
+                realtime_interaction=SimpleNamespace(fork_deadline_seconds=60.0),
+            )
             self.started: list[str] = []
 
         def show(self, session_id: str):
