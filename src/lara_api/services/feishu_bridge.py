@@ -1,16 +1,7 @@
-"""Inbound Feishu bridge: relays bound-chat messages into the dedicated
-``Lara说`` session.
+"""Relay bound Feishu chat messages into the dedicated Lara Says session.
 
-Runs the Feishu long-connection (WebSocket) client on a daemon thread —
-no public address is needed. A user text message from a bound chat becomes:
-
-- a fresh turn when the session is idle (its speak replies flow back to
-  Feishu through the outbound channel), or
-- a fork reply when a turn is already running (the reply text and its speak
-  attachments are sent back to Feishu here, because fork replies never emit
-  speak events).
-
-The bot's own messages are ignored, so outbound deliveries never loop.
+The bridge receives events over a long connection. The SDK speak outbox
+delivers both foreground and fork replies through the configured channels.
 """
 
 from __future__ import annotations
@@ -19,17 +10,12 @@ import asyncio
 import json
 import logging
 import threading
-import uuid
 from collections import deque
-from collections.abc import Sequence
-from pathlib import Path
-
-from pygent.agent.pygent_v1.runtime.attachments import resolve_attachments
 
 from lara.runtime.realtime.feishu import FeishuBridgeConfig, load_feishu_bridge_config
 from lara.sessions import LARA_SAYS_SESSION_MODE
 from lara_api.project_state import LARA_SAYS_SCOPE_ID
-from lara_api.services.chat_runner import ActiveChatRun, fork_reply_payload
+from lara_api.services.chat_runner import ActiveChatRun
 from lara_api.services.session_service import session_service_for_scope
 
 _logger = logging.getLogger(__name__)
@@ -52,26 +38,6 @@ def _message_text(event) -> str:
         return str(json.loads(raw).get("text", "") or "").strip()
     except ValueError:
         return ""
-
-
-def _reply_attachment_paths(
-    reply: dict[str, object], workspace_root: str | Path
-) -> tuple[Path, ...]:
-    """Resolve a fork reply's workspace-relative speak files for upload."""
-
-    raw = reply.get("attachments")
-    if not isinstance(raw, list) or not raw:
-        return ()
-    try:
-        resolved = resolve_attachments([str(item) for item in raw], workspace_root)
-    except ValueError:
-        # A file can disappear between `speak` and the relay; the reply text
-        # still has to reach the chat.
-        _logger.warning(
-            "feishu bridge cannot resolve reply attachments", exc_info=True
-        )
-        return ()
-    return tuple(item.path for item in resolved)
 
 
 class FeishuBridge:
@@ -143,16 +109,16 @@ class FeishuBridge:
                 return
             if sender_type == "app":
                 return  # the bot's own outbound deliveries must never loop
-            if message_id in self._seen_message_ids:
+            if not message_id or message_id in self._seen_message_ids:
                 return  # Feishu redelivers events; relay each message once
             self._seen_message_ids.append(message_id)
-            self._schedule_relay(text)
+            self._schedule_relay(text, message_id)
         except Exception:  # noqa: BLE001 - the SDK callback must never crash
             _logger.warning("feishu bridge event handling failed", exc_info=True)
 
-    def _schedule_relay(self, text: str) -> None:
+    def _schedule_relay(self, text: str, message_id: str) -> None:
         assert self._loop is not None  # start() captures the API process loop
-        future = asyncio.run_coroutine_threadsafe(self._relay(text), self._loop)
+        future = asyncio.run_coroutine_threadsafe(self._relay(text, message_id), self._loop)
         future.add_done_callback(self._log_relay_result)
 
     @staticmethod
@@ -161,7 +127,7 @@ class FeishuBridge:
         if error is not None:
             _logger.warning("feishu bridge relay failed", exc_info=error)
 
-    async def _relay(self, text: str) -> None:
+    async def _relay(self, text: str, message_id: str) -> None:
         service = session_service_for_scope(self._context, LARA_SAYS_SCOPE_ID)
         record = next(
             (
@@ -175,44 +141,16 @@ class FeishuBridge:
             record = service.create_session(mode=LARA_SAYS_SESSION_MODE)
         session_id = record.session_id
 
-        # The SDK entry decides: a running turn answers through a fork reply
-        # (relayed back to the chat); otherwise the message starts a turn whose
-        # stream the bridge observes to keep its stake in it alive.
         delivery = await self._context.execution_host.deliver_user_message(
             config=service.manager.config,
             manager=service.manager,
             session_id=session_id,
-            input_id=f"feishu-{uuid.uuid4().hex[:12]}",
+            input_id=f"feishu-{message_id}",
             message=text,
         )
         if delivery.mode == "interrupt":
-            reply = fork_reply_payload(delivery)
-            if reply.get("say_nothing"):
-                return
-            reply_text = str(reply.get("text") or "").strip()
-            attachments = _reply_attachment_paths(
-                reply, service.manager.config.workspace_root
-            )
-            if reply_text or attachments:
-                await self._send_to_feishu(reply_text, attachments)
             return
         assert delivery.turn is not None
         await delivery.turn.wait_ready()
         async for _ in ActiveChatRun(delivery.turn).events(after=0):
             pass
-
-    async def _send_to_feishu(
-        self, text: str, attachments: Sequence[Path] = ()
-    ) -> None:
-        from lara.runtime.realtime.feishu import FeishuChannel
-
-        if self._config is None:
-            return
-        for chat in self._config.chats:
-            channel = FeishuChannel(
-                app_id=self._config.app_id,
-                app_secret=self._config.app_secret,
-                chat_id=chat,
-            )
-            await asyncio.to_thread(channel.deliver, text, attachments)
-

@@ -198,7 +198,7 @@ def _speak_call(arguments):
     return SimpleNamespace(arguments=arguments)
 
 
-def test_speak_executor_forwards_delivered_text_to_channels() -> None:
+def test_speak_executor_forwards_delivered_text_to_channels(tmp_path: Path) -> None:
     delivered: list[tuple[str, tuple[Path, ...]]] = []
 
     class _Channel:
@@ -207,7 +207,7 @@ def test_speak_executor_forwards_delivered_text_to_channels() -> None:
             return True
 
     executor = _SpeakExecutor(
-        SimpleNamespace(config=SimpleNamespace(workspace_root=".")),
+        SimpleNamespace(config=SimpleNamespace(workspace_root=str(tmp_path), pygent_root=str(tmp_path))),
         channels=[_Channel()],
     )
     events: list[dict] = []
@@ -219,7 +219,7 @@ def test_speak_executor_forwards_delivered_text_to_channels() -> None:
         result = await executor.execute(
             SPEAK_TOOL_SPEC,
             _speak_call({"text": "给飞书也来一份"}),
-            SimpleNamespace(emit=emit),
+            SimpleNamespace(emit=emit, execution_id="execution-1"),
         )
         assert result == "delivered"
         await asyncio.gather(*executor._delivery_tasks)
@@ -230,7 +230,7 @@ def test_speak_executor_forwards_delivered_text_to_channels() -> None:
     assert delivered == [("给飞书也来一份", ())]
 
 
-def test_speak_executor_does_not_forward_say_nothing() -> None:
+def test_speak_executor_does_not_forward_say_nothing(tmp_path: Path) -> None:
     forwarded: list[str] = []
 
     class _Channel:
@@ -239,7 +239,7 @@ def test_speak_executor_does_not_forward_say_nothing() -> None:
             return True
 
     executor = _SpeakExecutor(
-        SimpleNamespace(config=SimpleNamespace(workspace_root=".")),
+        SimpleNamespace(config=SimpleNamespace(workspace_root=str(tmp_path), pygent_root=str(tmp_path))),
         channels=[_Channel()],
     )
     events: list[dict] = []
@@ -251,7 +251,7 @@ def test_speak_executor_does_not_forward_say_nothing() -> None:
         result = await executor.execute(
             SPEAK_TOOL_SPEC,
             _speak_call({"say_nothing": True}),
-            SimpleNamespace(emit=emit),
+            SimpleNamespace(emit=emit, execution_id="execution-1"),
         )
         assert result == SILENT_ACKNOWLEDGEMENT
         await asyncio.gather(*executor._delivery_tasks)
@@ -271,7 +271,7 @@ def test_speak_executor_hands_channel_resolved_attachment_paths(tmp_path: Path) 
             return True
 
     executor = _SpeakExecutor(
-        SimpleNamespace(config=SimpleNamespace(workspace_root=str(tmp_path))),
+        SimpleNamespace(config=SimpleNamespace(workspace_root=str(tmp_path), pygent_root=str(tmp_path))),
         channels=[_Channel()],
     )
     events: list[dict] = []
@@ -283,7 +283,7 @@ def test_speak_executor_hands_channel_resolved_attachment_paths(tmp_path: Path) 
         await executor.execute(
             SPEAK_TOOL_SPEC,
             _speak_call({"text": "结论在这", "attachments": ["out.md"]}),
-            SimpleNamespace(emit=emit),
+            SimpleNamespace(emit=emit, execution_id="execution-1"),
         )
         await asyncio.gather(*executor._delivery_tasks)
 
@@ -312,7 +312,7 @@ def test_speak_executor_delivers_text_and_files_through_the_feishu_channel(
         upload=uploader,
     )
     executor = _SpeakExecutor(
-        SimpleNamespace(config=SimpleNamespace(workspace_root=str(tmp_path))),
+        SimpleNamespace(config=SimpleNamespace(workspace_root=str(tmp_path), pygent_root=str(tmp_path))),
         channels=[channel],
     )
 
@@ -323,13 +323,15 @@ def test_speak_executor_delivers_text_and_files_through_the_feishu_channel(
         await executor.execute(
             SPEAK_TOOL_SPEC,
             _speak_call({"text": "结论在这", "attachments": ["out.md"]}),
-            SimpleNamespace(emit=emit),
+            SimpleNamespace(emit=emit, execution_id="execution-1"),
         )
         await asyncio.gather(*executor._delivery_tasks)
 
     asyncio.run(_run())
     assert _message_types(recorder) == ["text", "file"]
     assert uploader.calls[0][3] == tmp_path / "out.md"
+    text, attachment = [payload["uuid"] for _, payload, _ in recorder.calls[1:]]
+    assert text != attachment
 
 
 def test_deliver_uploads_a_file_attachment_and_sends_a_file_message(

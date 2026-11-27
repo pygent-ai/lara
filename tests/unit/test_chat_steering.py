@@ -135,6 +135,20 @@ async def test_plain_session_message_steers_the_running_turn_immediately(
         assert late.turn is not first.turn
         output, _ = await asyncio.wait_for(late.turn.result(), 10)
         assert output.content == "answer-4"
+        await host.aclose()
+
+        async with LocalExecutionHost() as reopened:
+            replay = await reopened.deliver_user_message(
+                config=config, manager=manager, session_id=session_id,
+                message="focus on tests", input_id="input-1",
+            )
+            assert replay.mode == "steering"
+            assert replay.input_id == "input-1"
+            assert replay.turn is not None
+            assert replay.turn.execution_id == first.turn.execution_id
+            assert [item["data"]["input_id"] for item in _steering_history(
+                manager, session_id
+            )] == ["input-1", "input-2"]
     finally:
         invoker.release.set()
         await host.aclose()

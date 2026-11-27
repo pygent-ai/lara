@@ -48,6 +48,7 @@ def create_app(
             lease = await context.acquire_runtime()
             await lease.release()
             lease = None
+            await context.recover_message_deliveries()
             context.start_scheduler_daemon()
             context.start_feishu_bridge()
             yield

@@ -7,7 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.115.0",
     "lark-oapi>=1.7.5",
-    "pygent-ai[video]==0.6.9",
+    "pygent-ai[video]==0.6.10",
     "python-dateutil>=2.9.0",
     "tzdata>=2025.2",
     "tzlocal>=5.2",

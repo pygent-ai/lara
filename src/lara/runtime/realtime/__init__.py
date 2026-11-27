@@ -1,22 +1,5 @@
-"""Real-time interaction harness (D-RT series, see docs/design/realtime-interaction).
+"""Lara's realtime adapters for the Pygent SDK.
 
-The agent works silently: content/thinking stay out of the user-facing stream and
-``speak`` is the only channel the user sees. Inactive until a run config enables
-``realtime_interaction``.
-
-- ``speak``          — the user-visible channel tool + renderer/source abstraction
-- ``fork_reply``     — fork-snapshot request construction and speak extraction
-- ``fork_agent``     — the fork reply as a minimal managed execution graph
-- ``envelope``       — conversation-exchange injection at the next tool-result boundary
-- ``posting``        — envelope delivery through the agent-message channel
-- ``nudge``          — N-rounds-without-speak reminder rule and text
-- ``injection``      — the tool-result boundary nudge module
-- ``turn_finalizer`` — end-of-turn bottom-line speak decision rule
-
-Wiring: the envelope rides the existing agent-message queue (claimed by the
-runtime's reminder boundary); the nudge module composes into
-``PreparedToolModule`` behind ``realtime_interaction_enabled``; the fork reply
-runs as a pygent managed execution via ``LaraRuntimeService.send_interrupt``;
-the finalizer round is queued by the session coordinator's lane at turn
-completion.
+The SDK runs the speak tool, fork replies, exchange delivery, nudges and
+turn finalization. Lara supplies its Feishu delivery channels.
 """

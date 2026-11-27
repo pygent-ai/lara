@@ -28,11 +28,16 @@ async def test_lifespan_closes_runtime_when_application_body_fails(monkeypatch):
     lease = AsyncMock()
     acquire = AsyncMock(return_value=lease)
     monkeypatch.setattr(ApiContext, "acquire_runtime", acquire)
+    recover = AsyncMock()
+    monkeypatch.setattr(ApiContext, "recover_message_deliveries", recover)
+    monkeypatch.setattr(ApiContext, "start_scheduler_daemon", lambda self: None)
+    monkeypatch.setattr(ApiContext, "start_feishu_bridge", lambda self: False)
     close = AsyncMock()
     monkeypatch.setattr(ApiContext, "aclose", close)
     with pytest.raises(RuntimeError, match="application failed"):
         async with app.router.lifespan_context(app):
             raise RuntimeError("application failed")
+    recover.assert_awaited_once()
     close.assert_awaited_once()
     lease.release.assert_awaited_once()
 

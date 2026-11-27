@@ -175,8 +175,6 @@ async def test_active_approval_uses_the_turn_runtime() -> None:
         state=TurnState.RUNNING,
     )
     registry.coordinator._managed_runs[id(active)] = active
-    registry.coordinator._runs[active.execution_id] = active
-    registry.coordinator._case_runs[active.run_ref.case_run_id] = active
 
     delivered = await registry.deliver_approval(
         SimpleNamespace(
@@ -205,8 +203,6 @@ async def test_cancel_turn_prefers_the_active_turn_and_falls_back_to_runtime() -
         state=TurnState.RUNNING,
     )
     registry.coordinator._managed_runs[id(active)] = active
-    registry.coordinator._runs["execution-1"] = active
-    registry.coordinator._case_runs["case-1"] = active
     context = SimpleNamespace(
         acquire_runtime=lambda: _async_value(_Lease(SimpleNamespace(), fallback_runtime))
     )
@@ -380,7 +376,7 @@ async def test_attach_prefers_the_coordinator_turn_already_driving_the_case_run(
         lambda _context, _scope_id: SimpleNamespace(manager=_Manager()),
     )
     registry = ChatRunRegistry()
-    await registry.coordinator._register_case_run(turn)
+    registry.coordinator._managed_runs[id(turn)] = turn
 
     run = await registry.resolve(
         _Context(),
@@ -820,6 +816,7 @@ async def test_resume_reattaches_a_running_run_by_its_published_execution(
         lease=_Lease(SimpleNamespace(), SimpleNamespace()),
         command=TurnCommand(session_id="session-1", message="hello"),
         run_ref=run_ref,
+        execution_handle=SimpleNamespace(execution_id="execution-1"),
     )
     turn.state = TurnState.RUNNING
     turn.ready.set()
@@ -834,7 +831,7 @@ async def test_resume_reattaches_a_running_run_by_its_published_execution(
         lambda _context, _scope_id: SimpleNamespace(manager=_Manager()),
     )
     registry = ChatRunRegistry()
-    registry.coordinator._runs["execution-1"] = turn
+    registry.coordinator._managed_runs[id(turn)] = turn
 
     run = await registry.resolve(
         _Context(),
@@ -1001,6 +998,7 @@ class _StubHost:
         if self.mode == "interrupt":
             return SimpleNamespace(
                 mode="interrupt",
+                input_id=kwargs.get("input_id") or "generated-input",
                 turn=None,
                 outcome=SimpleNamespace(
                     speak_args=SimpleNamespace(

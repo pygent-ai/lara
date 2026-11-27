@@ -6,11 +6,18 @@ from pathlib import Path
 from threading import RLock, Thread
 from typing import TYPE_CHECKING, Any
 
+from pygent.agent.pygent_v1.runtime.delivery_store import session_delivery_path
+
 from lara.config import load_run_config
 from lara.schema import RunConfig
 from lara.sessions import SessionManager
 
-from .project_state import GuiProjectState, SessionScope
+from .project_state import (
+    GuiProjectState,
+    SessionScope,
+    active_project_scope_id,
+    build_session_scopes,
+)
 
 if TYPE_CHECKING:
     from pygent.agent.pygent_v1.scheduler.daemon import SchedulerDaemon
@@ -137,6 +144,25 @@ class ApiContext:
             config=effective_config, manager=manager
         )
 
+    async def recover_message_deliveries(self) -> None:
+        host = self.execution_host
+        active_manager = self.manager
+        await host.recover_pending_messages(
+            config=active_manager.config, manager=active_manager
+        )
+        active_scope = active_project_scope_id(active_manager.config.workspace_root)
+        for scope in build_session_scopes(
+            self.project_state, active_workspace_root=active_manager.config.workspace_root
+        ):
+            if scope.scope_id == active_scope:
+                continue
+            if not session_delivery_path(Path(scope.pygent_root) / "sessions").is_file():
+                continue
+            config = self.config_for_scope(scope)
+            await host.recover_pending_messages(
+                config=config, manager=SessionManager(config)
+            )
+
     @property
     def terminal_service(self) -> Any:
         with self._lock:
@@ -214,11 +240,10 @@ class ApiContext:
             scheduler_daemon.stop()
         if terminal_service is not None:
             terminal_service.close()
-        if registry is not None:
-            # The registry closes the coordinator it shares with the host.
-            await registry.close()
         if host is not None:
             await host.aclose()
+        elif registry is not None:
+            await registry.close()
         if reminders is not None:
             await reminders.close()
         if scheduler_thread is not None:

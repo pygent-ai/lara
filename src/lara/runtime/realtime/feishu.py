@@ -138,28 +138,46 @@ class FeishuChannel:
         self._token_value: str | None = None
         self._token_expires_at = 0.0
 
-    def deliver(self, text: str, attachments: Sequence[Path] = ()) -> bool:
+    @property
+    def recipient_id(self) -> str:
+        return f"feishu:{self.app_id}:{self.chat_id}"
+
+    def deliver_with_id(
+        self, reply_id: str, text: str, attachments: Sequence[Path] = ()
+    ) -> bool:
+        return self.deliver(text, attachments, reply_id=reply_id)
+
+    def deliver(
+        self, text: str, attachments: Sequence[Path] = (), *, reply_id: str | None = None
+    ) -> bool:
         """Send the text and files; never raises — the channel must not break turns."""
 
         try:
             if text:
-                self._deliver(text)
-            for path in attachments:
-                self._deliver_attachment(path)
+                self._deliver(text, self._message_uuid(reply_id, "text"))
+            for index, path in enumerate(attachments):
+                self._deliver_attachment(
+                    path, self._message_uuid(reply_id, f"attachment:{index}")
+                )
             return True
         except Exception:  # noqa: BLE001 - best-effort delivery
             _logger.warning("feishu channel delivery failed", exc_info=True)
             return False
 
-    def _deliver(self, text: str) -> None:
-        self._send_message("text", {"text": text})
+    def _message_uuid(self, reply_id: str | None, part: str) -> str | None:
+        if reply_id is None:
+            return None
+        return uuid.uuid5(uuid.NAMESPACE_URL, f"{self.recipient_id}:{reply_id}:{part}").hex
 
-    def _deliver_attachment(self, path: Path) -> None:
+    def _deliver(self, text: str, message_uuid: str | None = None) -> None:
+        self._send_message("text", {"text": text}, message_uuid)
+
+    def _deliver_attachment(self, path: Path, message_uuid: str | None) -> None:
         if path.suffix.lower() in IMAGE_SUFFIXES:
             key = self._uploaded_key(
                 IMAGE_UPLOAD_URL, {"image_type": "message"}, "image", path, "image_key"
             )
-            self._send_message("image", {"image_key": key})
+            self._send_message("image", {"image_key": key}, message_uuid)
             return
         key = self._uploaded_key(
             FILE_UPLOAD_URL,
@@ -168,7 +186,7 @@ class FeishuChannel:
             path,
             "file_key",
         )
-        self._send_message("file", {"file_key": key})
+        self._send_message("file", {"file_key": key}, message_uuid)
 
     def _with_token_refresh(
         self, call: Callable[[str | None], dict[str, Any]]
@@ -180,12 +198,16 @@ class FeishuChannel:
             response = call(self._token(force=True))
         return response
 
-    def _send_message(self, msg_type: str, content: dict[str, Any]) -> None:
+    def _send_message(
+        self, msg_type: str, content: dict[str, Any], message_uuid: str | None
+    ) -> None:
         payload = {
             "receive_id": self.chat_id,
             "msg_type": msg_type,
             "content": json.dumps(content, ensure_ascii=False),
         }
+        if message_uuid is not None:
+            payload["uuid"] = message_uuid
         url = f"{MESSAGE_URL}?receive_id_type=chat_id"
         response = self._with_token_refresh(
             lambda token: self._post(url, payload, token=token)

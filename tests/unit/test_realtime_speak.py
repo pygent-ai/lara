@@ -141,6 +141,8 @@ from pygent.agent.pygent_v1.runtime.service import _SpeakExecutor
 
 
 class _RecordingContext:
+    execution_id = "execution-1"
+
     def __init__(self) -> None:
         self.events: list[tuple[str, dict]] = []
 

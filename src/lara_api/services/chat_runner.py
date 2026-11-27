@@ -411,7 +411,7 @@ class ChatRunRegistry:
             assert request.session_id is not None  # interrupts need a running session
             return ForkReplyRun(
                 session_id=request.session_id,
-                input_id=request.turn_id or f"fork-{time.time_ns()}",
+                input_id=delivery.input_id or request.turn_id or f"fork-{time.time_ns()}",
                 reply=fork_reply_payload(delivery),
             )
         assert delivery.turn is not None

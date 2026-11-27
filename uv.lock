@@ -867,7 +867,7 @@ wheels = [
 
 [[package]]
 name = "pygent-ai"
-version = "0.6.9"
+version = "0.6.10"
 source = { editable = "../pygent" }
 dependencies = [
     { name = "aiosqlite" },

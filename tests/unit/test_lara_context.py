@@ -197,7 +197,7 @@ def test_eternal_bootstrap_restores_history_instead_of_empty_checkpoint() -> Non
 def test_uncovered_memory_suffix_keeps_tool_pairs_and_all_later_turns() -> None:
     from pygent import ToolCall, ToolMessage, ToolResult
 
-    from pygent.agent.pygent_v1.runtime.service import _uncovered_conversation_messages
+    from pygent.agent.pygent_v1.runtime.fork_context import _uncovered_conversation_messages
 
     messages = [
         UserMessage(content="covered turn"),
