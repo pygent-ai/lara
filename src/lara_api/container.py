@@ -296,6 +296,7 @@ class ApiContext:
                 model_configuration_error=self.config.model_configuration_error,
                 user_pygent_root=self.config.user_pygent_root,
                 runtime_approvals=self.config.runtime_approvals,
+                realtime_interaction=self.config.realtime_interaction,
                 # The eternal conversation master switch is deployment-wide;
                 # dropping it here would silently disable memory for the
                 # dedicated says session even when the session opted in.

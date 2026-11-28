@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+from dataclasses import fields
 from pathlib import Path
 from typing import Any, Literal
 
+from pygent.agent.pygent_v1.schema.models import RealtimeInteractionConfig
 from pygent.llm import ModelConfig
 
 from lara.core.io import non_empty_string as _non_empty
@@ -145,6 +147,9 @@ def load_run_config(
         runtime_approvals=_resolve_runtime_approvals(config_data),
         mcp_servers=_resolve_mcp_servers(config_data, root),
         delegation=_resolve_delegation(config_data),
+        realtime_interaction=RealtimeInteractionConfig(
+            **(_dig(config_data, "realtime_interaction") or {})
+        ),
         eternal_conversation=_resolve_eternal_conversation(
             config_data, alias, root
         ),
@@ -251,6 +256,7 @@ def _validate_config_shape(data: dict[str, Any]) -> None:
             "mcp",
             "delegation",
             "eternal_conversation",
+            "realtime_interaction",
             "connections",
             "models",
             "model_groups",
@@ -337,6 +343,11 @@ def _validate_config_shape(data: dict[str, Any]) -> None:
             "extraction_trigger_ratio",
         },
         "eternal_conversation",
+    )
+    _validate_mapping(
+        data.get("realtime_interaction"),
+        {item.name for item in fields(RealtimeInteractionConfig)},
+        "realtime_interaction",
     )
     agents = data.get("agents")
     if agents is not None and not isinstance(agents, list):
